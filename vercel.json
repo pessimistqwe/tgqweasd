@@ -1,0 +1,16 @@
+{
+  "buildCommand": "",
+  "outputDirectory": "frontend",
+  "installCommand": "pip install -r requirements.txt",
+  "framework": null,
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "backend/main.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "frontend/$1"
+    }
+  ]
+}
