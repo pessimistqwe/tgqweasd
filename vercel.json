@@ -1,35 +1,29 @@
 {
     "version": 2,
-    "builds": [
+    "framework": null,
+    "installCommand": "pip install -r api/requirements.txt",
+    "buildCommand": null,
+    "outputDirectory": null,
+    "rewrites": [
         {
-            "src": "api/index.py",
-            "use": "@vercel/python"
+            "source": "/api/(.*)",
+            "destination": "/api/index.py"
         },
         {
-            "src": "frontend/index.html",
-            "use": "@vercel/static"
-        }
-    ],
-    "routes": [
-        {
-            "src": "/api/(.*)",
-            "dest": "api/index.py"
+            "source": "/events",
+            "destination": "/api/index.py"
         },
         {
-            "src": "/events",
-            "dest": "api/index.py"
+            "source": "/user/(.*)",
+            "destination": "/api/index.py"
         },
         {
-            "src": "/user/(.*)",
-            "dest": "api/index.py"
+            "source": "/sync/(.*)",
+            "destination": "/api/index.py"
         },
         {
-            "src": "/sync/(.*)",
-            "dest": "api/index.py"
-        },
-        {
-            "src": "/(.*)",
-            "dest": "frontend/index.html"
+            "source": "/(.*)",
+            "destination": "/frontend/index.html"
         }
     ]
 }
