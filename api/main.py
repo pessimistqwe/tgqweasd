@@ -4,21 +4,22 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import json
 import os
-from models import Base, engine
 
-# Создаём таблицы при импорте
+# ✅ Импортируем ВСЁ из models один раз
+from models import (
+    Base, engine, SessionLocal, User, Event, EventOption, 
+    UserPrediction, get_db, Transaction, TransactionType, TransactionStatus
+)
+
+# ✅ Создаём таблицы сразу после импорта
 try:
     Base.metadata.create_all(bind=engine)
-    print("Tables created")
+    print("✅ Database tables created")
 except Exception as e:
-    print(f"Table creation error: {e}")
+    print(f"❌ DB Error: {e}")
 
 from dotenv import load_dotenv
 from crypto_api import crypto_api
-from models import (
-    SessionLocal, User, Event, EventOption, UserPrediction, get_db,
-    Transaction, TransactionType, TransactionStatus
-)
 from moderation import is_admin, approve_event, reject_event
 
 load_dotenv()
@@ -27,7 +28,7 @@ app = FastAPI(title="Telegram Events Prediction API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://*.telegram.org", "http://localhost:3000"],
+    allow_origins=["https://*.telegram.org", "http://localhost:3000", "https://tgqweasd.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -463,3 +464,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
