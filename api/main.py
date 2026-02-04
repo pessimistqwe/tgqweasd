@@ -4,6 +4,15 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import json
 import os
+from models import Base, engine
+
+# Создаём таблицы при импорте
+try:
+    Base.metadata.create_all(bind=engine)
+    print("Tables created")
+except Exception as e:
+    print(f"Table creation error: {e}")
+
 from dotenv import load_dotenv
 from crypto_api import crypto_api
 from models import (
@@ -452,4 +461,5 @@ def process_payout(
         raise HTTPException(status_code=500, detail=str(e))
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
