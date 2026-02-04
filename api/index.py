@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -7,6 +7,12 @@ import json
 import requests
 from typing import List, Optional
 import os
+from http.server import BaseHTTPRequestHandler
+from io import BytesIO
+from urllib.parse import urlsplit
+from wsgiref.handlers import SimpleHandler
+from wsgiref.util import setup_testing_defaults
+from asgiref.wsgi import AsgiToWsgi
 
 # Импорт моделей
 try:
@@ -47,7 +53,31 @@ POLYMARKET_API_URL = "https://gamma-api.polymarket.com"
 POLYMARKET_SYNC_INTERVAL_SECONDS = int(os.getenv("POLYMARKET_SYNC_INTERVAL", "300"))
 last_polymarket_sync = datetime.min
 
-def fetch_polymarket_events(limit: int = 50):
+# Ключевые слова для определения категорий
+CATEGORY_KEYWORDS = {
+    'politics': ['trump', 'biden', 'election', 'president', 'congress', 'senate', 'vote', 'democrat', 'republican', 'political', 'government', 'minister', 'parliament', 'putin', 'zelensky', 'ukraine', 'russia', 'china', 'nato'],
+    'sports': ['nba', 'nfl', 'mlb', 'soccer', 'football', 'basketball', 'baseball', 'tennis', 'golf', 'ufc', 'boxing', 'f1', 'formula', 'championship', 'world cup', 'super bowl', 'olympics', 'game', 'match', 'team', 'player'],
+    'crypto': ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'blockchain', 'defi', 'nft', 'token', 'coin', 'binance', 'coinbase', 'solana', 'dogecoin', 'altcoin', 'mining'],
+    'pop_culture': ['movie', 'film', 'oscar', 'grammy', 'emmy', 'celebrity', 'music', 'album', 'artist', 'actor', 'actress', 'tv show', 'netflix', 'disney', 'marvel', 'star wars', 'taylor swift', 'beyonce', 'kanye'],
+    'business': ['stock', 'market', 'company', 'ceo', 'ipo', 'merger', 'earnings', 'revenue', 'tesla', 'apple', 'google', 'amazon', 'microsoft', 'nvidia', 'ai', 'layoff', 'startup', 'fed', 'interest rate', 'inflation'],
+    'science': ['nasa', 'spacex', 'rocket', 'mars', 'moon', 'climate', 'vaccine', 'fda', 'research', 'discovery', 'scientist', 'study', 'experiment', 'technology', 'ai model', 'gpt', 'openai']
+}
+
+def detect_category(title: str, description: str = '') -> str:
+    """Определяет категорию события по заголовку и описанию"""
+    text = (title + ' ' + (description or '')).lower()
+
+    category_scores = {}
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        score = sum(1 for keyword in keywords if keyword in text)
+        if score > 0:
+            category_scores[category] = score
+
+    if category_scores:
+        return max(category_scores, key=category_scores.get)
+    return 'other'
+
+def fetch_polymarket_events(limit: int = 50, category: str = None):
     """Получает активные события из Polymarket API"""
     try:
         # Получаем список активных рынков
@@ -70,10 +100,19 @@ def fetch_polymarket_events(limit: int = 50):
                 continue
                 
             # Формируем структуру события
+            title = market.get('question', '')
+            description = market.get('description', '')
+            detected_category = detect_category(title, description)
+
+            if category and category != 'all' and detected_category != category:
+                continue
+
             event_data = {
                 'polymarket_id': market.get('conditionId', ''),
-                'title': market.get('question', ''),
-                'description': market.get('description', ''),
+                'title': title,
+                'description': description,
+                'category': detected_category,
+                'image_url': market.get('image', ''),
                 'end_time': market.get('endDate', ''),
                 'options': [],
                 'volumes': []
@@ -126,6 +165,8 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
     if existing:
         existing.title = pm_event['title'][:500]
         existing.description = pm_event['description'][:1000] if pm_event['description'] else None
+        existing.category = pm_event.get('category', existing.category)
+        existing.image_url = pm_event.get('image_url', '')
         existing.end_time = end_time
         existing.is_active = is_active
         existing.options = json.dumps(options)
@@ -160,6 +201,8 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
         polymarket_id=pm_event['polymarket_id'],
         title=pm_event['title'][:500],
         description=pm_event['description'][:1000] if pm_event['description'] else None,
+        category=pm_event.get('category', 'other'),
+        image_url=pm_event.get('image_url', ''),
         options=json.dumps(options),
         end_time=end_time,
         is_active=is_active,
@@ -219,9 +262,25 @@ class UserResponse(BaseModel):
 async def root():
     return {"status": "ok", "message": "EventPredict API"}
 
+@app.get("/categories")
+async def get_categories():
+    """Получить список категорий"""
+    return {
+        "categories": [
+            {"id": "all", "name": "All", "icon": "🔥", "name_ru": "Все"},
+            {"id": "politics", "name": "Politics", "icon": "🏛️", "name_ru": "Политика"},
+            {"id": "sports", "name": "Sports", "icon": "⚽", "name_ru": "Спорт"},
+            {"id": "crypto", "name": "Crypto", "icon": "₿", "name_ru": "Крипто"},
+            {"id": "pop_culture", "name": "Pop Culture", "icon": "🎬", "name_ru": "Поп-культура"},
+            {"id": "business", "name": "Business", "icon": "📈", "name_ru": "Бизнес"},
+            {"id": "science", "name": "Science", "icon": "🔬", "name_ru": "Наука"},
+            {"id": "other", "name": "Other", "icon": "📌", "name_ru": "Другое"}
+        ]
+    }
+
 @app.get("/events")
-async def get_events(db: Session = Depends(get_db)):
-    """Получить все активные события"""
+async def get_events(category: str = None, db: Session = Depends(get_db)):
+    """Получить события с фильтрацией по категории"""
     try:
         global last_polymarket_sync
         now = datetime.utcnow()
@@ -229,11 +288,15 @@ async def get_events(db: Session = Depends(get_db)):
             sync_polymarket_events(db)
             last_polymarket_sync = datetime.utcnow()
         
-        # Получаем активные события
-        events = db.query(Event).filter(
+        query = db.query(Event).filter(
             Event.is_active == True,
             Event.end_time > datetime.utcnow()
-        ).order_by(Event.created_at.desc()).limit(50).all()
+        )
+
+        if category and category != 'all':
+            query = query.filter(Event.category == category)
+
+        events = query.order_by(Event.total_pool.desc()).limit(50).all()
         
         result = []
         for event in events:
@@ -273,6 +336,8 @@ async def get_events(db: Session = Depends(get_db)):
                 "id": event.id,
                 "title": event.title,
                 "description": event.description,
+                "category": event.category or "other",
+                "image_url": event.image_url,
                 "end_time": event.end_time.isoformat(),
                 "time_left": max(0, time_left),
                 "total_pool": event.total_pool,
@@ -400,3 +465,49 @@ async def manual_sync(db: Session = Depends(get_db)):
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+# Vercel expects a BaseHTTPRequestHandler subclass; adapt FastAPI via WSGI.
+wsgi_app = AsgiToWsgi(app)
+
+class handler(BaseHTTPRequestHandler):
+    def _run_app(self):
+        body_length = int(self.headers.get("content-length", 0) or 0)
+        body = self.rfile.read(body_length) if body_length > 0 else b""
+
+        environ = {}
+        setup_testing_defaults(environ)
+        url = urlsplit(self.path)
+        environ["REQUEST_METHOD"] = self.command
+        environ["PATH_INFO"] = url.path
+        environ["QUERY_STRING"] = url.query
+        environ["CONTENT_LENGTH"] = str(body_length)
+        environ["CONTENT_TYPE"] = self.headers.get("content-type", "")
+        environ["wsgi.input"] = BytesIO(body)
+        environ["REMOTE_ADDR"] = self.client_address[0]
+
+        for key, value in self.headers.items():
+            header_key = "HTTP_" + key.upper().replace("-", "_")
+            if header_key in ("HTTP_CONTENT_TYPE", "HTTP_CONTENT_LENGTH"):
+                continue
+            environ[header_key] = value
+
+        handler = SimpleHandler(BytesIO(body), self.wfile, self.wfile, environ)
+        handler.run(wsgi_app)
+
+    def do_GET(self):
+        self._run_app()
+
+    def do_POST(self):
+        self._run_app()
+
+    def do_PUT(self):
+        self._run_app()
+
+    def do_PATCH(self):
+        self._run_app()
+
+    def do_DELETE(self):
+        self._run_app()
+
+    def do_OPTIONS(self):
+        self._run_app()
