@@ -37,3 +37,4 @@ async def handler(request: Request):
 
 # Экспортируем для Vercel
 app = app  # FastAPI app будет использоваться напрямую
+handler = app
