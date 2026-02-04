@@ -39,6 +39,9 @@ app.add_middleware(
 # ==================== POLYMARKET API INTEGRATION ====================
 
 POLYMARKET_API_URL = "https://gamma-api.polymarket.com"
+POLYMARKET_SYNC_INTERVAL_SECONDS = int(os.getenv("POLYMARKET_SYNC_INTERVAL", "300"))
+POLYMARKET_SYNC_LOCK = asyncio.Lock()
+last_polymarket_sync = datetime.min
 
 # Ключевые слова для определения категорий
 CATEGORY_KEYWORDS = {
@@ -134,70 +137,126 @@ def fetch_polymarket_events(category: str = None, limit: int = 50):
         print(f"Error fetching Polymarket events: {e}")
         return []
 
+def parse_polymarket_end_time(end_time: str) -> datetime:
+    if not end_time:
+        return datetime.utcnow() + timedelta(days=7)
+    try:
+        return datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+    except Exception:
+        return datetime.utcnow() + timedelta(days=7)
+
+def update_event_total_pool(db: Session, event: Event) -> None:
+    options = db.query(EventOption).filter(EventOption.event_id == event.id).all()
+    event.total_pool = sum(
+        (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
+        for opt in options
+    )
+
+def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
+    """Создаёт или обновляет событие Polymarket. Возвращает True, если создано новое."""
+    end_time = parse_polymarket_end_time(pm_event.get('end_time'))
+    is_active = end_time > datetime.utcnow()
+    options = pm_event.get('options', [])
+    volumes = pm_event.get('volumes', [])
+
+    existing = db.query(Event).filter(
+        Event.polymarket_id == pm_event['polymarket_id']
+    ).first()
+
+    if existing:
+        existing.title = pm_event['title'][:500]
+        existing.description = pm_event['description'][:1000] if pm_event['description'] else None
+        existing.category = pm_event['category']
+        existing.image_url = pm_event.get('image_url', '')
+        existing.end_time = end_time
+        existing.is_active = is_active
+        existing.options = json.dumps(options)
+
+        existing_options = {
+            opt.option_index: opt
+            for opt in db.query(EventOption).filter(EventOption.event_id == existing.id).all()
+        }
+
+        for idx, (option_text, volume) in enumerate(zip(options, volumes)):
+            option = existing_options.get(idx)
+            if option:
+                option.option_text = option_text
+                option.market_stake = volume
+            else:
+                db.add(EventOption(
+                    event_id=existing.id,
+                    option_index=idx,
+                    option_text=option_text,
+                    total_stake=0.0,
+                    market_stake=volume
+                ))
+
+        for idx, option in existing_options.items():
+            if idx >= len(options):
+                db.delete(option)
+
+        update_event_total_pool(db, existing)
+        return False
+
+    new_event = Event(
+        polymarket_id=pm_event['polymarket_id'],
+        title=pm_event['title'][:500],
+        description=pm_event['description'][:1000] if pm_event['description'] else None,
+        category=pm_event['category'],
+        image_url=pm_event.get('image_url', ''),
+        options=json.dumps(options),
+        end_time=end_time,
+        is_active=is_active,
+        is_moderated=True,
+        total_pool=sum(volumes)
+    )
+    db.add(new_event)
+    db.flush()
+
+    for idx, (option_text, volume) in enumerate(zip(options, volumes)):
+        db.add(EventOption(
+            event_id=new_event.id,
+            option_index=idx,
+            option_text=option_text,
+            total_stake=0.0,
+            market_stake=volume
+        ))
+
+    return True
+
 def sync_polymarket_events(db: Session, category: str = None):
     """Синхронизирует события из Polymarket в БД"""
     try:
         polymarket_events = fetch_polymarket_events(category=category, limit=100)
-        added_count = 0
+        synced_count = 0
         
         for pm_event in polymarket_events:
-            # Проверяем, существует ли событие
-            existing = db.query(Event).filter(
-                Event.polymarket_id == pm_event['polymarket_id']
-            ).first()
-            
-            if existing:
-                # Обновляем существующее событие
-                existing.category = pm_event['category']
-                existing.image_url = pm_event.get('image_url', '')
-                db.commit()
-                continue
-            
-            # Парсим дату окончания
-            try:
-                end_time = datetime.fromisoformat(pm_event['end_time'].replace('Z', '+00:00'))
-            except:
-                end_time = datetime.utcnow() + timedelta(days=7)
-            
-            # Создаём событие
-            new_event = Event(
-                polymarket_id=pm_event['polymarket_id'],
-                title=pm_event['title'][:500],
-                description=pm_event['description'][:1000] if pm_event['description'] else None,
-                category=pm_event['category'],
-                image_url=pm_event.get('image_url', ''),
-                options=json.dumps(pm_event['options']),
-                end_time=end_time,
-                is_active=True,
-                is_moderated=True,
-                total_pool=sum(pm_event['volumes'])
-            )
-            db.add(new_event)
-            db.flush()
-            
-            # Создаём опции с ценами
-            for idx, (option_text, volume, price) in enumerate(zip(
-                pm_event['options'], 
-                pm_event['volumes'],
-                pm_event['prices']
-            )):
-                event_option = EventOption(
-                    event_id=new_event.id,
-                    option_index=idx,
-                    option_text=option_text,
-                    total_stake=volume
-                )
-                db.add(event_option)
-            
+            created = upsert_polymarket_event(db, pm_event)
+            update_event = "Added" if created else "Updated"
             db.commit()
-            added_count += 1
-            print(f"Added event: {new_event.title[:50]}... [{new_event.category}]")
-        
-        return added_count
+            synced_count += 1
+            print(f"{update_event} event: {pm_event['title'][:50]}... [{pm_event['category']}]")
+
+        return synced_count
     except Exception as e:
         db.rollback()
         print(f"Error syncing events: {e}")
         return 0
+
+async def maybe_sync_polymarket_events(db: Session, category: str = None) -> int:
+    global last_polymarket_sync
+    now = datetime.utcnow()
+    if (now - last_polymarket_sync).total_seconds() < POLYMARKET_SYNC_INTERVAL_SECONDS:
+        return 0
+
+    async with POLYMARKET_SYNC_LOCK:
+        now = datetime.utcnow()
+        if (now - last_polymarket_sync).total_seconds() < POLYMARKET_SYNC_INTERVAL_SECONDS:
+            return 0
+
+        synced_count = sync_polymarket_events(db, category=category)
+        last_polymarket_sync = datetime.utcnow()
+        return synced_count
 
 # ==================== PYDANTIC MODELS ====================
 
@@ -239,10 +298,8 @@ async def get_categories():
 async def get_events(category: str = None, db: Session = Depends(get_db)):
     """Получить события с фильтрацией по категории"""
     try:
-        # Синхронизируем события из Polymarket (если их мало)
-        event_count = db.query(Event).filter(Event.is_active == True).count()
-        if event_count < 10:
-            sync_polymarket_events(db, category=category)
+        # Периодически синхронизируем события из Polymarket
+        await maybe_sync_polymarket_events(db)
         
         # Базовый запрос
         query = db.query(Event).filter(
@@ -273,7 +330,8 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                             event_id=event.id,
                             option_index=idx,
                             option_text=opt_text,
-                            total_stake=0.0
+                            total_stake=0.0,
+                            market_stake=0.0
                         )
                         db.add(opt)
                     db.commit()
@@ -287,7 +345,10 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
             time_left = int((event.end_time - datetime.utcnow()).total_seconds())
             
             # Вычисляем вероятности на основе ставок
-            total_stakes = sum(opt.total_stake for opt in options) or 1
+            total_stakes = sum(
+                (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
+                for opt in options
+            ) or 1
             
             result.append({
                 "id": event.id,
@@ -302,8 +363,8 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                     {
                         "index": opt.option_index,
                         "text": opt.option_text,
-                        "total_points": opt.total_stake,
-                        "probability": round((opt.total_stake / total_stakes) * 100, 1)
+                        "total_points": (opt.total_stake or 0.0) + (opt.market_stake or 0.0),
+                        "probability": round(((opt.total_stake or 0.0) + (opt.market_stake or 0.0)) / total_stakes * 100, 1)
                     }
                     for opt in options
                 ]
@@ -793,6 +854,8 @@ async def force_sync_polymarket(
     """Принудительная синхронизация с Polymarket"""
     try:
         count = sync_polymarket_events(db)
+        global last_polymarket_sync
+        last_polymarket_sync = datetime.utcnow()
         return {
             "success": True,
             "synced_events": count,
