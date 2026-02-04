@@ -1,29 +1,9 @@
 {
     "version": 2,
-    "framework": null,
-    "installCommand": "pip install -r api/requirements.txt",
-    "buildCommand": null,
-    "outputDirectory": null,
     "rewrites": [
         {
-            "source": "/api/(.*)",
-            "destination": "/api/index.py"
-        },
-        {
-            "source": "/events",
-            "destination": "/api/index.py"
-        },
-        {
-            "source": "/user/(.*)",
-            "destination": "/api/index.py"
-        },
-        {
-            "source": "/sync/(.*)",
-            "destination": "/api/index.py"
-        },
-        {
             "source": "/(.*)",
-            "destination": "/frontend/index.html"
+            "destination": "/api/app.py"
         }
     ]
 }
