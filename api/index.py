@@ -390,6 +390,3 @@ async def manual_sync(db: Session = Depends(get_db)):
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
-
-# Vercel serverless handler
-handler = app
