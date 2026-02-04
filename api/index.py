@@ -77,7 +77,7 @@ def detect_category(title: str, description: str = '') -> str:
         return max(category_scores, key=category_scores.get)
     return 'other'
 
-def fetch_polymarket_events(category: str = None, limit: int = 50):
+def fetch_polymarket_events(limit: int = 50, category: str = None):
     """Получает активные события из Polymarket API"""
     try:
         # Получаем список активных рынков
