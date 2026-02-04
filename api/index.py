@@ -7,12 +7,9 @@ import json
 import requests
 from typing import List, Optional
 import os
+import asyncio
 from http.server import BaseHTTPRequestHandler
-from io import BytesIO
 from urllib.parse import urlsplit
-from wsgiref.handlers import SimpleHandler
-from wsgiref.util import setup_testing_defaults
-from asgiref.wsgi import AsgiToWsgi
 
 # Импорт моделей
 try:
@@ -466,33 +463,53 @@ async def manual_sync(db: Session = Depends(get_db)):
 async def health_check():
     return {"status": "healthy"}
 
-# Vercel expects a BaseHTTPRequestHandler subclass; adapt FastAPI via WSGI.
-wsgi_app = AsgiToWsgi(app)
-
 class handler(BaseHTTPRequestHandler):
     def _run_app(self):
         body_length = int(self.headers.get("content-length", 0) or 0)
         body = self.rfile.read(body_length) if body_length > 0 else b""
 
-        environ = {}
-        setup_testing_defaults(environ)
         url = urlsplit(self.path)
-        environ["REQUEST_METHOD"] = self.command
-        environ["PATH_INFO"] = url.path
-        environ["QUERY_STRING"] = url.query
-        environ["CONTENT_LENGTH"] = str(body_length)
-        environ["CONTENT_TYPE"] = self.headers.get("content-type", "")
-        environ["wsgi.input"] = BytesIO(body)
-        environ["REMOTE_ADDR"] = self.client_address[0]
+        headers = [
+            (key.lower().encode("latin-1"), value.encode("latin-1"))
+            for key, value in self.headers.items()
+        ]
 
-        for key, value in self.headers.items():
-            header_key = "HTTP_" + key.upper().replace("-", "_")
-            if header_key in ("HTTP_CONTENT_TYPE", "HTTP_CONTENT_LENGTH"):
-                continue
-            environ[header_key] = value
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": self.request_version.replace("HTTP/", ""),
+            "method": self.command,
+            "scheme": "https",
+            "path": url.path,
+            "raw_path": url.path.encode("utf-8"),
+            "query_string": url.query.encode("utf-8"),
+            "headers": headers,
+            "client": self.client_address,
+            "server": (self.server.server_address[0], self.server.server_address[1]),
+        }
 
-        handler = SimpleHandler(BytesIO(body), self.wfile, self.wfile, environ)
-        handler.run(wsgi_app)
+        response = {"status": 500, "headers": [], "body": b""}
+
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        async def send(message):
+            if message["type"] == "http.response.start":
+                response["status"] = message["status"]
+                response["headers"] = message.get("headers", [])
+            elif message["type"] == "http.response.body":
+                response["body"] += message.get("body", b"")
+
+        async def app_runner():
+            await app(scope, receive, send)
+
+        asyncio.run(app_runner())
+
+        self.send_response(response["status"])
+        for key, value in response["headers"]:
+            self.send_header(key.decode("latin-1"), value.decode("latin-1"))
+        self.end_headers()
+        self.wfile.write(response["body"])
 
     def do_GET(self):
         self._run_app()
