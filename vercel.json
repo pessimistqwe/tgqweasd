@@ -3,17 +3,33 @@
     "builds": [
         {
             "src": "api/index.py",
-            "use": "@vercel/python",
-            "config": {
-                "runtime": "python3.9",
-                "maxLambdaSize": "15mb"
-            }
+            "use": "@vercel/python"
+        },
+        {
+            "src": "frontend/index.html",
+            "use": "@vercel/static"
         }
     ],
     "routes": [
         {
-            "src": "/(.*)",
+            "src": "/api/(.*)",
             "dest": "api/index.py"
+        },
+        {
+            "src": "/events",
+            "dest": "api/index.py"
+        },
+        {
+            "src": "/user/(.*)",
+            "dest": "api/index.py"
+        },
+        {
+            "src": "/sync/(.*)",
+            "dest": "api/index.py"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "frontend/index.html"
         }
     ]
 }
