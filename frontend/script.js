@@ -5,176 +5,155 @@ let currentOptionIndex = null;
 
 document.addEventListener('DOMContentLoaded', function() {
     tg.expand();
+    tg.ready();
+    
+    // Убираем загрузку
     setTimeout(() => {
         document.getElementById('loading').classList.add('hidden');
     }, 500);
-    loadEvents();
+    
+    // Сначала синхронизируем с Polymarket (crypto раздел), потом грузим события
+    syncPolymarketAndLoadEvents();
     loadUserBalance();
 });
 
-async function apiRequest(url, options = {}) {
+// Синхронизация с Polymarket + загрузка событий
+async function syncPolymarketAndLoadEvents() {
+    const eventsContainer = document.getElementById('events-container');
+    eventsContainer.innerHTML = '<div class="loading-spinner"></div><p style="text-align:center;color:#888;">Синхронизация с Polymarket...</p>';
+    
     try {
-        const response = await fetch(`${backendUrl}${url}`, {
-            headers: { 'Content-Type': 'application/json' },
-            ...options
+        // Шаг 1: Запускаем синхронизацию с Polymarket (только crypto события)
+        const syncResponse = await fetch(`${backendUrl}/sync/polymarket`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
         });
         
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Ошибка запроса');
+        if (!syncResponse.ok) {
+            console.warn('Sync warning:', await syncResponse.text());
+        } else {
+            const syncData = await syncResponse.json();
+            console.log('Sync status:', syncData);
         }
         
-        return await response.json();
+        // Подождём немного для фоновой обработки
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // Шаг 2: Загружаем события
+        await loadEvents();
+        
     } catch (error) {
-        console.error('API Error:', error);
-        throw error;
+        console.error('Sync error:', error);
+        // Если синхронизация не сработала - пробуем просто загрузить
+        await loadEvents();
     }
 }
 
+// Загрузка событий
 async function loadEvents() {
+    const eventsContainer = document.getElementById('events-container');
+    
     try {
-        const container = document.getElementById('events-container');
-        container.innerHTML = '<div style="text-align:center"><div class="spinner"></div></div>';
+        const response = await fetch(`${backendUrl}/events`);
         
-        const data = await apiRequest('/events');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Events loaded:', data);
         
         if (!data.events || data.events.length === 0) {
-            container.innerHTML = '<p style="text-align:center;color:var(--text-secondary)">Нет событий</p>';
+            eventsContainer.innerHTML = `
+                <div style="text-align:center;padding:40px;color:#888;">
+                    <p>😕 Нет активных событий</p>
+                    <button onclick="syncPolymarketAndLoadEvents()" 
+                            style="margin-top:20px;padding:10px 20px;background:#22c55e;border:none;border-radius:8px;color:white;cursor:pointer;">
+                        🔄 Обновить с Polymarket
+                    </button>
+                </div>
+            `;
             return;
         }
         
-        container.innerHTML = data.events.map(event => createEventCard(event)).join('');
+        // Отображаем события
+        eventsContainer.innerHTML = data.events.map(event => `
+            <div class="event-card" onclick="openEvent(${event.id})">
+                <div class="event-header">
+                    <h3>${escapeHtml(event.title)}</h3>
+                    <span class="time-left">⏱️ ${formatTime(event.time_left)}</span>
+                </div>
+                <p class="event-description">${escapeHtml(event.description || '')}</p>
+                <div class="event-pool">💰 Пул: ${event.total_pool || 0} USDT</div>
+                <div class="options-preview">
+                    ${event.options.map((opt, idx) => `
+                        <span class="option-tag">${escapeHtml(opt.text)}</span>
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+        
     } catch (error) {
-        showNotification('Не удалось загрузить события', 'error');
+        console.error('Error loading events:', error);
+        eventsContainer.innerHTML = `
+            <div style="text-align:center;padding:40px;color:#ff6b6b;">
+                <p>❌ Ошибка загрузки</p>
+                <p style="font-size:12px;color:#666;">${error.message}</p>
+                <button onclick="syncPolymarketAndLoadEvents()" 
+                        style="margin-top:20px;padding:10px 20px;background:#22c55e;border:none;border-radius:8px;color:white;cursor:pointer;">
+                    🔄 Повторить
+                </button>
+            </div>
+        `;
     }
 }
 
-function createEventCard(event) {
-    const timeLeft = formatTimeLeft(event.time_left);
-    return `
-        <div class="event-card">
-            <h3 class="event-title">${escapeHtml(event.title)}</h3>
-            ${event.description ? `<p class="event-description">${escapeHtml(event.description)}</p>` : ''}
-            <div class="event-timer">⏱️ ${timeLeft}</div>
-            <div class="options-container">
-                ${event.options.map(opt => createOptionButton(event.id, opt)).join('')}
-            </div>
-        </div>
-    `;
+// Загрузка баланса пользователя
+async function loadUserBalance() {
+    if (!tg.initDataUnsafe?.user?.id) {
+        console.log('No user data');
+        return;
+    }
+    
+    const userId = tg.initDataUnsafe.user.id;
+    
+    try {
+        const response = await fetch(`${backendUrl}/user/${userId}`);
+        const data = await response.json();
+        
+        // Обновляем отображение баланса
+        const balanceEl = document.getElementById('user-balance');
+        if (balanceEl && data.balance_usdt !== undefined) {
+            balanceEl.innerHTML = `💎 ${data.balance_usdt.toFixed(2)} USDT`;
+        }
+    } catch (error) {
+        console.error('Balance load error:', error);
+    }
 }
 
-function createOptionButton(eventId, option) {
-    return `
-        <button class="option-btn" onclick="openBetModal(${eventId}, ${option.index}, '${escapeHtml(option.text)}')">
-            <span>${escapeHtml(option.text)}</span>
-            <span>${Math.floor(option.total_points)} очков</span>
-        </button>
-    `;
+// Открытие события для ставки
+function openEvent(eventId) {
+    currentEventId = eventId;
+    // TODO: показать модальное окно с опциями
+    console.log('Open event:', eventId);
 }
 
-function formatTimeLeft(seconds) {
-    if (seconds < 0) return "Время вышло";
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    return hours > 0 ? `${hours}ч ${minutes}м` : `${minutes}м`;
-}
-
+// Вспомогательные функции
 function escapeHtml(text) {
+    if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-async function loadUserBalance() {
-    try {
-        const userId = tg.initDataUnsafe?.user?.id;
-        if (!userId) return;
-        
-        const data = await apiRequest(`/user/${userId}`);
-        document.getElementById('user-balance').textContent = Math.floor(data.points);
-        document.getElementById('profile-balance').textContent = `${Math.floor(data.points)} очков`;
-        document.getElementById('active-predictions').textContent = data.stats.active_predictions;
-    } catch (error) {
-        console.error('Ошибка загрузки баланса:', error);
-    }
+function formatTime(seconds) {
+    if (!seconds || seconds < 0) return 'Завершено';
+    const hours = Math.floor(seconds / 3600);
+    const days = Math.floor(hours / 24);
+    if (days > 0) return `${days}д ${hours % 24}ч`;
+    return `${hours}ч ${Math.floor((seconds % 3600) / 60)}м`;
 }
 
-function showSection(sectionName) {
-    document.querySelectorAll('.section').forEach(section => section.classList.add('hidden'));
-    document.getElementById(`${sectionName}-section`).classList.remove('hidden');
-    
-    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.closest('.nav-btn').classList.add('active');
-}
-
-function openBetModal(eventId, optionIndex, optionText) {
-    const eventCard = document.querySelector(`[onclick*="${eventId}"]`).closest('.event-card');
-    const title = eventCard.querySelector('.event-title').textContent;
-    
-    document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-option').textContent = `Вариант: ${optionText}`;
-    document.getElementById('bet-modal').classList.remove('hidden');
-    
-    currentEventId = eventId;
-    currentOptionIndex = optionIndex;
-}
-
-function closeModal() {
-    document.getElementById('bet-modal').classList.add('hidden');
-    currentEventId = null; currentOptionIndex = null;
-}
-
-async function confirmPrediction() {
-    const points = parseInt(document.getElementById('points-input').value);
-    if (!points || points < 1) {
-        showNotification('Введите корректную сумму', 'error');
-        return;
-    }
-    
-    const userId = tg.initDataUnsafe?.user?.id;
-    if (!userId) {
-        showNotification('Ошибка авторизации', 'error');
-        return;
-    }
-    
-    try {
-        const confirmBtn = document.querySelector('.modal-btn.confirm');
-        confirmBtn.textContent = 'Отправка...';
-        confirmBtn.disabled = true;
-        
-        await apiRequest('/predict', {
-            method: 'POST',
-            body: JSON.stringify({
-                telegram_id: userId,
-                event_id: currentEventId,
-                option_index: currentOptionIndex,
-                points: points
-            })
-        });
-        
-        showNotification('Прогноз принят! ✅', 'success');
-        closeModal();
-        loadEvents();
-        loadUserBalance();
-    } catch (error) {
-        showNotification(error.message || 'Ошибка прогноза', 'error');
-    } finally {
-        const confirmBtn = document.querySelector('.modal-btn.confirm');
-        confirmBtn.textContent = 'Прогноз';
-        confirmBtn.disabled = false;
-    }
-}
-
-function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-        background: ${type === 'error' ? '#E22134' : 'var(--accent)'}; color: white;
-        padding: 12px 20px; border-radius: 8px; z-index: 2000; font-weight: 600;
-    `;
-    notification.textContent = message;
-    document.body.appendChild(notification);
-    setTimeout(() => notification.remove(), 3000);
-
-}
-
+// Экспорт для использования в HTML
+window.syncPolymarketAndLoadEvents = syncPolymarketAndLoadEvents;
+window.loadEvents = loadEvents;
