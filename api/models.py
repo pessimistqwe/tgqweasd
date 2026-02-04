@@ -86,6 +86,7 @@ class EventOption(Base):
     option_index = Column(Integer, nullable=False)
     option_text = Column(String(255), nullable=False)
     total_stake = Column(Float, default=0.0)
+    market_stake = Column(Float, default=0.0)
     
     event = relationship("Event", back_populates="event_options")
 
