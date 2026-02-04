@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -7,6 +7,9 @@ import json
 import requests
 from typing import List, Optional
 import os
+import asyncio
+from http.server import BaseHTTPRequestHandler
+from urllib.parse import urlsplit
 
 # Импорт моделей
 try:
@@ -31,11 +34,47 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Vercel routes keep the "/api" prefix; strip it so FastAPI routes match.
+@app.middleware("http")
+async def strip_api_prefix(request, call_next):
+    path = request.scope.get("path", "")
+    if path == "/api":
+        request.scope["path"] = "/"
+    elif path.startswith("/api/"):
+        request.scope["path"] = path[4:] or "/"
+    return await call_next(request)
+
 # ==================== POLYMARKET API INTEGRATION ====================
 
 POLYMARKET_API_URL = "https://gamma-api.polymarket.com"
+POLYMARKET_SYNC_INTERVAL_SECONDS = int(os.getenv("POLYMARKET_SYNC_INTERVAL", "300"))
+last_polymarket_sync = datetime.min
 
-def fetch_polymarket_events():
+# Ключевые слова для определения категорий
+CATEGORY_KEYWORDS = {
+    'politics': ['trump', 'biden', 'election', 'president', 'congress', 'senate', 'vote', 'democrat', 'republican', 'political', 'government', 'minister', 'parliament', 'putin', 'zelensky', 'ukraine', 'russia', 'china', 'nato'],
+    'sports': ['nba', 'nfl', 'mlb', 'soccer', 'football', 'basketball', 'baseball', 'tennis', 'golf', 'ufc', 'boxing', 'f1', 'formula', 'championship', 'world cup', 'super bowl', 'olympics', 'game', 'match', 'team', 'player'],
+    'crypto': ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'blockchain', 'defi', 'nft', 'token', 'coin', 'binance', 'coinbase', 'solana', 'dogecoin', 'altcoin', 'mining'],
+    'pop_culture': ['movie', 'film', 'oscar', 'grammy', 'emmy', 'celebrity', 'music', 'album', 'artist', 'actor', 'actress', 'tv show', 'netflix', 'disney', 'marvel', 'star wars', 'taylor swift', 'beyonce', 'kanye'],
+    'business': ['stock', 'market', 'company', 'ceo', 'ipo', 'merger', 'earnings', 'revenue', 'tesla', 'apple', 'google', 'amazon', 'microsoft', 'nvidia', 'ai', 'layoff', 'startup', 'fed', 'interest rate', 'inflation'],
+    'science': ['nasa', 'spacex', 'rocket', 'mars', 'moon', 'climate', 'vaccine', 'fda', 'research', 'discovery', 'scientist', 'study', 'experiment', 'technology', 'ai model', 'gpt', 'openai']
+}
+
+def detect_category(title: str, description: str = '') -> str:
+    """Определяет категорию события по заголовку и описанию"""
+    text = (title + ' ' + (description or '')).lower()
+
+    category_scores = {}
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        score = sum(1 for keyword in keywords if keyword in text)
+        if score > 0:
+            category_scores[category] = score
+
+    if category_scores:
+        return max(category_scores, key=category_scores.get)
+    return 'other'
+
+def fetch_polymarket_events(limit: int = 50, category: str = None):
     """Получает активные события из Polymarket API"""
     try:
         # Получаем список активных рынков
@@ -44,7 +83,7 @@ def fetch_polymarket_events():
             params={
                 "closed": "false",
                 "active": "true",
-                "limit": 20
+                "limit": limit
             },
             timeout=10
         )
@@ -58,10 +97,19 @@ def fetch_polymarket_events():
                 continue
                 
             # Формируем структуру события
+            title = market.get('question', '')
+            description = market.get('description', '')
+            detected_category = detect_category(title, description)
+
+            if category and category != 'all' and detected_category != category:
+                continue
+
             event_data = {
                 'polymarket_id': market.get('conditionId', ''),
-                'title': market.get('question', ''),
-                'description': market.get('description', ''),
+                'title': title,
+                'description': description,
+                'category': detected_category,
+                'image_url': market.get('image', ''),
                 'end_time': market.get('endDate', ''),
                 'options': [],
                 'volumes': []
@@ -71,7 +119,8 @@ def fetch_polymarket_events():
             tokens = market.get('tokens', [])
             for token in tokens:
                 event_data['options'].append(token.get('outcome', ''))
-                event_data['volumes'].append(float(token.get('price', 0)) * 1000)
+                price = float(token.get('price', 0.5) or 0.5)
+                event_data['volumes'].append(price * 1000)
             
             # Если опций нет, создаём дефолтные
             if not event_data['options']:
@@ -85,54 +134,106 @@ def fetch_polymarket_events():
         print(f"Error fetching Polymarket events: {e}")
         return []
 
+def parse_polymarket_end_time(end_time: str) -> datetime:
+    if not end_time:
+        return datetime.utcnow() + timedelta(days=7)
+    try:
+        return datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+    except Exception:
+        return datetime.utcnow() + timedelta(days=7)
+
+def update_event_total_pool(db: Session, event: Event) -> None:
+    options = db.query(EventOption).filter(EventOption.event_id == event.id).all()
+    event.total_pool = sum(
+        (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
+        for opt in options
+    )
+
+def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
+    end_time = parse_polymarket_end_time(pm_event.get('end_time'))
+    is_active = end_time > datetime.utcnow()
+    options = pm_event.get('options', [])
+    volumes = pm_event.get('volumes', [])
+
+    existing = db.query(Event).filter(
+        Event.polymarket_id == pm_event['polymarket_id']
+    ).first()
+
+    if existing:
+        existing.title = pm_event['title'][:500]
+        existing.description = pm_event['description'][:1000] if pm_event['description'] else None
+        existing.category = pm_event.get('category', existing.category)
+        existing.image_url = pm_event.get('image_url', '')
+        existing.end_time = end_time
+        existing.is_active = is_active
+        existing.options = json.dumps(options)
+
+        existing_options = {
+            opt.option_index: opt
+            for opt in db.query(EventOption).filter(EventOption.event_id == existing.id).all()
+        }
+
+        for idx, (option_text, volume) in enumerate(zip(options, volumes)):
+            option = existing_options.get(idx)
+            if option:
+                option.option_text = option_text
+                option.market_stake = volume
+            else:
+                db.add(EventOption(
+                    event_id=existing.id,
+                    option_index=idx,
+                    option_text=option_text,
+                    total_stake=0.0,
+                    market_stake=volume
+                ))
+
+        for idx, option in existing_options.items():
+            if idx >= len(options):
+                db.delete(option)
+
+        update_event_total_pool(db, existing)
+        return False
+
+    new_event = Event(
+        polymarket_id=pm_event['polymarket_id'],
+        title=pm_event['title'][:500],
+        description=pm_event['description'][:1000] if pm_event['description'] else None,
+        category=pm_event.get('category', 'other'),
+        image_url=pm_event.get('image_url', ''),
+        options=json.dumps(options),
+        end_time=end_time,
+        is_active=is_active,
+        is_moderated=True,
+        total_pool=sum(volumes)
+    )
+    db.add(new_event)
+    db.flush()
+
+    for idx, (option_text, volume) in enumerate(zip(options, volumes)):
+        db.add(EventOption(
+            event_id=new_event.id,
+            option_index=idx,
+            option_text=option_text,
+            total_stake=0.0,
+            market_stake=volume
+        ))
+
+    return True
+
 def sync_polymarket_events(db: Session):
     """Синхронизирует события из Polymarket в БД"""
     try:
-        polymarket_events = fetch_polymarket_events()
+        polymarket_events = fetch_polymarket_events(limit=100)
+        synced_count = 0
         
         for pm_event in polymarket_events:
-            # Проверяем, существует ли событие
-            existing = db.query(Event).filter(
-                Event.polymarket_id == pm_event['polymarket_id']
-            ).first()
-            
-            if existing:
-                continue  # Событие уже есть
-            
-            # Парсим дату окончания
-            try:
-                end_time = datetime.fromisoformat(pm_event['end_time'].replace('Z', '+00:00'))
-            except:
-                end_time = datetime.utcnow() + timedelta(days=7)
-            
-            # Создаём событие
-            new_event = Event(
-                polymarket_id=pm_event['polymarket_id'],
-                title=pm_event['title'][:500],
-                description=pm_event['description'][:1000] if pm_event['description'] else None,
-                options=json.dumps(pm_event['options']),
-                end_time=end_time,
-                is_active=True,
-                is_moderated=True,
-                total_pool=sum(pm_event['volumes'])
-            )
-            db.add(new_event)
-            db.flush()
-            
-            # Создаём опции
-            for idx, (option_text, volume) in enumerate(zip(pm_event['options'], pm_event['volumes'])):
-                event_option = EventOption(
-                    event_id=new_event.id,
-                    option_index=idx,
-                    option_text=option_text,
-                    total_stake=volume
-                )
-                db.add(event_option)
-            
+            created = upsert_polymarket_event(db, pm_event)
+            update_event = "Added" if created else "Updated"
             db.commit()
-            print(f"✅ Added event: {new_event.title}")
+            synced_count += 1
+            print(f"✅ {update_event} event: {pm_event['title']}")
         
-        return len(polymarket_events)
+        return synced_count
     except Exception as e:
         db.rollback()
         print(f"Error syncing events: {e}")
@@ -158,20 +259,41 @@ class UserResponse(BaseModel):
 async def root():
     return {"status": "ok", "message": "EventPredict API"}
 
+@app.get("/categories")
+async def get_categories():
+    """Получить список категорий"""
+    return {
+        "categories": [
+            {"id": "all", "name": "All", "icon": "🔥", "name_ru": "Все"},
+            {"id": "politics", "name": "Politics", "icon": "🏛️", "name_ru": "Политика"},
+            {"id": "sports", "name": "Sports", "icon": "⚽", "name_ru": "Спорт"},
+            {"id": "crypto", "name": "Crypto", "icon": "₿", "name_ru": "Крипто"},
+            {"id": "pop_culture", "name": "Pop Culture", "icon": "🎬", "name_ru": "Поп-культура"},
+            {"id": "business", "name": "Business", "icon": "📈", "name_ru": "Бизнес"},
+            {"id": "science", "name": "Science", "icon": "🔬", "name_ru": "Наука"},
+            {"id": "other", "name": "Other", "icon": "📌", "name_ru": "Другое"}
+        ]
+    }
+
 @app.get("/events")
-async def get_events(db: Session = Depends(get_db)):
-    """Получить все активные события"""
+async def get_events(category: str = None, db: Session = Depends(get_db)):
+    """Получить события с фильтрацией по категории"""
     try:
-        # Синхронизируем события из Polymarket (если их мало)
-        event_count = db.query(Event).filter(Event.is_active == True).count()
-        if event_count < 5:
+        global last_polymarket_sync
+        now = datetime.utcnow()
+        if (now - last_polymarket_sync).total_seconds() >= POLYMARKET_SYNC_INTERVAL_SECONDS:
             sync_polymarket_events(db)
+            last_polymarket_sync = datetime.utcnow()
         
-        # Получаем активные события
-        events = db.query(Event).filter(
+        query = db.query(Event).filter(
             Event.is_active == True,
             Event.end_time > datetime.utcnow()
-        ).order_by(Event.created_at.desc()).limit(50).all()
+        )
+
+        if category and category != 'all':
+            query = query.filter(Event.category == category)
+
+        events = query.order_by(Event.total_pool.desc()).limit(50).all()
         
         result = []
         for event in events:
@@ -189,7 +311,8 @@ async def get_events(db: Session = Depends(get_db)):
                             event_id=event.id,
                             option_index=idx,
                             option_text=opt_text,
-                            total_stake=0.0
+                            total_stake=0.0,
+                            market_stake=0.0
                         )
                         db.add(opt)
                     db.commit()
@@ -201,11 +324,17 @@ async def get_events(db: Session = Depends(get_db)):
             
             # Вычисляем оставшееся время
             time_left = int((event.end_time - datetime.utcnow()).total_seconds())
+            total_stakes = sum(
+                (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
+                for opt in options
+            ) or 1
             
             result.append({
                 "id": event.id,
                 "title": event.title,
                 "description": event.description,
+                "category": event.category or "other",
+                "image_url": event.image_url,
                 "end_time": event.end_time.isoformat(),
                 "time_left": max(0, time_left),
                 "total_pool": event.total_pool,
@@ -213,7 +342,8 @@ async def get_events(db: Session = Depends(get_db)):
                     {
                         "index": opt.option_index,
                         "text": opt.option_text,
-                        "total_points": opt.total_stake
+                        "total_points": (opt.total_stake or 0.0) + (opt.market_stake or 0.0),
+                        "probability": round(((opt.total_stake or 0.0) + (opt.market_stake or 0.0)) / total_stakes * 100, 1)
                     }
                     for opt in options
                 ]
@@ -333,5 +463,68 @@ async def manual_sync(db: Session = Depends(get_db)):
 async def health_check():
     return {"status": "healthy"}
 
-# Vercel serverless handler
-handler = app
+class handler(BaseHTTPRequestHandler):
+    def _run_app(self):
+        body_length = int(self.headers.get("content-length", 0) or 0)
+        body = self.rfile.read(body_length) if body_length > 0 else b""
+
+        url = urlsplit(self.path)
+        headers = [
+            (key.lower().encode("latin-1"), value.encode("latin-1"))
+            for key, value in self.headers.items()
+        ]
+
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": self.request_version.replace("HTTP/", ""),
+            "method": self.command,
+            "scheme": "https",
+            "path": url.path,
+            "raw_path": url.path.encode("utf-8"),
+            "query_string": url.query.encode("utf-8"),
+            "headers": headers,
+            "client": self.client_address,
+            "server": (self.server.server_address[0], self.server.server_address[1]),
+        }
+
+        response = {"status": 500, "headers": [], "body": b""}
+
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        async def send(message):
+            if message["type"] == "http.response.start":
+                response["status"] = message["status"]
+                response["headers"] = message.get("headers", [])
+            elif message["type"] == "http.response.body":
+                response["body"] += message.get("body", b"")
+
+        async def app_runner():
+            await app(scope, receive, send)
+
+        asyncio.run(app_runner())
+
+        self.send_response(response["status"])
+        for key, value in response["headers"]:
+            self.send_header(key.decode("latin-1"), value.decode("latin-1"))
+        self.end_headers()
+        self.wfile.write(response["body"])
+
+    def do_GET(self):
+        self._run_app()
+
+    def do_POST(self):
+        self._run_app()
+
+    def do_PUT(self):
+        self._run_app()
+
+    def do_PATCH(self):
+        self._run_app()
+
+    def do_DELETE(self):
+        self._run_app()
+
+    def do_OPTIONS(self):
+        self._run_app()
