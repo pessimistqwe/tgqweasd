@@ -36,6 +36,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Support Vercel-style "/api" prefix by stripping it for routing.
+@app.middleware("http")
+async def strip_api_prefix(request, call_next):
+    path = request.scope.get("path", "")
+    if path == "/api":
+        request.scope["path"] = "/"
+    elif path.startswith("/api/"):
+        request.scope["path"] = path[4:] or "/"
+    return await call_next(request)
+
 # ==================== POLYMARKET API INTEGRATION ====================
 
 POLYMARKET_API_URL = "https://gamma-api.polymarket.com"
