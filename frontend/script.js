@@ -1,5 +1,5 @@
 let tg = window.Telegram.WebApp;
-const backendUrl = 'https://tgqweasd.vercel.app';
+let backendUrl = "https://tgqweasd.vercel.app";
 let currentEventId = null;
 let currentOptionIndex = null;
 
@@ -177,3 +177,4 @@ function showNotification(message, type = 'info') {
     setTimeout(() => notification.remove(), 3000);
 
 }
+
