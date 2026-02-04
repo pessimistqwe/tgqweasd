@@ -139,11 +139,23 @@ async function loadEvents(silent = false) {
             `;
         }
         
-        const url = currentCategory && currentCategory !== 'all' 
-            ? `/events?category=${currentCategory}` 
-            : '/events';
+        // Сначала пробуем получить live данные из Polymarket
+        let url = currentCategory && currentCategory !== 'all' 
+            ? `/polymarket/live?category=${currentCategory}&limit=30` 
+            : '/polymarket/live?limit=30';
         
-        const data = await apiRequest(url);
+        let data;
+        try {
+            data = await apiRequest(url);
+            console.log('[v0] Loaded from Polymarket:', data.source, data.count);
+        } catch (e) {
+            console.log('[v0] Polymarket failed, trying DB:', e);
+            // Fallback к событиям из БД
+            url = currentCategory && currentCategory !== 'all' 
+                ? `/events?category=${currentCategory}` 
+                : '/events';
+            data = await apiRequest(url);
+        }
         
         if (!data.events || data.events.length === 0) {
             container.innerHTML = `

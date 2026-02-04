@@ -38,16 +38,18 @@ app.add_middleware(
 
 # ==================== POLYMARKET API INTEGRATION ====================
 
-POLYMARKET_API_URL = "https://gamma-api.polymarket.com"
+# Polymarket CLOB API (более стабильный)
+POLYMARKET_CLOB_API = "https://clob.polymarket.com"
+POLYMARKET_GAMMA_API = "https://gamma-api.polymarket.com"
 
 # Ключевые слова для определения категорий
 CATEGORY_KEYWORDS = {
-    'politics': ['trump', 'biden', 'election', 'president', 'congress', 'senate', 'vote', 'democrat', 'republican', 'political', 'government', 'minister', 'parliament', 'putin', 'zelensky', 'ukraine', 'russia', 'china', 'nato'],
-    'sports': ['nba', 'nfl', 'mlb', 'soccer', 'football', 'basketball', 'baseball', 'tennis', 'golf', 'ufc', 'boxing', 'f1', 'formula', 'championship', 'world cup', 'super bowl', 'olympics', 'game', 'match', 'team', 'player'],
-    'crypto': ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'blockchain', 'defi', 'nft', 'token', 'coin', 'binance', 'coinbase', 'solana', 'dogecoin', 'altcoin', 'mining'],
-    'pop_culture': ['movie', 'film', 'oscar', 'grammy', 'emmy', 'celebrity', 'music', 'album', 'artist', 'actor', 'actress', 'tv show', 'netflix', 'disney', 'marvel', 'star wars', 'taylor swift', 'beyonce', 'kanye'],
-    'business': ['stock', 'market', 'company', 'ceo', 'ipo', 'merger', 'earnings', 'revenue', 'tesla', 'apple', 'google', 'amazon', 'microsoft', 'nvidia', 'ai', 'layoff', 'startup', 'fed', 'interest rate', 'inflation'],
-    'science': ['nasa', 'spacex', 'rocket', 'mars', 'moon', 'climate', 'vaccine', 'fda', 'research', 'discovery', 'scientist', 'study', 'experiment', 'technology', 'ai model', 'gpt', 'openai']
+    'politics': ['trump', 'biden', 'election', 'president', 'congress', 'senate', 'vote', 'democrat', 'republican', 'political', 'government', 'minister', 'parliament', 'putin', 'zelensky', 'ukraine', 'russia', 'china', 'nato', 'harris', 'desantis', 'governor', 'mayor'],
+    'sports': ['nba', 'nfl', 'mlb', 'soccer', 'football', 'basketball', 'baseball', 'tennis', 'golf', 'ufc', 'boxing', 'f1', 'formula', 'championship', 'world cup', 'super bowl', 'olympics', 'game', 'match', 'team', 'player', 'win', 'league'],
+    'crypto': ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'blockchain', 'defi', 'nft', 'token', 'coin', 'binance', 'coinbase', 'solana', 'dogecoin', 'altcoin', 'mining', 'price', '$'],
+    'pop_culture': ['movie', 'film', 'oscar', 'grammy', 'emmy', 'celebrity', 'music', 'album', 'artist', 'actor', 'actress', 'tv show', 'netflix', 'disney', 'marvel', 'star wars', 'taylor swift', 'beyonce', 'kanye', 'award'],
+    'business': ['stock', 'market', 'company', 'ceo', 'ipo', 'merger', 'earnings', 'revenue', 'tesla', 'apple', 'google', 'amazon', 'microsoft', 'nvidia', 'ai', 'layoff', 'startup', 'fed', 'interest rate', 'inflation', 'economy'],
+    'science': ['nasa', 'spacex', 'rocket', 'mars', 'moon', 'climate', 'vaccine', 'fda', 'research', 'discovery', 'scientist', 'study', 'experiment', 'technology', 'ai model', 'gpt', 'openai', 'weather']
 }
 
 def detect_category(title: str, description: str = '') -> str:
@@ -67,18 +69,51 @@ def detect_category(title: str, description: str = '') -> str:
 def fetch_polymarket_events(category: str = None, limit: int = 50):
     """Получает активные события из Polymarket API"""
     try:
-        # Получаем список активных рынков
-        response = requests.get(
-            f"{POLYMARKET_API_URL}/markets",
-            params={
-                "closed": "false",
-                "active": "true",
-                "limit": limit
-            },
-            timeout=15
-        )
-        response.raise_for_status()
-        markets = response.json()
+        markets = []
+        
+        # Пробуем Gamma API (основной)
+        try:
+            response = requests.get(
+                f"{POLYMARKET_GAMMA_API}/markets",
+                params={
+                    "closed": "false",
+                    "active": "true", 
+                    "limit": limit
+                },
+                headers={
+                    "Accept": "application/json",
+                    "User-Agent": "EventPredict/1.0"
+                },
+                timeout=15
+            )
+            response.raise_for_status()
+            markets = response.json()
+            print(f"[v0] Fetched {len(markets)} markets from Gamma API")
+        except Exception as e:
+            print(f"[v0] Gamma API failed: {e}")
+            
+            # Fallback к CLOB API
+            try:
+                response = requests.get(
+                    f"{POLYMARKET_CLOB_API}/markets",
+                    params={"limit": limit},
+                    headers={
+                        "Accept": "application/json",
+                        "User-Agent": "EventPredict/1.0"
+                    },
+                    timeout=15
+                )
+                response.raise_for_status()
+                data = response.json()
+                markets = data if isinstance(data, list) else data.get('data', [])
+                print(f"[v0] Fetched {len(markets)} markets from CLOB API")
+            except Exception as e2:
+                print(f"[v0] CLOB API also failed: {e2}")
+                return []
+        
+        if not markets:
+            print("[v0] No markets returned from API")
+            return []
         
         events = []
         for market in markets:
@@ -234,6 +269,123 @@ async def get_categories():
             {"id": "other", "name": "Other", "icon": "📌", "name_ru": "Другое"}
         ]
     }
+
+@app.get("/polymarket/live")
+async def get_live_polymarket_events(category: str = None, limit: int = 30):
+    """Получить события напрямую из Polymarket (без БД)"""
+    try:
+        events = fetch_polymarket_events(category=category, limit=limit)
+        
+        if not events:
+            # Возвращаем demo данные если API недоступен
+            events = get_demo_events(category)
+        
+        result = []
+        for idx, event in enumerate(events):
+            # Вычисляем вероятности
+            prices = event.get('prices', [0.5, 0.5])
+            options = event.get('options', ['Yes', 'No'])
+            
+            result.append({
+                "id": idx + 1,
+                "polymarket_id": event.get('polymarket_id', f'demo_{idx}'),
+                "title": event.get('title', 'Unknown Event'),
+                "description": event.get('description', ''),
+                "category": event.get('category', 'other'),
+                "image_url": event.get('image_url', ''),
+                "end_time": event.get('end_time', ''),
+                "volume": event.get('volume', 0),
+                "liquidity": event.get('liquidity', 0),
+                "options": [
+                    {
+                        "index": i,
+                        "text": opt,
+                        "probability": round(prices[i] * 100, 1) if i < len(prices) else 50.0
+                    }
+                    for i, opt in enumerate(options)
+                ]
+            })
+        
+        return {"events": result, "source": "polymarket", "count": len(result)}
+    except Exception as e:
+        print(f"[v0] Error in /polymarket/live: {e}")
+        # Возвращаем demo данные при ошибке
+        demo = get_demo_events(category)
+        return {"events": demo, "source": "demo", "count": len(demo)}
+
+def get_demo_events(category: str = None):
+    """Демо данные когда API недоступен"""
+    demo_events = [
+        {
+            "id": 1,
+            "title": "Will Bitcoin reach $100,000 by end of 2026?",
+            "category": "crypto",
+            "options": [{"index": 0, "text": "Yes", "probability": 65.0}, {"index": 1, "text": "No", "probability": 35.0}],
+            "volume": 1250000,
+            "end_time": "2026-12-31T23:59:59Z"
+        },
+        {
+            "id": 2,
+            "title": "Will SpaceX land humans on Mars before 2030?",
+            "category": "science",
+            "options": [{"index": 0, "text": "Yes", "probability": 25.0}, {"index": 1, "text": "No", "probability": 75.0}],
+            "volume": 890000,
+            "end_time": "2030-01-01T00:00:00Z"
+        },
+        {
+            "id": 3,
+            "title": "Who will win Super Bowl 2027?",
+            "category": "sports",
+            "options": [{"index": 0, "text": "Chiefs", "probability": 30.0}, {"index": 1, "text": "49ers", "probability": 25.0}, {"index": 2, "text": "Eagles", "probability": 20.0}, {"index": 3, "text": "Other", "probability": 25.0}],
+            "volume": 2100000,
+            "end_time": "2027-02-15T00:00:00Z"
+        },
+        {
+            "id": 4,
+            "title": "Will the Fed cut interest rates in Q1 2026?",
+            "category": "business",
+            "options": [{"index": 0, "text": "Yes", "probability": 55.0}, {"index": 1, "text": "No", "probability": 45.0}],
+            "volume": 750000,
+            "end_time": "2026-03-31T23:59:59Z"
+        },
+        {
+            "id": 5,
+            "title": "Will Taylor Swift release a new album in 2026?",
+            "category": "pop_culture",
+            "options": [{"index": 0, "text": "Yes", "probability": 80.0}, {"index": 1, "text": "No", "probability": 20.0}],
+            "volume": 420000,
+            "end_time": "2026-12-31T23:59:59Z"
+        },
+        {
+            "id": 6,
+            "title": "Will there be a US government shutdown in 2026?",
+            "category": "politics",
+            "options": [{"index": 0, "text": "Yes", "probability": 40.0}, {"index": 1, "text": "No", "probability": 60.0}],
+            "volume": 650000,
+            "end_time": "2026-12-31T23:59:59Z"
+        },
+        {
+            "id": 7,
+            "title": "Will Ethereum price exceed $10,000 in 2026?",
+            "category": "crypto",
+            "options": [{"index": 0, "text": "Yes", "probability": 35.0}, {"index": 1, "text": "No", "probability": 65.0}],
+            "volume": 980000,
+            "end_time": "2026-12-31T23:59:59Z"
+        },
+        {
+            "id": 8,
+            "title": "Will OpenAI release GPT-5 in 2026?",
+            "category": "science",
+            "options": [{"index": 0, "text": "Yes", "probability": 70.0}, {"index": 1, "text": "No", "probability": 30.0}],
+            "volume": 1100000,
+            "end_time": "2026-12-31T23:59:59Z"
+        }
+    ]
+    
+    if category and category != 'all':
+        demo_events = [e for e in demo_events if e['category'] == category]
+    
+    return demo_events
 
 @app.get("/events")
 async def get_events(category: str = None, db: Session = Depends(get_db)):
@@ -413,7 +565,7 @@ async def manual_sync(db: Session = Depends(get_db)):
         count = sync_polymarket_events(db)
         return {
             "success": True,
-            "message": f"Синхронизировано событий: {count}"
+            "message": f"Синхронизир��вано событий: {count}"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

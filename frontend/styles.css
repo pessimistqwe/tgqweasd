@@ -57,9 +57,12 @@ body {
     background: var(--bg-primary);
     color: var(--text-primary);
     min-height: 100vh;
+    min-height: 100dvh;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 /* Animated Background */
@@ -196,10 +199,13 @@ body::before {
 .main-content {
     flex: 1;
     padding: 20px 16px;
-    padding-bottom: 100px;
+    padding-bottom: 120px;
     max-width: 600px;
     margin: 0 auto;
     width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
 }
 
 .section { 
