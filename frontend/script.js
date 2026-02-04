@@ -6,23 +6,62 @@ let backendUrl = window.location.hostname === 'localhost'
     
 let currentEventId = null;
 let currentOptionIndex = null;
+let currentCategory = 'all';
+let currentWithdrawalId = null;
+let isAdmin = false;
+let userBalance = 0;
+
+// Auto-refresh interval (30 seconds)
+let autoRefreshInterval = null;
+const AUTO_REFRESH_DELAY = 30000;
+
+const categoryNames = {
+    'all': 'All',
+    'politics': 'Politics',
+    'sports': 'Sports',
+    'crypto': 'Crypto',
+    'pop_culture': 'Culture',
+    'business': 'Business',
+    'science': 'Science',
+    'other': 'Other'
+};
 
 document.addEventListener('DOMContentLoaded', function() {
     tg.expand();
     tg.ready();
     
+    // Telegram theme colors
+    if (tg.themeParams) {
+        document.documentElement.style.setProperty('--bg-primary', tg.themeParams.bg_color || '#0a0a0a');
+        document.documentElement.style.setProperty('--bg-secondary', tg.themeParams.secondary_bg_color || '#141414');
+    }
+    
     setTimeout(() => {
         document.getElementById('loading').classList.add('hidden');
     }, 500);
     
+    // Initial load
     loadEvents();
     loadUserBalance();
+    checkAdminStatus();
+    
+    // Start auto-refresh
+    startAutoRefresh();
 });
+
+function startAutoRefresh() {
+    if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+    autoRefreshInterval = setInterval(() => {
+        const activeSection = document.querySelector('.section:not(.hidden)');
+        if (activeSection && activeSection.id === 'events-section') {
+            loadEvents(true); // Silent refresh
+        }
+    }, AUTO_REFRESH_DELAY);
+}
 
 async function apiRequest(url, options = {}) {
     try {
         const fullUrl = `${backendUrl}${url}`;
-        console.log('API Request:', fullUrl);
         
         const response = await fetch(fullUrl, {
             headers: { 
@@ -39,7 +78,7 @@ async function apiRequest(url, options = {}) {
             } catch {
                 error = { detail: `HTTP ${response.status}: ${response.statusText}` };
             }
-            throw new Error(error.detail || 'Ошибка запроса');
+            throw new Error(error.detail || 'Request error');
         }
         
         return await response.json();
@@ -49,20 +88,75 @@ async function apiRequest(url, options = {}) {
     }
 }
 
-async function loadEvents() {
+// ==================== USER & AUTH ====================
+
+function getUserId() {
+    return tg.initDataUnsafe?.user?.id || 123456789;
+}
+
+function getUsername() {
+    return tg.initDataUnsafe?.user?.username || 
+           tg.initDataUnsafe?.user?.first_name || 
+           'User';
+}
+
+async function checkAdminStatus() {
+    try {
+        const userId = getUserId();
+        const data = await apiRequest(`/admin/check/${userId}`);
+        isAdmin = data.is_admin;
+        
+        if (isAdmin) {
+            document.getElementById('admin-menu-item').style.display = 'flex';
+        }
+    } catch (error) {
+        console.error('Admin check error:', error);
+    }
+}
+
+// ==================== CATEGORIES & EVENTS ====================
+
+function selectCategory(category) {
+    currentCategory = category;
+    
+    document.querySelectorAll('.category-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.category === category);
+    });
+    
+    loadEvents();
+}
+
+async function loadEvents(silent = false) {
     try {
         const container = document.getElementById('events-container');
-        container.innerHTML = '<div style="text-align:center; padding: 40px;"><div class="spinner"></div><p style="color: var(--text-secondary); margin-top: 20px;">Загрузка событий...</p></div>';
         
-        const data = await apiRequest('/events');
-        console.log('Events loaded:', data);
+        if (!silent) {
+            container.innerHTML = `
+                <div class="loading-container">
+                    <div class="spinner"></div>
+                    <p>Loading markets...</p>
+                </div>
+            `;
+        }
+        
+        const url = currentCategory && currentCategory !== 'all' 
+            ? `/events?category=${currentCategory}` 
+            : '/events';
+        
+        const data = await apiRequest(url);
         
         if (!data.events || data.events.length === 0) {
             container.innerHTML = `
-                <div style="text-align:center; padding: 40px;">
-                    <p style="color:var(--text-secondary); font-size: 18px;">📭 Нет активных событий</p>
-                    <button onclick="syncPolymarket()" style="margin-top: 20px; padding: 12px 24px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer;">
-                        🔄 Загрузить события из Polymarket
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                    </div>
+                    <div class="empty-state-title">No markets found</div>
+                    <div class="empty-state-text">There are no active markets in this category</div>
+                    <button class="empty-state-btn" onclick="syncPolymarket()">
+                        Load from Polymarket
                     </button>
                 </div>
             `;
@@ -72,112 +166,311 @@ async function loadEvents() {
         container.innerHTML = data.events.map(event => createEventCard(event)).join('');
     } catch (error) {
         console.error('Load events error:', error);
-        const container = document.getElementById('events-container');
-        container.innerHTML = `
-            <div style="text-align:center; padding: 40px;">
-                <p style="color: #E22134; font-size: 18px;">❌ ${error.message}</p>
-                <button onclick="loadEvents()" style="margin-top: 20px; padding: 12px 24px; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer;">
-                    🔄 Повторить
-                </button>
-            </div>
-        `;
+        if (!silent) {
+            const container = document.getElementById('events-container');
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 8v4M12 16h.01"/>
+                        </svg>
+                    </div>
+                    <div class="empty-state-title">Connection Error</div>
+                    <div class="empty-state-text">${error.message}</div>
+                    <button class="empty-state-btn" onclick="loadEvents()">
+                        Try Again
+                    </button>
+                </div>
+            `;
+        }
     }
 }
 
 async function syncPolymarket() {
     try {
-        showNotification('⏳ Загрузка событий из Polymarket...', 'info');
-        await apiRequest('/admin/sync-polymarket', { method: 'POST' });
-        showNotification('✅ События загружены!', 'success');
+        showNotification('Syncing markets from Polymarket...', 'info');
+        await apiRequest('/admin/force-sync', { method: 'GET' });
+        showNotification('Markets synced successfully!', 'success');
         loadEvents();
     } catch (error) {
-        showNotification('❌ Ошибка загрузки: ' + error.message, 'error');
+        showNotification('Error: ' + error.message, 'error');
     }
 }
 
 function createEventCard(event) {
     const timeLeft = formatTimeLeft(event.time_left);
-    const totalPool = Math.floor(event.total_pool || 0);
+    const totalPool = formatNumber(event.total_pool || 0);
+    const categoryName = categoryNames[event.category] || 'Other';
+    const categoryInitial = categoryName.charAt(0).toUpperCase();
+    
+    const imageHtml = event.image_url 
+        ? `<img src="${event.image_url}" alt="" class="event-image" onerror="this.outerHTML='<div class=\\'event-image-placeholder\\'>${categoryInitial}</div>'">`
+        : `<div class="event-image-placeholder">${categoryInitial}</div>`;
     
     return `
         <div class="event-card">
-            <h3 class="event-title">${escapeHtml(event.title)}</h3>
-            ${event.description ? `<p class="event-description">${escapeHtml(event.description.substring(0, 150))}${event.description.length > 150 ? '...' : ''}</p>` : ''}
-            <div style="display: flex; justify-content: space-between; align-items: center; margin: 12px 0;">
-                <div class="event-timer">⏱️ ${timeLeft}</div>
-                <div style="color: var(--accent); font-weight: 600;">💰 ${totalPool} USDT</div>
+            <div class="event-header">
+                ${imageHtml}
+                <div class="event-info">
+                    <div class="event-category">
+                        <span class="category-badge">${categoryName}</span>
+                    </div>
+                    <h3 class="event-title">${escapeHtml(event.title)}</h3>
+                </div>
             </div>
+            
+            <div class="event-meta">
+                <div class="event-timer">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 6v6l4 2"/>
+                    </svg>
+                    ${timeLeft}
+                </div>
+                <div class="event-volume">$${totalPool} Vol.</div>
+            </div>
+            
             <div class="options-container">
-                ${event.options.map(opt => createOptionButton(event.id, opt)).join('')}
+                ${event.options.map((opt, idx) => createOptionButton(event.id, opt, idx, event.options.length)).join('')}
             </div>
         </div>
     `;
 }
 
-function createOptionButton(eventId, option) {
-    const points = Math.floor(option.total_points || 0);
+function createOptionButton(eventId, option, idx, totalOptions) {
+    const probability = option.probability || 50;
+    const isYes = option.text.toLowerCase() === 'yes' || idx === 0;
+    const optionClass = totalOptions === 2 ? (isYes ? 'yes-option' : 'no-option') : '';
+    
     return `
-        <button class="option-btn" onclick="openBetModal(${eventId}, ${option.index}, '${escapeHtml(option.text)}')">
-            <span>${escapeHtml(option.text)}</span>
-            <span class="option-stake">${points} USDT</span>
+        <button class="option-btn ${optionClass}" 
+                style="--probability: ${probability}%"
+                onclick="openBetModal(${eventId}, ${option.index}, '${escapeHtml(option.text)}')">
+            <span class="option-text">${escapeHtml(option.text)}</span>
+            <div class="option-right">
+                <span class="option-probability">${probability}%</span>
+            </div>
         </button>
     `;
 }
 
-function formatTimeLeft(seconds) {
-    if (seconds < 0) return "⏰ Время вышло";
-    
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    
-    if (days > 0) return `${days}д ${hours}ч`;
-    if (hours > 0) return `${hours}ч ${minutes}м`;
-    return `${minutes}м`;
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-}
+// ==================== BALANCE & WALLET ====================
 
 async function loadUserBalance() {
     try {
-        const userId = tg.initDataUnsafe?.user?.id || 123456789; // Fallback для тестирования
+        const userId = getUserId();
+        const data = await apiRequest(`/wallet/balance/${userId}`);
         
-        const data = await apiRequest(`/user/${userId}`);
-        const balance = Math.floor(data.points);
+        userBalance = data.balance_usdt || 0;
+        const formattedBalance = formatNumber(userBalance);
         
-        document.getElementById('user-balance').textContent = balance;
-        document.getElementById('profile-balance').textContent = `${balance} USDT`;
-        document.getElementById('active-predictions').textContent = data.stats.active_predictions;
+        document.getElementById('user-balance').textContent = formattedBalance;
+        document.getElementById('wallet-balance-value').textContent = userBalance.toFixed(2);
+        document.getElementById('profile-balance').textContent = userBalance.toFixed(2);
+        document.getElementById('available-balance').textContent = userBalance.toFixed(2);
+        
+        // Update profile info
+        document.getElementById('profile-name').textContent = getUsername();
+        document.getElementById('profile-telegram-id').textContent = `ID: ${userId}`;
+        document.getElementById('profile-avatar').textContent = getUsername().charAt(0).toUpperCase();
+        
+        // Load transactions
+        if (data.transactions) {
+            renderTransactions(data.transactions);
+        }
+        
+        // Load user stats
+        const userData = await apiRequest(`/user/${userId}`);
+        if (userData.stats) {
+            document.getElementById('active-predictions').textContent = userData.stats.active_predictions || 0;
+            document.getElementById('total-won').textContent = userData.stats.total_won || 0;
+        }
     } catch (error) {
-        console.error('Ошибка загрузки баланса:', error);
+        console.error('Balance load error:', error);
         document.getElementById('user-balance').textContent = '0';
     }
 }
 
-function showSection(sectionName) {
-    document.querySelectorAll('.section').forEach(section => section.classList.add('hidden'));
-    document.getElementById(`${sectionName}-section`).classList.remove('hidden');
+function renderTransactions(transactions) {
+    const container = document.getElementById('transactions-container');
     
-    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.closest('.nav-btn').classList.add('active');
+    if (!transactions || transactions.length === 0) {
+        container.innerHTML = `
+            <div class="empty-transactions">
+                <p>No transactions yet</p>
+            </div>
+        `;
+        return;
+    }
     
-    if (sectionName === 'events') {
-        loadEvents();
+    const html = transactions.map(tx => {
+        const isDeposit = tx.type === 'deposit';
+        const isWithdraw = tx.type === 'withdrawal';
+        const statusClass = tx.status === 'completed' ? 'status-completed' : 
+                           tx.status === 'pending' ? 'status-pending' :
+                           tx.status === 'approved' ? 'status-approved' :
+                           tx.status === 'rejected' ? 'status-rejected' : '';
+        
+        const icon = isDeposit ? 
+            `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7-7 7 7"/></svg>` :
+            `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7 7 7-7"/></svg>`;
+        
+        const amountClass = isDeposit ? 'amount-positive' : 'amount-negative';
+        const amountPrefix = isDeposit ? '+' : '-';
+        
+        return `
+            <div class="transaction-item">
+                <div class="transaction-icon ${isDeposit ? 'deposit' : 'withdraw'}">
+                    ${icon}
+                </div>
+                <div class="transaction-info">
+                    <span class="transaction-type">${isDeposit ? 'Deposit' : 'Withdrawal'}</span>
+                    <span class="transaction-status ${statusClass}">${tx.status}</span>
+                </div>
+                <div class="transaction-amount ${amountClass}">
+                    ${amountPrefix}${tx.amount.toFixed(2)} ${tx.asset}
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = html;
+}
+
+// ==================== DEPOSIT ====================
+
+function openDepositModal() {
+    document.getElementById('deposit-modal').classList.remove('hidden');
+    document.getElementById('deposit-amount').value = '';
+    document.getElementById('deposit-amount').focus();
+}
+
+function closeDepositModal() {
+    document.getElementById('deposit-modal').classList.add('hidden');
+}
+
+function setDepositAmount(amount) {
+    document.getElementById('deposit-amount').value = amount;
+}
+
+async function processDeposit() {
+    const amount = parseFloat(document.getElementById('deposit-amount').value);
+    
+    if (!amount || amount < 1) {
+        showNotification('Minimum deposit is 1 USDT', 'error');
+        return;
+    }
+    
+    try {
+        const btn = document.querySelector('#deposit-modal .modal-btn.confirm');
+        btn.textContent = 'Processing...';
+        btn.disabled = true;
+        
+        const result = await apiRequest('/wallet/deposit', {
+            method: 'POST',
+            body: JSON.stringify({
+                telegram_id: getUserId(),
+                amount: amount,
+                asset: 'USDT'
+            })
+        });
+        
+        if (result.pay_url) {
+            // Open CryptoBot payment link
+            if (tg.openLink) {
+                tg.openLink(result.pay_url);
+            } else {
+                window.open(result.pay_url, '_blank');
+            }
+            showNotification('Opening payment page...', 'info');
+        }
+        
+        closeDepositModal();
+        
+        // Refresh balance after a delay
+        setTimeout(loadUserBalance, 3000);
+        
+    } catch (error) {
+        showNotification(error.message || 'Deposit error', 'error');
+    } finally {
+        const btn = document.querySelector('#deposit-modal .modal-btn.confirm');
+        if (btn) {
+            btn.textContent = 'Continue';
+            btn.disabled = false;
+        }
     }
 }
+
+// ==================== WITHDRAW ====================
+
+function openWithdrawModal() {
+    document.getElementById('withdraw-modal').classList.remove('hidden');
+    document.getElementById('withdraw-amount').value = '';
+    document.getElementById('available-balance').textContent = userBalance.toFixed(2);
+}
+
+function closeWithdrawModal() {
+    document.getElementById('withdraw-modal').classList.add('hidden');
+}
+
+async function processWithdraw() {
+    const amount = parseFloat(document.getElementById('withdraw-amount').value);
+    
+    if (!amount || amount < 5) {
+        showNotification('Minimum withdrawal is 5 USDT', 'error');
+        return;
+    }
+    
+    if (amount > userBalance) {
+        showNotification('Insufficient balance', 'error');
+        return;
+    }
+    
+    try {
+        const btn = document.querySelector('#withdraw-modal .modal-btn.confirm');
+        btn.textContent = 'Processing...';
+        btn.disabled = true;
+        
+        const result = await apiRequest('/wallet/withdraw', {
+            method: 'POST',
+            body: JSON.stringify({
+                telegram_id: getUserId(),
+                amount: amount,
+                asset: 'USDT'
+            })
+        });
+        
+        showNotification('Withdrawal request submitted! Waiting for approval.', 'success');
+        closeWithdrawModal();
+        loadUserBalance();
+        
+        if (tg.HapticFeedback) {
+            tg.HapticFeedback.notificationOccurred('success');
+        }
+        
+    } catch (error) {
+        showNotification(error.message || 'Withdrawal error', 'error');
+    } finally {
+        const btn = document.querySelector('#withdraw-modal .modal-btn.confirm');
+        if (btn) {
+            btn.textContent = 'Request Withdrawal';
+            btn.disabled = false;
+        }
+    }
+}
+
+// ==================== BET MODAL ====================
 
 function openBetModal(eventId, optionIndex, optionText) {
     const eventCard = event.target.closest('.event-card');
     const title = eventCard.querySelector('.event-title').textContent;
     
     document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-option').textContent = `Вариант: ${optionText}`;
+    document.getElementById('modal-option').textContent = `Your prediction: ${optionText}`;
     document.getElementById('bet-modal').classList.remove('hidden');
     document.getElementById('points-input').value = '';
+    document.getElementById('points-input').focus();
     
     currentEventId = eventId;
     currentOptionIndex = optionIndex;
@@ -193,91 +486,232 @@ async function confirmPrediction() {
     const points = parseFloat(document.getElementById('points-input').value);
     
     if (!points || points < 1) {
-        showNotification('Введите корректную сумму (минимум 1 USDT)', 'error');
+        showNotification('Enter a valid amount (minimum 1 USDT)', 'error');
         return;
     }
     
-    const userId = tg.initDataUnsafe?.user?.id || 123456789;
+    if (points > userBalance) {
+        showNotification('Insufficient balance', 'error');
+        return;
+    }
     
     try {
-        const confirmBtn = document.querySelector('.modal-btn.confirm');
-        const originalText = confirmBtn.textContent;
-        confirmBtn.textContent = '⏳ Отправка...';
+        const confirmBtn = document.querySelector('#bet-modal .modal-btn.confirm');
+        confirmBtn.textContent = 'Processing...';
         confirmBtn.disabled = true;
         
         const result = await apiRequest('/predict', {
             method: 'POST',
             body: JSON.stringify({
-                telegram_id: userId,
+                telegram_id: getUserId(),
                 event_id: currentEventId,
                 option_index: currentOptionIndex,
                 points: points
             })
         });
         
-        showNotification(`✅ Прогноз принят! Новый баланс: ${Math.floor(result.new_balance)} USDT`, 'success');
+        showNotification(`Bet placed! New balance: ${formatNumber(result.new_balance)} USDT`, 'success');
         closeModal();
         loadEvents();
         loadUserBalance();
+        
+        if (tg.HapticFeedback) {
+            tg.HapticFeedback.notificationOccurred('success');
+        }
     } catch (error) {
-        showNotification('❌ ' + (error.message || 'Ошибка прогноза'), 'error');
+        showNotification(error.message || 'Prediction error', 'error');
+        if (tg.HapticFeedback) {
+            tg.HapticFeedback.notificationOccurred('error');
+        }
     } finally {
-        const confirmBtn = document.querySelector('.modal-btn.confirm');
+        const confirmBtn = document.querySelector('#bet-modal .modal-btn.confirm');
         if (confirmBtn) {
-            confirmBtn.textContent = 'Прогноз';
+            confirmBtn.textContent = 'Place Bet';
             confirmBtn.disabled = false;
         }
     }
 }
 
-function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    const bgColor = type === 'error' ? '#E22134' : type === 'success' ? '#10B981' : 'var(--accent)';
+// ==================== ADMIN PANEL ====================
+
+async function loadAdminData() {
+    if (!isAdmin) return;
     
-    notification.style.cssText = `
-        position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-        background: ${bgColor}; color: white;
-        padding: 12px 24px; border-radius: 12px; z-index: 2000; 
-        font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        max-width: 90%; text-align: center;
-        animation: slideDown 0.3s ease;
+    try {
+        const userId = getUserId();
+        
+        // Load stats
+        const stats = await apiRequest(`/admin/stats?admin_telegram_id=${userId}`);
+        document.getElementById('stat-users').textContent = stats.total_users || 0;
+        document.getElementById('stat-events').textContent = stats.total_events || 0;
+        document.getElementById('stat-pending').textContent = stats.pending_withdrawals || 0;
+        
+        // Load pending withdrawals
+        const withdrawals = await apiRequest(`/admin/withdrawals?admin_telegram_id=${userId}`);
+        renderPendingWithdrawals(withdrawals.withdrawals || []);
+        
+    } catch (error) {
+        console.error('Admin data error:', error);
+        showNotification('Error loading admin data', 'error');
+    }
+}
+
+function renderPendingWithdrawals(withdrawals) {
+    const container = document.getElementById('pending-withdrawals-container');
+    
+    if (!withdrawals || withdrawals.length === 0) {
+        container.innerHTML = `<div class="empty-state-small">No pending withdrawals</div>`;
+        return;
+    }
+    
+    const html = withdrawals.map(w => `
+        <div class="withdrawal-card" onclick="openAdminActionModal(${w.id}, ${w.user_telegram_id}, '${w.username || 'Unknown'}', ${w.amount}, '${w.asset}')">
+            <div class="withdrawal-user">
+                <div class="withdrawal-avatar">${(w.username || 'U').charAt(0).toUpperCase()}</div>
+                <div class="withdrawal-user-info">
+                    <span class="withdrawal-username">${w.username || 'User'}</span>
+                    <span class="withdrawal-user-id">ID: ${w.user_telegram_id}</span>
+                </div>
+            </div>
+            <div class="withdrawal-amount">
+                <span class="amount-value">${w.amount.toFixed(2)}</span>
+                <span class="amount-currency">${w.asset}</span>
+            </div>
+        </div>
+    `).join('');
+    
+    container.innerHTML = html;
+}
+
+function openAdminActionModal(id, telegramId, username, amount, asset) {
+    currentWithdrawalId = id;
+    
+    document.getElementById('withdrawal-details').innerHTML = `
+        <div class="detail-row">
+            <span class="detail-label">User:</span>
+            <span class="detail-value">${username} (ID: ${telegramId})</span>
+        </div>
+        <div class="detail-row">
+            <span class="detail-label">Amount:</span>
+            <span class="detail-value">${amount.toFixed(2)} ${asset}</span>
+        </div>
     `;
+    
+    document.getElementById('admin-action-modal').classList.remove('hidden');
+}
+
+function closeAdminActionModal() {
+    document.getElementById('admin-action-modal').classList.add('hidden');
+    currentWithdrawalId = null;
+}
+
+async function approveWithdrawal() {
+    await processWithdrawalAction('approve');
+}
+
+async function rejectWithdrawal() {
+    await processWithdrawalAction('reject');
+}
+
+async function processWithdrawalAction(action) {
+    if (!currentWithdrawalId) return;
+    
+    try {
+        const comment = document.getElementById('admin-comment').value;
+        
+        await apiRequest('/admin/withdrawal/action', {
+            method: 'POST',
+            body: JSON.stringify({
+                admin_telegram_id: getUserId(),
+                transaction_id: currentWithdrawalId,
+                action: action,
+                comment: comment || null
+            })
+        });
+        
+        showNotification(`Withdrawal ${action}ed successfully`, 'success');
+        closeAdminActionModal();
+        loadAdminData();
+        
+    } catch (error) {
+        showNotification(error.message || 'Error processing withdrawal', 'error');
+    }
+}
+
+// ==================== NAVIGATION ====================
+
+function showSection(sectionName) {
+    document.querySelectorAll('.section').forEach(section => section.classList.add('hidden'));
+    document.getElementById(`${sectionName}-section`).classList.remove('hidden');
+    
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.section === sectionName);
+    });
+    
+    // Load data for specific sections
+    if (sectionName === 'events') {
+        loadEvents();
+    } else if (sectionName === 'wallet') {
+        loadUserBalance();
+    } else if (sectionName === 'profile') {
+        loadUserBalance();
+    } else if (sectionName === 'admin' && isAdmin) {
+        loadAdminData();
+    }
+}
+
+function showMyPredictions() {
+    // TODO: Implement predictions history
+    showNotification('Coming soon!', 'info');
+}
+
+// ==================== UTILITY FUNCTIONS ====================
+
+function formatTimeLeft(seconds) {
+    if (seconds < 0) return "Ended";
+    
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (days > 30) {
+        const months = Math.floor(days / 30);
+        return `${months}mo`;
+    }
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+}
+
+function formatNumber(num) {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return Math.floor(num).toString();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function showNotification(message, type = 'info') {
+    document.querySelectorAll('.notification').forEach(n => n.remove());
+    
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
     notification.textContent = message;
     document.body.appendChild(notification);
     
     setTimeout(() => {
-        notification.style.animation = 'slideUp 0.3s ease';
+        notification.classList.add('notification-hide');
         setTimeout(() => notification.remove(), 300);
     }, 3000);
 }
 
-// Добавляем CSS анимации
-const style = document.createElement('style');
-style.textContent = `
-    @keyframes slideDown {
-        from { transform: translate(-50%, -100%); opacity: 0; }
-        to { transform: translate(-50%, 0); opacity: 1; }
+// Close modals on backdrop click
+document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('modal')) {
+        e.target.classList.add('hidden');
     }
-    @keyframes slideUp {
-        from { transform: translate(-50%, 0); opacity: 1; }
-        to { transform: translate(-50%, -100%); opacity: 0; }
-    }
-    .spinner {
-        border: 3px solid var(--bg-secondary);
-        border-top: 3px solid var(--accent);
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
-        animation: spin 1s linear infinite;
-        margin: 0 auto;
-    }
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    .option-stake {
-        font-size: 0.9em;
-        opacity: 0.8;
-    }
-`;
-document.head.appendChild(style);
+});

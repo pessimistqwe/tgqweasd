@@ -17,6 +17,9 @@ class TransactionType(str, enum.Enum):
 class TransactionStatus(str, enum.Enum):
     PENDING = "pending"
     COMPLETED = "completed"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
 
 class User(Base):
     __tablename__ = "users"
@@ -34,11 +37,22 @@ class User(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
     is_blocked = Column(Boolean, default=False)
+    is_admin = Column(Boolean, default=False)
     
     # Relationships
     predictions = relationship("UserPrediction", back_populates="user")
     created_events = relationship("Event", back_populates="creator")
     transactions = relationship("Transaction", back_populates="user")
+
+class EventCategory(str, enum.Enum):
+    ALL = "all"
+    POLITICS = "politics"
+    SPORTS = "sports"
+    CRYPTO = "crypto"
+    POP_CULTURE = "pop_culture"
+    BUSINESS = "business"
+    SCIENCE = "science"
+    OTHER = "other"
 
 class Event(Base):
     __tablename__ = "events"
@@ -46,6 +60,8 @@ class Event(Base):
     polymarket_id = Column(String(255), unique=True)
     title = Column(String(500), nullable=False)
     description = Column(Text)
+    category = Column(String(50), default="other")
+    image_url = Column(String(500))
     options = Column(Text, nullable=False)
     end_time = Column(DateTime, nullable=False)
     resolution_time = Column(DateTime)
@@ -101,6 +117,12 @@ class Transaction(Base):
     invoice_id = Column(String(255))
     invoice_url = Column(String(500))
     withdrawal_address = Column(String(255))
+    
+    # Additional fields for tracking
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    admin_comment = Column(Text)
+    cryptobot_invoice_id = Column(String(255))
     
     user = relationship("User", back_populates="transactions")
 
