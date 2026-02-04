@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Enum
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Enum, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime, timedelta
@@ -132,6 +132,11 @@ class Transaction(Base):
 db_path = "/tmp/events.db"
 engine = create_engine(f"sqlite:///{db_path}", echo=False, connect_args={"check_same_thread": False})
 Base.metadata.create_all(engine)
+with engine.connect() as connection:
+    columns = [row[1] for row in connection.execute(text("PRAGMA table_info(event_options)")).fetchall()]
+    if "market_stake" not in columns:
+        connection.execute(text("ALTER TABLE event_options ADD COLUMN market_stake FLOAT DEFAULT 0.0"))
+        connection.commit()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
