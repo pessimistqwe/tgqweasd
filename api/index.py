@@ -47,7 +47,7 @@ async def strip_api_prefix(request, call_next):
 # ==================== POLYMARKET API INTEGRATION ====================
 
 POLYMARKET_API_URL = "https://gamma-api.polymarket.com"
-POLYMARKET_SYNC_INTERVAL_SECONDS = int(os.getenv("POLYMARKET_SYNC_INTERVAL", "300"))
+POLYMARKET_SYNC_INTERVAL_SECONDS = int(os.getenv("POLYMARKET_SYNC_INTERVAL", "3600"))
 last_polymarket_sync = datetime.min
 
 # Ключевые слова для определения категорий
