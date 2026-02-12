@@ -1,0 +1,5 @@
+{
+    "python": {
+        "entry": "api/index.py"
+    }
+}
