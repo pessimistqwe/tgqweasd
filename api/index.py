@@ -83,7 +83,7 @@ def detect_category(title: str, description: str = '') -> str:
 def fetch_polymarket_events(limit: int = 50, category: str = None):
     """Получает активные события из Polymarket API"""
     try:
-        # Используем правильный эндпоинт и параметры из документации
+        # Основной эндпоинт (по документации)
         url = "https://gamma-api.polymarket.com/events"
         
         # Заголовки (важно: НЕ запрашиваем brotli 'br', т.к. requests без доп. пакетов может не декодировать)
@@ -139,12 +139,30 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             print(f"JSON parsing error: {e}")
             print(f"Response preview: {response.text[:200]}")
             return []
-        
-        print(f"Received {len(events_data)} events from Polymarket")
-        
+
+        # API может вернуть список, либо объект вида {"events": [...]}
+        events_list = None
+        if isinstance(events_data, list):
+            events_list = events_data
+        elif isinstance(events_data, dict):
+            if isinstance(events_data.get("events"), list):
+                events_list = events_data.get("events")
+            elif isinstance(events_data.get("data"), list):
+                events_list = events_data.get("data")
+            elif isinstance(events_data.get("results"), list):
+                events_list = events_data.get("results")
+
+        if events_list is None:
+            print(f"Unexpected Polymarket response shape: {type(events_data)}")
+            if POLYMARKET_VERBOSE_LOGS:
+                print(f"Response preview: {str(events_data)[:1000]}")
+            return []
+
+        print(f"Received {len(events_list)} events from Polymarket")
+
         # Обрабатываем события
         events = []
-        for idx, event in enumerate(events_data):
+        for idx, event in enumerate(events_list):
             if POLYMARKET_VERBOSE_LOGS:
                 print(f"Processing event #{idx}: {str(event)[:200]}...")
             
@@ -230,6 +248,54 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             if POLYMARKET_VERBOSE_LOGS:
                 print(f"   Created event data: {title}")
         
+        # Если /events не дал ничего пригодного — пробуем /markets как fallback
+        if not events:
+            try:
+                markets_url = "https://gamma-api.polymarket.com/markets"
+                markets_params = {"closed": "false", "limit": limit}
+                if POLYMARKET_VERBOSE_LOGS:
+                    print(f"Fallback fetch from: {markets_url}")
+                    print(f"Params: {markets_params}")
+                markets_resp = requests.get(markets_url, params=markets_params, headers=headers, timeout=30)
+                if markets_resp.status_code != 200:
+                    return []
+                markets_data = markets_resp.json()
+                markets_list = markets_data if isinstance(markets_data, list) else markets_data.get("markets")
+                if not isinstance(markets_list, list):
+                    return []
+
+                for market in markets_list:
+                    title = market.get("question") or market.get("title")
+                    if not title:
+                        continue
+                    description = market.get("description", "")
+                    detected_category = detect_category(title, description)
+                    if category and category != 'all' and detected_category != category:
+                        continue
+
+                    tokens = market.get("tokens", [])
+                    options = []
+                    volumes = []
+                    for token in tokens:
+                        options.append(token.get("outcome", ""))
+                        price = float(token.get("price", 0.5) or 0.5)
+                        volumes.append(price * 1000)
+                    if not options:
+                        continue
+
+                    events.append({
+                        "polymarket_id": market.get("conditionId") or market.get("id") or str(market.get("slug", "")),
+                        "title": title,
+                        "description": description,
+                        "category": detected_category,
+                        "image_url": market.get("image", ""),
+                        "end_time": market.get("endDate", ""),
+                        "options": options,
+                        "volumes": volumes,
+                    })
+            except Exception as e:
+                print(f"Fallback /markets failed: {e}")
+
         print(f"Processed {len(events)} valid events")
         return events
         
