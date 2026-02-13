@@ -146,12 +146,12 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
         events = []
         for idx, event in enumerate(events_data):
             if POLYMARKET_VERBOSE_LOGS:
-                print(f"🔍 Processing event #{idx}: {str(event)[:200]}...")
+                print(f"Processing event #{idx}: {str(event)[:200]}...")
             
             # Пробуем разные поля для вопроса
             question = event.get('question') or event.get('title') or event.get('description')
             if not question:
-                print(f"   ❌ No question/title/description found")
+                print("   No question/title/description found")
                 continue
             
             # Пробуем разные структуры для рынков
@@ -161,13 +161,13 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
                 if 'tokens' in event:
                     markets = [event]  # Создаем фиктивный market
                 else:
-                    print(f"   ❌ No markets found")
+                    print("   No markets found")
                     continue
             
             # Берем первый рынок
             market = markets[0] if markets else None
             if not market:
-                print(f"   ❌ No valid market found")
+                print("   No valid market found")
                 continue
                 
             # Получаем токены
@@ -177,12 +177,12 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
                 tokens = event.get('tokens', [])
             
             if not tokens:
-                print(f"   ❌ No tokens found")
+                print("   No tokens found")
                 continue
             
             if POLYMARKET_VERBOSE_LOGS:
-                print(f"   ✅ Found question: {question}")
-                print(f"   ✅ Found {len(tokens)} tokens")
+                print(f"   Found question: {question}")
+                print(f"   Found {len(tokens)} tokens")
             
             # Формируем структуру события
             title = question
@@ -190,7 +190,7 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             detected_category = detect_category(title, description)
 
             if category and category != 'all' and detected_category != category:
-                print(f"   ⏭️ Skipping - category {detected_category} != {category}")
+                print(f"   Skipping - category {detected_category} != {category}")
                 continue
 
             # Получаем опции из токенов
@@ -209,7 +209,7 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             
             # Если опций нет, пропускаем
             if not options:
-                print(f"   ❌ No valid options")
+                print("   No valid options")
                 continue
             
             # Получаем ID события
@@ -228,7 +228,7 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             
             events.append(event_data)
             if POLYMARKET_VERBOSE_LOGS:
-                print(f"   ✅ Created event data: {title}")
+                print(f"   Created event data: {title}")
         
         print(f"Processed {len(events)} valid events")
         return events
@@ -259,7 +259,7 @@ def update_event_total_pool(db: Session, event: Event) -> None:
     )
 
 def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
-    print(f"🔍 Upserting event: {pm_event.get('title', 'No title')}")
+    print(f"Upserting event: {pm_event.get('title', 'No title')}")
     
     end_time = parse_polymarket_end_time(pm_event.get('end_time'))
     is_active = end_time > datetime.utcnow()
@@ -273,7 +273,7 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
 
     polymarket_id = pm_event.get('polymarket_id', '')
     if not polymarket_id:
-        print("   ❌ No polymarket_id - skipping")
+        print("   No polymarket_id - skipping")
         return False
 
     existing = db.query(Event).filter(
@@ -281,7 +281,7 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
     ).first()
 
     if existing:
-        print(f"   🔄 Updating existing event (ID: {existing.id})")
+        print(f"   Updating existing event (ID: {existing.id})")
         existing.title = pm_event['title'][:500]
         existing.description = pm_event['description'][:1000] if pm_event['description'] else None
         existing.category = pm_event.get('category', existing.category)
@@ -300,7 +300,7 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
             if option:
                 option.option_text = option_text
                 option.market_stake = volume
-                print(f"   📝 Updated option {idx}: {option_text}")
+                print(f"   Updated option {idx}: {option_text}")
             else:
                 new_option = EventOption(
                     event_id=existing.id,
@@ -310,18 +310,18 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
                     market_stake=volume
                 )
                 db.add(new_option)
-                print(f"   ➕ Added option {idx}: {option_text}")
+                print(f"   Added option {idx}: {option_text}")
 
         for idx, option in existing_options.items():
             if idx >= len(options):
                 db.delete(option)
-                print(f"   🗑️ Deleted option {idx}")
+                print(f"   Deleted option {idx}")
 
         update_event_total_pool(db, existing)
-        print(f"   ✅ Event updated successfully")
+        print("   Event updated successfully")
         return False
 
-    print(f"   ➕ Creating new event")
+    print("   Creating new event")
     new_event = Event(
         polymarket_id=polymarket_id,
         title=pm_event['title'][:500],
@@ -336,7 +336,7 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
     )
     db.add(new_event)
     db.flush()
-    print(f"   📝 Created event with ID: {new_event.id}")
+    print(f"   Created event with ID: {new_event.id}")
 
     for idx, (option_text, volume) in enumerate(zip(options, volumes)):
         new_option = EventOption(
@@ -347,26 +347,26 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
             market_stake=volume
         )
         db.add(new_option)
-        print(f"   ➕ Added option {idx}: {option_text}")
+        print(f"   Added option {idx}: {option_text}")
 
-    print(f"   ✅ New event created successfully")
+    print(f"   New event created successfully")
     return True
 
 def sync_polymarket_events(db: Session):
-    """Синхронизирует события из Polymarket в БД"""
+    """Syncs events from Polymarket to the database"""
     try:
-        print("🔄 Starting Polymarket sync...")
+        print("Starting Polymarket sync...")
         polymarket_events = fetch_polymarket_events(limit=100)
-        print(f"📊 Fetched {len(polymarket_events)} events from API")
+        print(f"Fetched {len(polymarket_events)} events from API")
         
         if not polymarket_events:
-            print("❌ No events fetched from Polymarket API")
+            print("No events fetched from Polymarket API")
             return 0
         
         synced_count = 0
         
         for pm_event in polymarket_events:
-            print(f"🔄 Processing event: {pm_event.get('title', 'Unknown')}")
+            print(f"Processing event: {pm_event.get('title', 'Unknown')}")
             print(f"   - ID: {pm_event.get('polymarket_id', 'No ID')}")
             print(f"   - Category: {pm_event.get('category', 'No category')}")
             print(f"   - Options: {pm_event.get('options', [])}")
@@ -377,23 +377,23 @@ def sync_polymarket_events(db: Session):
                 update_event = "Added" if created else "Updated"
                 db.commit()
                 synced_count += 1
-                print(f"✅ {update_event} event: {pm_event['title']}")
+                print(f"{update_event} event: {pm_event['title']}")
             except Exception as e:
-                print(f"❌ Error processing event {pm_event.get('title', 'Unknown')}: {e}")
+                print(f"Error processing event {pm_event.get('title', 'Unknown')}: {e}")
                 db.rollback()
                 continue
         
-        print(f"🎉 Sync completed: {synced_count} events processed")
+        print(f"Sync completed: {synced_count} events processed")
         
         # Проверяем сколько событий в базе
         total_events = db.query(Event).count()
         active_events = db.query(Event).filter(Event.is_active == True).count()
-        print(f"📈 Database stats: {total_events} total events, {active_events} active")
+        print(f"Database stats: {total_events} total events, {active_events} active")
         
         return synced_count
     except Exception as e:
         db.rollback()
-        print(f"❌ Critical error syncing events: {e}")
+        print(f"Critical error syncing events: {e}")
         import traceback
         traceback.print_exc()
         return 0
@@ -404,7 +404,7 @@ def _sync_polymarket_once_safe() -> None:
         db = next(get_db())
         sync_polymarket_events(db)
     except Exception as e:
-        print(f"❌ Background Polymarket sync failed: {e}")
+        print(f"Background Polymarket sync failed: {e}")
     finally:
         try:
             if db is not None:
@@ -421,7 +421,7 @@ async def _polymarket_sync_loop() -> None:
 @app.on_event("startup")
 async def startup_event():
     """Запуск фоновой синхронизации Polymarket (не блокирует старт)"""
-    print("🚀 EventPredict API starting up...")
+    print("EventPredict API starting up...")
     asyncio.create_task(_polymarket_sync_loop())
 
 @app.get("/", include_in_schema=False)
@@ -451,12 +451,12 @@ async def get_categories():
 async def get_events(category: str = None, db: Session = Depends(get_db)):
     """Получить события с фильтрацией по категории"""
     try:
-        print(f"📋 Getting events with category filter: {category}")
+        print(f"Getting events with category filter: {category}")
         
         global last_polymarket_sync
         now = datetime.utcnow()
         if (now - last_polymarket_sync).total_seconds() >= POLYMARKET_SYNC_INTERVAL_SECONDS:
-            print("⏰ Triggering automatic sync...")
+            print("Triggering automatic sync...")
             sync_polymarket_events(db)
             last_polymarket_sync = datetime.utcnow()
         
@@ -467,14 +467,14 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
 
         if category and category != 'all':
             query = query.filter(Event.category == category)
-            print(f"   🔍 Filtering by category: {category}")
+            print(f"   Filtering by category: {category}")
 
         events = query.order_by(Event.total_pool.desc()).limit(50).all()
-        print(f"   📊 Found {len(events)} events in database")
+        print(f"   Found {len(events)} events in database")
         
         result = []
         for event in events:
-            print(f"   🔄 Processing event: {event.title} (ID: {event.id})")
+            print(f"   Processing event: {event.title} (ID: {event.id})")
             
             # Получаем опции
             options = db.query(EventOption).filter(
@@ -503,7 +503,7 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                     ).all()
                     print(f"      - Created {len(options)} options successfully")
                 except Exception as e:
-                    print(f"      - ❌ Error creating options from JSON: {e}")
+                    print(f"      - Error creating options from JSON: {e}")
                     pass
             
             # Вычисляем оставшееся время
@@ -534,12 +534,12 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
             }
             
             result.append(event_data)
-            print(f"      ✅ Added event to result: {len(event_data['options'])} options")
+            print(f"      Added event to result: {len(event_data['options'])} options")
         
-        print(f"🎉 Returning {len(result)} events to frontend")
+        print(f"Returning {len(result)} events to frontend")
         return {"events": result}
     except Exception as e:
-        print(f"❌ Error loading events: {e}")
+        print(f"Error loading events: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
