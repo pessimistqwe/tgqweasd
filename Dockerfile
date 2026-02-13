@@ -28,11 +28,4 @@ ENV PATH=/root/.local/bin:$PATH \
 COPY api /app/api
 COPY frontend /app/frontend
 
-# Создаем скрипт для запуска
-RUN echo '#!/bin/sh' > /app/start.sh && \
-    echo 'exec uvicorn index:app --host 0.0.0.0 --port ${PORT:-8000} --app-dir api' >> /app/start.sh && \
-    chmod +x /app/start.sh
-
 EXPOSE 8000
-
-CMD ["/app/start.sh"]
