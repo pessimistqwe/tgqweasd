@@ -225,16 +225,29 @@ def update_event_total_pool(db: Session, event: Event) -> None:
     )
 
 def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
+    print(f"🔍 Upserting event: {pm_event.get('title', 'No title')}")
+    
     end_time = parse_polymarket_end_time(pm_event.get('end_time'))
     is_active = end_time > datetime.utcnow()
     options = pm_event.get('options', [])
     volumes = pm_event.get('volumes', [])
+    
+    print(f"   - Parsed end time: {end_time}")
+    print(f"   - Is active: {is_active}")
+    print(f"   - Options count: {len(options)}")
+    print(f"   - Volumes: {volumes}")
+
+    polymarket_id = pm_event.get('polymarket_id', '')
+    if not polymarket_id:
+        print("   ❌ No polymarket_id - skipping")
+        return False
 
     existing = db.query(Event).filter(
-        Event.polymarket_id == pm_event['polymarket_id']
+        Event.polymarket_id == polymarket_id
     ).first()
 
     if existing:
+        print(f"   🔄 Updating existing event (ID: {existing.id})")
         existing.title = pm_event['title'][:500]
         existing.description = pm_event['description'][:1000] if pm_event['description'] else None
         existing.category = pm_event.get('category', existing.category)
@@ -253,24 +266,30 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
             if option:
                 option.option_text = option_text
                 option.market_stake = volume
+                print(f"   📝 Updated option {idx}: {option_text}")
             else:
-                db.add(EventOption(
+                new_option = EventOption(
                     event_id=existing.id,
                     option_index=idx,
                     option_text=option_text,
                     total_stake=0.0,
                     market_stake=volume
-                ))
+                )
+                db.add(new_option)
+                print(f"   ➕ Added option {idx}: {option_text}")
 
         for idx, option in existing_options.items():
             if idx >= len(options):
                 db.delete(option)
+                print(f"   🗑️ Deleted option {idx}")
 
         update_event_total_pool(db, existing)
+        print(f"   ✅ Event updated successfully")
         return False
 
+    print(f"   ➕ Creating new event")
     new_event = Event(
-        polymarket_id=pm_event['polymarket_id'],
+        polymarket_id=polymarket_id,
         title=pm_event['title'][:500],
         description=pm_event['description'][:1000] if pm_event['description'] else None,
         category=pm_event.get('category', 'other'),
@@ -283,35 +302,66 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
     )
     db.add(new_event)
     db.flush()
+    print(f"   📝 Created event with ID: {new_event.id}")
 
     for idx, (option_text, volume) in enumerate(zip(options, volumes)):
-        db.add(EventOption(
+        new_option = EventOption(
             event_id=new_event.id,
             option_index=idx,
             option_text=option_text,
             total_stake=0.0,
             market_stake=volume
-        ))
+        )
+        db.add(new_option)
+        print(f"   ➕ Added option {idx}: {option_text}")
 
+    print(f"   ✅ New event created successfully")
     return True
 
 def sync_polymarket_events(db: Session):
     """Синхронизирует события из Polymarket в БД"""
     try:
+        print("🔄 Starting Polymarket sync...")
         polymarket_events = fetch_polymarket_events(limit=100)
+        print(f"📊 Fetched {len(polymarket_events)} events from API")
+        
+        if not polymarket_events:
+            print("❌ No events fetched from Polymarket API")
+            return 0
+        
         synced_count = 0
         
         for pm_event in polymarket_events:
-            created = upsert_polymarket_event(db, pm_event)
-            update_event = "Added" if created else "Updated"
-            db.commit()
-            synced_count += 1
-            print(f"✅ {update_event} event: {pm_event['title']}")
+            print(f"🔄 Processing event: {pm_event.get('title', 'Unknown')}")
+            print(f"   - ID: {pm_event.get('polymarket_id', 'No ID')}")
+            print(f"   - Category: {pm_event.get('category', 'No category')}")
+            print(f"   - Options: {pm_event.get('options', [])}")
+            print(f"   - End time: {pm_event.get('end_time', 'No end time')}")
+            
+            try:
+                created = upsert_polymarket_event(db, pm_event)
+                update_event = "Added" if created else "Updated"
+                db.commit()
+                synced_count += 1
+                print(f"✅ {update_event} event: {pm_event['title']}")
+            except Exception as e:
+                print(f"❌ Error processing event {pm_event.get('title', 'Unknown')}: {e}")
+                db.rollback()
+                continue
+        
+        print(f"🎉 Sync completed: {synced_count} events processed")
+        
+        # Проверяем сколько событий в базе
+        total_events = db.query(Event).count()
+        active_events = db.query(Event).filter(Event.is_active == True).count()
+        print(f"📈 Database stats: {total_events} total events, {active_events} active")
         
         return synced_count
     except Exception as e:
         db.rollback()
-        print(f"Error syncing events: {e}")
+        print(f"❌ Critical error syncing events: {e}")
+        import traceback
+        traceback.print_exc()
         return 0
 
 # ==================== PYDANTIC MODELS ====================
@@ -371,9 +421,12 @@ async def get_categories():
 async def get_events(category: str = None, db: Session = Depends(get_db)):
     """Получить события с фильтрацией по категории"""
     try:
+        print(f"📋 Getting events with category filter: {category}")
+        
         global last_polymarket_sync
         now = datetime.utcnow()
         if (now - last_polymarket_sync).total_seconds() >= POLYMARKET_SYNC_INTERVAL_SECONDS:
+            print("⏰ Triggering automatic sync...")
             sync_polymarket_events(db)
             last_polymarket_sync = datetime.utcnow()
         
@@ -384,20 +437,27 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
 
         if category and category != 'all':
             query = query.filter(Event.category == category)
+            print(f"   🔍 Filtering by category: {category}")
 
         events = query.order_by(Event.total_pool.desc()).limit(50).all()
+        print(f"   📊 Found {len(events)} events in database")
         
         result = []
         for event in events:
+            print(f"   🔄 Processing event: {event.title} (ID: {event.id})")
+            
             # Получаем опции
             options = db.query(EventOption).filter(
                 EventOption.event_id == event.id
             ).all()
             
+            print(f"      - Found {len(options)} options in database")
+            
             # Парсим опции из JSON если нет в EventOption
             if not options and event.options:
                 try:
                     options_list = json.loads(event.options)
+                    print(f"      - Creating {len(options_list)} options from JSON")
                     for idx, opt_text in enumerate(options_list):
                         opt = EventOption(
                             event_id=event.id,
@@ -411,7 +471,9 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                     options = db.query(EventOption).filter(
                         EventOption.event_id == event.id
                     ).all()
-                except:
+                    print(f"      - Created {len(options)} options successfully")
+                except Exception as e:
+                    print(f"      - ❌ Error creating options from JSON: {e}")
                     pass
             
             # Вычисляем оставшееся время
@@ -421,7 +483,7 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                 for opt in options
             ) or 1
             
-            result.append({
+            event_data = {
                 "id": event.id,
                 "title": event.title,
                 "description": event.description,
@@ -439,11 +501,17 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                     }
                     for opt in options
                 ]
-            })
+            }
+            
+            result.append(event_data)
+            print(f"      ✅ Added event to result: {len(event_data['options'])} options")
         
+        print(f"🎉 Returning {len(result)} events to frontend")
         return {"events": result}
     except Exception as e:
-        print(f"Error loading events: {e}")
+        print(f"❌ Error loading events: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/user/{telegram_id}")
