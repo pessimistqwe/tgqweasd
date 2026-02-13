@@ -1,8 +1,10 @@
 let tg = window.Telegram.WebApp;
 // Автоматическое определение backend URL
-let backendUrl = window.location.hostname === 'localhost' 
-    ? "http://localhost:8000" 
-    : "https://tgqweasd.vercel.app/api";
+const configuredBackendUrl = window.__BACKEND_URL__;
+let backendUrl = configuredBackendUrl
+    || (window.location.hostname === 'localhost'
+        ? 'http://localhost:8000'
+        : `${window.location.origin}/api`);
     
 let currentEventId = null;
 let currentOptionIndex = null;
