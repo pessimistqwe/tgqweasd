@@ -81,161 +81,140 @@ def detect_category(title: str, description: str = '') -> str:
 
 def fetch_polymarket_events(limit: int = 50, category: str = None):
     """Получает активные события из Polymarket API"""
-    # Пробуем основные URLs
-    urls = [
-        "https://gamma-api.polymarket.com/markets",
-        "https://api.polymarket.com/markets"
-    ]
-    
-    for url in urls:
+    try:
+        # Используем правильный эндпоинт и параметры из документации
+        url = "https://gamma-api.polymarket.com/events"
+        
+        # Правильные заголовки
+        headers = {
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'empty',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'cross-site'
+        }
+        
+        # Правильные параметры из документации
+        params = {
+            "order": "id",
+            "ascending": "false",  # Новые события первыми
+            "closed": "false",     # Только активные
+            "limit": limit
+        }
+        
+        print(f"Fetching from Polymarket: {url}")
+        print(f"Params: {params}")
+        
+        response = requests.get(
+            url,
+            params=params,
+            headers=headers,
+            timeout=30
+        )
+        
+        print(f"Response status: {response.status_code}")
+        print(f"Content-Type: {response.headers.get('content-type', 'unknown')}")
+        
+        if response.status_code != 200:
+            print(f"HTTP error: {response.status_code}")
+            print(f"Response: {response.text[:500]}")
+            return []
+        
+        # Проверяем Content-Type
+        content_type = response.headers.get('content-type', '').lower()
+        if 'application/json' not in content_type:
+            print(f"Wrong content-type: {content_type}")
+            print(f"Response preview: {response.text[:200]}")
+            return []
+        
         try:
-            print(f"Trying to fetch from: {url}")
+            events_data = response.json()
+        except ValueError as e:
+            print(f"JSON parsing error: {e}")
+            print(f"Response preview: {response.text[:200]}")
+            return []
+        
+        print(f"Received {len(events_data)} events from Polymarket")
+        
+        # Обрабатываем события
+        events = []
+        for event in events_data:
+            # Пропускаем если нет нужных данных
+            if not event.get('question'):
+                continue
             
-            # Получаем список активных рынков с правильными заголовками
-            headers = {
-                'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1'
+            # Получаем рынки (tokens) для события
+            markets = event.get('markets', [])
+            if not markets:
+                continue
+                
+            # Берем первый активный рынок
+            market = markets[0]
+            if not market.get('tokens'):
+                continue
+            
+            # Формируем структуру события
+            title = event.get('question', '')
+            description = event.get('description', '')
+            detected_category = detect_category(title, description)
+
+            if category and category != 'all' and detected_category != category:
+                continue
+
+            # Получаем опции из токенов
+            tokens = market.get('tokens', [])
+            options = []
+            volumes = []
+            
+            for token in tokens:
+                outcome = token.get('outcome', '')
+                price = float(token.get('price', 0.5) or 0.5)
+                volume = price * 1000  # Примерный расчет объема
+                
+                options.append(outcome)
+                volumes.append(volume)
+            
+            # Если опций нет, пропускаем
+            if not options:
+                continue
+            
+            event_data = {
+                'polymarket_id': event.get('id', ''),
+                'title': title,
+                'description': description,
+                'category': detected_category,
+                'image_url': event.get('image', ''),
+                'end_time': event.get('endDate', ''),
+                'options': options,
+                'volumes': volumes
             }
             
-            response = requests.get(
-                url,
-                params={
-                    "closed": "false", 
-                    "active": "true",
-                    "limit": limit
-                },
-                headers=headers,
-                timeout=20
-            )
-            
-            print(f"Response status: {response.status_code}")
-            print(f"Content-Type: {response.headers.get('content-type', 'unknown')}")
-            
-            # Проверяем если получили HTML вместо JSON
-            content_type = response.headers.get('content-type', '').lower()
-            if 'text/html' in content_type:
-                print(f"Got HTML instead of JSON from {url}")
-                print(f"Response preview: {response.text[:200]}")
-                continue
-            
-            if response.status_code != 200:
-                print(f"HTTP error from {url}: {response.status_code}")
-                continue
-                
-            # Проверяем JSON валидность
-            try:
-                markets = response.json()
-            except ValueError as e:
-                print(f"Invalid JSON from {url}: {e}")
-                print(f"Response preview: {response.text[:200]}")
-                continue
-                
-            print(f"Successfully received {len(markets)} markets from {url}")
-            
-            events = []
-            for market in markets:
-                # Пропускаем если нет нужных данных
-                if not market.get('question') or not market.get('endDate'):
-                    continue
-                    
-                # Формируем структуру события
-                title = market.get('question', '')
-                description = market.get('description', '')
-                detected_category = detect_category(title, description)
-
-                if category and category != 'all' and detected_category != category:
-                    continue
-
-                event_data = {
-                    'polymarket_id': market.get('conditionId', ''),
-                    'title': title,
-                    'description': description,
-                    'category': detected_category,
-                    'image_url': market.get('image', ''),
-                    'end_time': market.get('endDate', ''),
-                    'options': [],
-                    'volumes': []
-                }
-                
-                # Получаем опции (обычно Yes/No)
-                tokens = market.get('tokens', [])
-                for token in tokens:
-                    event_data['options'].append(token.get('outcome', ''))
-                    price = float(token.get('price', 0.5) or 0.5)
-                    event_data['volumes'].append(price * 1000)
-                
-                # Если опций нет, создаём дефолтные
-                if not event_data['options']:
-                    event_data['options'] = ['Да', 'Нет']
-                    event_data['volumes'] = [500.0, 500.0]
-                
-                events.append(event_data)
-            
-            print(f"Processed {len(events)} valid events from {url}")
-            return events
-            
-        except requests.exceptions.RequestException as e:
-            print(f"Network error fetching from {url}: {e}")
-            continue
-        except Exception as e:
-            print(f"Error fetching from {url}: {e}")
-            continue
-    
-    # Если все API endpoints не сработали, возвращаем демо-данные
-    print("All Polymarket API endpoints failed, using demo data")
-    return get_demo_events(category)
-
-def get_demo_events(category: str = None):
-    """Демо-события когда Polymarket API недоступен"""
-    demo_events = [
-        {
-            'polymarket_id': 'demo-trump-2024',
-            'title': 'Trump wins 2024 Presidential Election',
-            'description': 'Will Donald Trump win the 2024 US Presidential Election?',
-            'category': 'politics',
-            'image_url': '',
-            'end_time': (datetime.utcnow() + timedelta(days=30)).isoformat(),
-            'options': ['Yes', 'No'],
-            'volumes': [15000.0, 12000.0]
-        },
-        {
-            'polymarket_id': 'demo-bitcoin-100k',
-            'title': 'Bitcoin reaches $100k by end of 2024',
-            'description': 'Will BTC price reach $100,000 before December 31, 2024?',
-            'category': 'crypto',
-            'image_url': '',
-            'end_time': (datetime.utcnow() + timedelta(days=45)).isoformat(),
-            'options': ['Yes', 'No'],
-            'volumes': [8000.0, 9500.0]
-        },
-        {
-            'polymarket_id': 'demo-super-bowl',
-            'title': 'Chiefs win Super Bowl 2024',
-            'description': 'Will Kansas City Chiefs win Super Bowl LVIII?',
-            'category': 'sports',
-            'image_url': '',
-            'end_time': (datetime.utcnow() + timedelta(days=15)).isoformat(),
-            'options': ['Yes', 'No'],
-            'volumes': [22000.0, 18000.0]
-        }
-    ]
-    
-    if category and category != 'all':
-        demo_events = [e for e in demo_events if e['category'] == category]
-    
-    return demo_events
+            events.append(event_data)
+        
+        print(f"Processed {len(events)} valid events")
+        return events
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Network error: {e}")
+        return []
+    except Exception as e:
+        print(f"Error fetching Polymarket events: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 def parse_polymarket_end_time(end_time: str) -> datetime:
     if not end_time:
         return datetime.utcnow() + timedelta(days=7)
     try:
         return datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-    except Exception:
+    except Exception as e:
+        print(f"Error parsing end time: {e}")
         return datetime.utcnow() + timedelta(days=7)
 
 def update_event_total_pool(db: Session, event: Event) -> None:
