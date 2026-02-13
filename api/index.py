@@ -52,7 +52,7 @@ async def strip_api_prefix(request, call_next):
 # ==================== POLYMARKET API INTEGRATION ====================
 
 POLYMARKET_API_URL = "https://gamma-api.polymarket.com"
-POLYMARKET_SYNC_INTERVAL_SECONDS = int(os.getenv("POLYMARKET_SYNC_INTERVAL", "3600"))
+POLYMARKET_SYNC_INTERVAL_SECONDS = int(os.getenv("POLYMARKET_SYNC_INTERVAL", "1800"))  # 30 минут
 last_polymarket_sync = datetime.min
 
 # Ключевые слова для определения категорий
@@ -81,63 +81,93 @@ def detect_category(title: str, description: str = '') -> str:
 
 def fetch_polymarket_events(limit: int = 50, category: str = None):
     """Получает активные события из Polymarket API"""
-    try:
-        # Получаем список активных рынков
-        response = requests.get(
-            f"{POLYMARKET_API_URL}/markets",
-            params={
-                "closed": "false",
-                "active": "true",
-                "limit": limit
-            },
-            timeout=10
-        )
-        response.raise_for_status()
-        markets = response.json()
-        
-        events = []
-        for market in markets:
-            # Пропускаем если нет нужных данных
-            if not market.get('question') or not market.get('endDate'):
-                continue
-                
-            # Формируем структуру события
-            title = market.get('question', '')
-            description = market.get('description', '')
-            detected_category = detect_category(title, description)
-
-            if category and category != 'all' and detected_category != category:
-                continue
-
-            event_data = {
-                'polymarket_id': market.get('conditionId', ''),
-                'title': title,
-                'description': description,
-                'category': detected_category,
-                'image_url': market.get('image', ''),
-                'end_time': market.get('endDate', ''),
-                'options': [],
-                'volumes': []
+    # Пробуем основной URL, если не работает - пробуем резервный
+    urls = [
+        "https://gamma-api.polymarket.com/markets",
+        "https://api.polymarket.com/markets"
+    ]
+    
+    for url in urls:
+        try:
+            # Получаем список активных рынков с правильными заголовками
+            headers = {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Origin': 'https://polymarket.com',
+                'Referer': 'https://polymarket.com/'
             }
             
-            # Получаем опции (обычно Yes/No)
-            tokens = market.get('tokens', [])
-            for token in tokens:
-                event_data['options'].append(token.get('outcome', ''))
-                price = float(token.get('price', 0.5) or 0.5)
-                event_data['volumes'].append(price * 1000)
+            response = requests.get(
+                url,
+                params={
+                    "closed": "false",
+                    "active": "true",
+                    "limit": limit
+                },
+                headers=headers,
+                timeout=15
+            )
             
-            # Если опций нет, создаём дефолтные
-            if not event_data['options']:
-                event_data['options'] = ['Да', 'Нет']
-                event_data['volumes'] = [500.0, 500.0]
+            print(f"Polymarket API response from {url}: {response.status_code}")
             
-            events.append(event_data)
-        
-        return events
-    except Exception as e:
-        print(f"Error fetching Polymarket events: {e}")
-        return []
+            if response.status_code != 200:
+                print(f"Polymarket API error from {url}: {response.status_code} - {response.text[:200]}")
+                continue
+                
+            markets = response.json()
+            print(f"Received {len(markets)} markets from {url}")
+            
+            events = []
+            for market in markets:
+                # Пропускаем если нет нужных данных
+                if not market.get('question') or not market.get('endDate'):
+                    continue
+                    
+                # Формируем структуру события
+                title = market.get('question', '')
+                description = market.get('description', '')
+                detected_category = detect_category(title, description)
+
+                if category and category != 'all' and detected_category != category:
+                    continue
+
+                event_data = {
+                    'polymarket_id': market.get('conditionId', ''),
+                    'title': title,
+                    'description': description,
+                    'category': detected_category,
+                    'image_url': market.get('image', ''),
+                    'end_time': market.get('endDate', ''),
+                    'options': [],
+                    'volumes': []
+                }
+                
+                # Получаем опции (обычно Yes/No)
+                tokens = market.get('tokens', [])
+                for token in tokens:
+                    event_data['options'].append(token.get('outcome', ''))
+                    price = float(token.get('price', 0.5) or 0.5)
+                    event_data['volumes'].append(price * 1000)
+                
+                # Если опций нет, создаём дефолтные
+                if not event_data['options']:
+                    event_data['options'] = ['Да', 'Нет']
+                    event_data['volumes'] = [500.0, 500.0]
+                
+                events.append(event_data)
+            
+            print(f"Processed {len(events)} valid events from {url}")
+            return events
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Network error fetching from {url}: {e}")
+            continue
+        except Exception as e:
+            print(f"Error fetching from {url}: {e}")
+            continue
+    
+    print("All Polymarket API endpoints failed, returning empty events")
+    return []
 
 def parse_polymarket_end_time(end_time: str) -> datetime:
     if not end_time:
@@ -266,6 +296,20 @@ async def root():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"status": "ok", "message": "EventPredict API"}
+
+@app.on_event("startup")
+async def startup_event():
+    """Автоматическая синхронизация при запуске"""
+    print("🚀 EventPredict API starting up...")
+    try:
+        from models import get_db
+        db = next(get_db())
+        print("📡 Syncing events from Polymarket...")
+        count = sync_polymarket_events(db)
+        print(f"✅ Initial sync completed: {count} events")
+        db.close()
+    except Exception as e:
+        print(f"❌ Initial sync failed: {e}")
 
 @app.get("/categories")
 async def get_categories():
@@ -462,6 +506,24 @@ async def manual_sync(db: Session = Depends(get_db)):
         return {
             "success": True,
             "message": f"Синхронизировано событий: {count}"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/admin/force-sync")
+async def force_sync_polymarket(
+    admin_telegram_id: int = Query(None),
+    db: Session = Depends(get_db)
+):
+    """Принудительная синхронизация с Polymarket"""
+    try:
+        count = sync_polymarket_events(db)
+        global last_polymarket_sync
+        last_polymarket_sync = datetime.utcnow()
+        return {
+            "success": True,
+            "synced_events": count,
+            "message": f"Successfully synced {count} events from Polymarket"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
