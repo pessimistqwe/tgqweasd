@@ -83,8 +83,9 @@ def detect_category(title: str, description: str = '') -> str:
 def fetch_polymarket_events(limit: int = 50, category: str = None):
     """Получает активные события из Polymarket API"""
     try:
-        # Основной эндпоинт (по документации)
-        url = "https://gamma-api.polymarket.com/events"
+        # На практике /markets чаще содержит все нужные поля (включая исходы)
+        primary_url = "https://gamma-api.polymarket.com/markets"
+        secondary_url = "https://gamma-api.polymarket.com/events"
         
         # Заголовки (важно: НЕ запрашиваем brotli 'br', т.к. requests без доп. пакетов может не декодировать)
         headers = {
@@ -95,29 +96,33 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             "Connection": "keep-alive",
         }
         
-        # Правильные параметры из документации
+        # Параметры (для /markets и /events)
         params = {
             "order": "id",
-            "ascending": "false",  # Новые события первыми
-            "closed": "false",     # Только активные
-            "limit": limit
+            "ascending": "false",
+            "closed": "false",
+            "active": "true",
+            "limit": limit,
         }
         
-        if POLYMARKET_VERBOSE_LOGS:
-            print(f"Fetching from Polymarket: {url}")
-            print(f"Params: {params}")
-        
-        response = requests.get(
-            url,
-            params=params,
-            headers=headers,
-            timeout=30
-        )
+        def _do_get(url: str):
+            if POLYMARKET_VERBOSE_LOGS:
+                print(f"Fetching from Polymarket: {url}")
+                print(f"Params: {params}")
+            return requests.get(url, params=params, headers=headers, timeout=30)
+
+        response = _do_get(primary_url)
         
         if POLYMARKET_VERBOSE_LOGS:
             print(f"Response status: {response.status_code}")
             print(f"Content-Type: {response.headers.get('content-type', 'unknown')}")
         
+        if response.status_code != 200:
+            print(f"HTTP error: {response.status_code}")
+            print(f"Response: {response.text[:500]}")
+            # fallback to /events
+            response = _do_get(secondary_url)
+
         if response.status_code != 200:
             print(f"HTTP error: {response.status_code}")
             print(f"Response: {response.text[:500]}")
@@ -140,13 +145,15 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             print(f"Response preview: {response.text[:200]}")
             return []
 
-        # API может вернуть список, либо объект вида {"events": [...]}
+        # API может вернуть список, либо объект вида {"events": [...]}/{"markets": [...]}
         events_list = None
         if isinstance(events_data, list):
             events_list = events_data
         elif isinstance(events_data, dict):
             if isinstance(events_data.get("events"), list):
                 events_list = events_data.get("events")
+            elif isinstance(events_data.get("markets"), list):
+                events_list = events_data.get("markets")
             elif isinstance(events_data.get("data"), list):
                 events_list = events_data.get("data")
             elif isinstance(events_data.get("results"), list):
@@ -160,7 +167,7 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
 
         print(f"Received {len(events_list)} events from Polymarket")
 
-        # Обрабатываем события
+        # Обрабатываем рынки/события
         events = []
         for idx, event in enumerate(events_list):
             if POLYMARKET_VERBOSE_LOGS:
@@ -172,30 +179,38 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
                 print("   No question/title/description found")
                 continue
             
-            # Пробуем разные структуры для рынков
-            markets = event.get('markets', [])
-            if not markets:
-                # Может быть структура с токенами на верхнем уровне
-                if 'tokens' in event:
-                    markets = [event]  # Создаем фиктивный market
+            # Получаем исходы/опции из разных возможных структур
+            tokens = event.get("tokens")
+            outcomes = event.get("outcomes")
+            outcome_prices = event.get("outcomePrices") or event.get("outcome_prices")
+
+            options = []
+            volumes = []
+
+            # 1) tokens (новый формат)
+            if isinstance(tokens, list) and tokens:
+                for token in tokens:
+                    outcome = token.get("outcome", "")
+                    if not outcome:
+                        continue
+                    price = float(token.get("price", 0.5) or 0.5)
+                    options.append(outcome)
+                    volumes.append(price * 1000)
+
+            # 2) outcomes + outcomePrices (частый формат /markets)
+            elif isinstance(outcomes, list) and outcomes:
+                options = [str(o) for o in outcomes]
+                if isinstance(outcome_prices, list) and len(outcome_prices) == len(options):
+                    for p in outcome_prices:
+                        try:
+                            volumes.append(float(p) * 1000)
+                        except Exception:
+                            volumes.append(500.0)
                 else:
-                    print("   No markets found")
-                    continue
-            
-            # Берем первый рынок
-            market = markets[0] if markets else None
-            if not market:
-                print("   No valid market found")
-                continue
-                
-            # Получаем токены
-            tokens = market.get('tokens', [])
-            if not tokens:
-                # Пробуем на уровне события
-                tokens = event.get('tokens', [])
-            
-            if not tokens:
-                print("   No tokens found")
+                    volumes = [500.0 for _ in options]
+
+            if not options:
+                # Нечего синкать
                 continue
             
             if POLYMARKET_VERBOSE_LOGS:
@@ -211,27 +226,11 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
                 print(f"   Skipping - category {detected_category} != {category}")
                 continue
 
-            # Получаем опции из токенов
-            options = []
-            volumes = []
-            
-            for token in tokens:
-                outcome = token.get('outcome', '')
-                price = float(token.get('price', 0.5) or 0.5)
-                volume = price * 1000
-                
-                options.append(outcome)
-                volumes.append(volume)
-                if POLYMARKET_VERBOSE_LOGS:
-                    print(f"      - Token: {outcome} (price: {price})")
-            
-            # Если опций нет, пропускаем
-            if not options:
-                print("   No valid options")
-                continue
+            if POLYMARKET_VERBOSE_LOGS:
+                print(f"   Options: {options}")
             
             # Получаем ID события
-            event_id = event.get('id') or event.get('conditionId') or str(idx)
+            event_id = event.get('conditionId') or event.get('id') or str(idx)
             
             event_data = {
                 'polymarket_id': event_id,
@@ -248,54 +247,6 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             if POLYMARKET_VERBOSE_LOGS:
                 print(f"   Created event data: {title}")
         
-        # Если /events не дал ничего пригодного — пробуем /markets как fallback
-        if not events:
-            try:
-                markets_url = "https://gamma-api.polymarket.com/markets"
-                markets_params = {"closed": "false", "limit": limit}
-                if POLYMARKET_VERBOSE_LOGS:
-                    print(f"Fallback fetch from: {markets_url}")
-                    print(f"Params: {markets_params}")
-                markets_resp = requests.get(markets_url, params=markets_params, headers=headers, timeout=30)
-                if markets_resp.status_code != 200:
-                    return []
-                markets_data = markets_resp.json()
-                markets_list = markets_data if isinstance(markets_data, list) else markets_data.get("markets")
-                if not isinstance(markets_list, list):
-                    return []
-
-                for market in markets_list:
-                    title = market.get("question") or market.get("title")
-                    if not title:
-                        continue
-                    description = market.get("description", "")
-                    detected_category = detect_category(title, description)
-                    if category and category != 'all' and detected_category != category:
-                        continue
-
-                    tokens = market.get("tokens", [])
-                    options = []
-                    volumes = []
-                    for token in tokens:
-                        options.append(token.get("outcome", ""))
-                        price = float(token.get("price", 0.5) or 0.5)
-                        volumes.append(price * 1000)
-                    if not options:
-                        continue
-
-                    events.append({
-                        "polymarket_id": market.get("conditionId") or market.get("id") or str(market.get("slug", "")),
-                        "title": title,
-                        "description": description,
-                        "category": detected_category,
-                        "image_url": market.get("image", ""),
-                        "end_time": market.get("endDate", ""),
-                        "options": options,
-                        "volumes": volumes,
-                    })
-            except Exception as e:
-                print(f"Fallback /markets failed: {e}")
-
         print(f"Processed {len(events)} valid events")
         return events
         
