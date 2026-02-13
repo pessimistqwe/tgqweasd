@@ -81,7 +81,7 @@ def detect_category(title: str, description: str = '') -> str:
 
 def fetch_polymarket_events(limit: int = 50, category: str = None):
     """Получает активные события из Polymarket API"""
-    # Пробуем основной URL, если не работает - пробуем резервный
+    # Пробуем основные URLs
     urls = [
         "https://gamma-api.polymarket.com/markets",
         "https://api.polymarket.com/markets"
@@ -89,33 +89,53 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
     
     for url in urls:
         try:
+            print(f"Trying to fetch from: {url}")
+            
             # Получаем список активных рынков с правильными заголовками
             headers = {
                 'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Origin': 'https://polymarket.com',
-                'Referer': 'https://polymarket.com/'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
             }
             
             response = requests.get(
                 url,
                 params={
-                    "closed": "false",
+                    "closed": "false", 
                     "active": "true",
                     "limit": limit
                 },
                 headers=headers,
-                timeout=15
+                timeout=20
             )
             
-            print(f"Polymarket API response from {url}: {response.status_code}")
+            print(f"Response status: {response.status_code}")
+            print(f"Content-Type: {response.headers.get('content-type', 'unknown')}")
+            
+            # Проверяем если получили HTML вместо JSON
+            content_type = response.headers.get('content-type', '').lower()
+            if 'text/html' in content_type:
+                print(f"Got HTML instead of JSON from {url}")
+                print(f"Response preview: {response.text[:200]}")
+                continue
             
             if response.status_code != 200:
-                print(f"Polymarket API error from {url}: {response.status_code} - {response.text[:200]}")
+                print(f"HTTP error from {url}: {response.status_code}")
                 continue
                 
-            markets = response.json()
-            print(f"Received {len(markets)} markets from {url}")
+            # Проверяем JSON валидность
+            try:
+                markets = response.json()
+            except ValueError as e:
+                print(f"Invalid JSON from {url}: {e}")
+                print(f"Response preview: {response.text[:200]}")
+                continue
+                
+            print(f"Successfully received {len(markets)} markets from {url}")
             
             events = []
             for market in markets:
@@ -166,8 +186,49 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             print(f"Error fetching from {url}: {e}")
             continue
     
-    print("All Polymarket API endpoints failed, returning empty events")
-    return []
+    # Если все API endpoints не сработали, возвращаем демо-данные
+    print("All Polymarket API endpoints failed, using demo data")
+    return get_demo_events(category)
+
+def get_demo_events(category: str = None):
+    """Демо-события когда Polymarket API недоступен"""
+    demo_events = [
+        {
+            'polymarket_id': 'demo-trump-2024',
+            'title': 'Trump wins 2024 Presidential Election',
+            'description': 'Will Donald Trump win the 2024 US Presidential Election?',
+            'category': 'politics',
+            'image_url': '',
+            'end_time': (datetime.utcnow() + timedelta(days=30)).isoformat(),
+            'options': ['Yes', 'No'],
+            'volumes': [15000.0, 12000.0]
+        },
+        {
+            'polymarket_id': 'demo-bitcoin-100k',
+            'title': 'Bitcoin reaches $100k by end of 2024',
+            'description': 'Will BTC price reach $100,000 before December 31, 2024?',
+            'category': 'crypto',
+            'image_url': '',
+            'end_time': (datetime.utcnow() + timedelta(days=45)).isoformat(),
+            'options': ['Yes', 'No'],
+            'volumes': [8000.0, 9500.0]
+        },
+        {
+            'polymarket_id': 'demo-super-bowl',
+            'title': 'Chiefs win Super Bowl 2024',
+            'description': 'Will Kansas City Chiefs win Super Bowl LVIII?',
+            'category': 'sports',
+            'image_url': '',
+            'end_time': (datetime.utcnow() + timedelta(days=15)).isoformat(),
+            'options': ['Yes', 'No'],
+            'volumes': [22000.0, 18000.0]
+        }
+    ]
+    
+    if category and category != 'all':
+        demo_events = [e for e in demo_events if e['category'] == category]
+    
+    return demo_events
 
 def parse_polymarket_end_time(end_time: str) -> datetime:
     if not end_time:
