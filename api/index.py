@@ -424,6 +424,18 @@ async def startup_event():
     print("EventPredict API starting up...")
     asyncio.create_task(_polymarket_sync_loop())
 
+class PredictionRequest(BaseModel):
+    telegram_id: int
+    event_id: int
+    option_index: int
+    points: float
+
+class UserResponse(BaseModel):
+    telegram_id: int
+    username: Optional[str]
+    points: float
+    stats: dict
+
 @app.get("/", include_in_schema=False)
 async def root():
     index_path = os.path.join(FRONTEND_DIR, "index.html")
