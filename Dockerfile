@@ -1,14 +1,17 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# Only copy requirements first for better layer cache
 COPY api/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm -rf /root/.cache/pip
 
-COPY . /app
+# Copy only what the app needs (smaller image, less ephemeral-storage)
+COPY api /app/api
+COPY frontend /app/frontend
 
 ENV PORT=8000
 EXPOSE 8000
