@@ -54,6 +54,7 @@ async def strip_api_prefix(request, call_next):
 POLYMARKET_API_URL = "https://gamma-api.polymarket.com"
 POLYMARKET_SYNC_INTERVAL_SECONDS = int(os.getenv("POLYMARKET_SYNC_INTERVAL", "1800"))  # 30 минут
 last_polymarket_sync = datetime.min
+POLYMARKET_VERBOSE_LOGS = os.getenv("POLYMARKET_VERBOSE_LOGS", "0") == "1"
 
 # Ключевые слова для определения категорий
 CATEGORY_KEYWORDS = {
@@ -85,18 +86,13 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
         # Используем правильный эндпоинт и параметры из документации
         url = "https://gamma-api.polymarket.com/events"
         
-        # Правильные заголовки
+        # Заголовки (важно: НЕ запрашиваем brotli 'br', т.к. requests без доп. пакетов может не декодировать)
         headers = {
-            'Accept': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'empty',
-            'Sec-Fetch-Mode': 'cors',
-            'Sec-Fetch-Site': 'cross-site'
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
         }
         
         # Правильные параметры из документации
@@ -107,8 +103,9 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             "limit": limit
         }
         
-        print(f"Fetching from Polymarket: {url}")
-        print(f"Params: {params}")
+        if POLYMARKET_VERBOSE_LOGS:
+            print(f"Fetching from Polymarket: {url}")
+            print(f"Params: {params}")
         
         response = requests.get(
             url,
@@ -117,8 +114,9 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             timeout=30
         )
         
-        print(f"Response status: {response.status_code}")
-        print(f"Content-Type: {response.headers.get('content-type', 'unknown')}")
+        if POLYMARKET_VERBOSE_LOGS:
+            print(f"Response status: {response.status_code}")
+            print(f"Content-Type: {response.headers.get('content-type', 'unknown')}")
         
         if response.status_code != 200:
             print(f"HTTP error: {response.status_code}")
@@ -131,9 +129,9 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             print(f"Wrong content-type: {content_type}")
             print(f"Response preview: {response.text[:200]}")
             return []
-        
-        # Сохраняем полный ответ для отладки
-        print(f"Full API response: {response.text}")
+
+        if POLYMARKET_VERBOSE_LOGS:
+            print(f"Response preview (first 1000 chars): {response.text[:1000]}")
         
         try:
             events_data = response.json()
@@ -143,12 +141,12 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             return []
         
         print(f"Received {len(events_data)} events from Polymarket")
-        print(f"Raw response structure: {str(events_data)[:500]}...")
         
         # Обрабатываем события
         events = []
         for idx, event in enumerate(events_data):
-            print(f"🔍 Processing event #{idx}: {str(event)[:200]}...")
+            if POLYMARKET_VERBOSE_LOGS:
+                print(f"🔍 Processing event #{idx}: {str(event)[:200]}...")
             
             # Пробуем разные поля для вопроса
             question = event.get('question') or event.get('title') or event.get('description')
@@ -182,8 +180,9 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
                 print(f"   ❌ No tokens found")
                 continue
             
-            print(f"   ✅ Found question: {question}")
-            print(f"   ✅ Found {len(tokens)} tokens")
+            if POLYMARKET_VERBOSE_LOGS:
+                print(f"   ✅ Found question: {question}")
+                print(f"   ✅ Found {len(tokens)} tokens")
             
             # Формируем структуру события
             title = question
@@ -205,7 +204,8 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
                 
                 options.append(outcome)
                 volumes.append(volume)
-                print(f"      - Token: {outcome} (price: {price})")
+                if POLYMARKET_VERBOSE_LOGS:
+                    print(f"      - Token: {outcome} (price: {price})")
             
             # Если опций нет, пропускаем
             if not options:
@@ -227,7 +227,8 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             }
             
             events.append(event_data)
-            print(f"   ✅ Created event data: {title}")
+            if POLYMARKET_VERBOSE_LOGS:
+                print(f"   ✅ Created event data: {title}")
         
         print(f"Processed {len(events)} valid events")
         return events
@@ -397,21 +398,31 @@ def sync_polymarket_events(db: Session):
         traceback.print_exc()
         return 0
 
-# ==================== PYDANTIC MODELS ====================
+def _sync_polymarket_once_safe() -> None:
+    db = None
+    try:
+        db = next(get_db())
+        sync_polymarket_events(db)
+    except Exception as e:
+        print(f"❌ Background Polymarket sync failed: {e}")
+    finally:
+        try:
+            if db is not None:
+                db.close()
+        except Exception:
+            pass
 
-class PredictionRequest(BaseModel):
-    telegram_id: int
-    event_id: int
-    option_index: int
-    points: float
+async def _polymarket_sync_loop() -> None:
+    await asyncio.sleep(2)
+    while True:
+        await asyncio.to_thread(_sync_polymarket_once_safe)
+        await asyncio.sleep(POLYMARKET_SYNC_INTERVAL_SECONDS)
 
-class UserResponse(BaseModel):
-    telegram_id: int
-    username: Optional[str]
-    points: float
-    stats: dict
-
-# ==================== API ENDPOINTS ====================
+@app.on_event("startup")
+async def startup_event():
+    """Запуск фоновой синхронизации Polymarket (не блокирует старт)"""
+    print("🚀 EventPredict API starting up...")
+    asyncio.create_task(_polymarket_sync_loop())
 
 @app.get("/", include_in_schema=False)
 async def root():
@@ -419,20 +430,6 @@ async def root():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"status": "ok", "message": "EventPredict API"}
-
-@app.on_event("startup")
-async def startup_event():
-    """Автоматическая синхронизация при запуске"""
-    print("🚀 EventPredict API starting up...")
-    try:
-        from models import get_db
-        db = next(get_db())
-        print("📡 Syncing events from Polymarket...")
-        count = sync_polymarket_events(db)
-        print(f"✅ Initial sync completed: {count} events")
-        db.close()
-    except Exception as e:
-        print(f"❌ Initial sync failed: {e}")
 
 @app.get("/categories")
 async def get_categories():
