@@ -10,6 +10,8 @@ import os
 import asyncio
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlsplit
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 # Импорт моделей
 try:
@@ -24,6 +26,9 @@ except ImportError:
     )
 
 app = FastAPI(title="EventPredict API")
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 
 # CORS для работы с frontend
 app.add_middleware(
@@ -255,8 +260,11 @@ class UserResponse(BaseModel):
 
 # ==================== API ENDPOINTS ====================
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 async def root():
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
     return {"status": "ok", "message": "EventPredict API"}
 
 @app.get("/categories")
@@ -462,6 +470,27 @@ async def manual_sync(db: Session = Depends(get_db)):
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+if os.path.isdir(FRONTEND_DIR):
+    app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+
+
+@app.get("/{file_path:path}", include_in_schema=False)
+async def serve_frontend_assets(file_path: str):
+    # Игнорируем API-маршруты и встроенную документацию
+    reserved_prefixes = ("api/", "docs", "redoc", "openapi.json")
+    if file_path.startswith(reserved_prefixes):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    candidate = os.path.join(FRONTEND_DIR, file_path)
+    if os.path.isfile(candidate):
+        return FileResponse(candidate)
+
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    raise HTTPException(status_code=404, detail="Frontend not found")
 
 class handler(BaseHTTPRequestHandler):
     def _run_app(self):
