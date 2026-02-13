@@ -132,6 +132,9 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             print(f"Response preview: {response.text[:200]}")
             return []
         
+        # Сохраняем полный ответ для отладки
+        print(f"Full API response: {response.text}")
+        
         try:
             events_data = response.json()
         except ValueError as e:
@@ -140,61 +143,91 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             return []
         
         print(f"Received {len(events_data)} events from Polymarket")
+        print(f"Raw response structure: {str(events_data)[:500]}...")
         
         # Обрабатываем события
         events = []
-        for event in events_data:
-            # Пропускаем если нет нужных данных
-            if not event.get('question'):
+        for idx, event in enumerate(events_data):
+            print(f"🔍 Processing event #{idx}: {str(event)[:200]}...")
+            
+            # Пробуем разные поля для вопроса
+            question = event.get('question') or event.get('title') or event.get('description')
+            if not question:
+                print(f"   ❌ No question/title/description found")
                 continue
             
-            # Получаем рынки (tokens) для события
+            # Пробуем разные структуры для рынков
             markets = event.get('markets', [])
             if not markets:
+                # Может быть структура с токенами на верхнем уровне
+                if 'tokens' in event:
+                    markets = [event]  # Создаем фиктивный market
+                else:
+                    print(f"   ❌ No markets found")
+                    continue
+            
+            # Берем первый рынок
+            market = markets[0] if markets else None
+            if not market:
+                print(f"   ❌ No valid market found")
                 continue
                 
-            # Берем первый активный рынок
-            market = markets[0]
-            if not market.get('tokens'):
+            # Получаем токены
+            tokens = market.get('tokens', [])
+            if not tokens:
+                # Пробуем на уровне события
+                tokens = event.get('tokens', [])
+            
+            if not tokens:
+                print(f"   ❌ No tokens found")
                 continue
             
+            print(f"   ✅ Found question: {question}")
+            print(f"   ✅ Found {len(tokens)} tokens")
+            
             # Формируем структуру события
-            title = event.get('question', '')
+            title = question
             description = event.get('description', '')
             detected_category = detect_category(title, description)
 
             if category and category != 'all' and detected_category != category:
+                print(f"   ⏭️ Skipping - category {detected_category} != {category}")
                 continue
 
             # Получаем опции из токенов
-            tokens = market.get('tokens', [])
             options = []
             volumes = []
             
             for token in tokens:
                 outcome = token.get('outcome', '')
                 price = float(token.get('price', 0.5) or 0.5)
-                volume = price * 1000  # Примерный расчет объема
+                volume = price * 1000
                 
                 options.append(outcome)
                 volumes.append(volume)
+                print(f"      - Token: {outcome} (price: {price})")
             
             # Если опций нет, пропускаем
             if not options:
+                print(f"   ❌ No valid options")
                 continue
             
+            # Получаем ID события
+            event_id = event.get('id') or event.get('conditionId') or str(idx)
+            
             event_data = {
-                'polymarket_id': event.get('id', ''),
+                'polymarket_id': event_id,
                 'title': title,
                 'description': description,
                 'category': detected_category,
                 'image_url': event.get('image', ''),
-                'end_time': event.get('endDate', ''),
+                'end_time': event.get('endDate', '') or event.get('end_date', ''),
                 'options': options,
                 'volumes': volumes
             }
             
             events.append(event_data)
+            print(f"   ✅ Created event data: {title}")
         
         print(f"Processed {len(events)} valid events")
         return events
