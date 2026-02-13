@@ -1,19 +1,33 @@
-FROM python:3.12-slim
+# Multi-stage build для минимального размера образа
+FROM python:3.12-alpine AS builder
+
+WORKDIR /build
+
+# Устанавливаем только build-зависимости
+RUN apk add --no-cache gcc musl-dev libffi-dev
+
+# Копируем и устанавливаем зависимости
+COPY api/requirements-minimal.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --user -r /tmp/requirements.txt
+
+# Финальный образ - только runtime
+FROM python:3.12-alpine
 
 WORKDIR /app
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+# Копируем установленные пакеты из builder
+COPY --from=builder /root/.local /root/.local
 
-# Only copy requirements first for better layer cache
-COPY api/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm -rf /root/.cache/pip
+# Убеждаемся что локальные пакеты в PATH
+ENV PATH=/root/.local/bin:$PATH \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PORT=8000
 
-# Copy only what the app needs (smaller image, less ephemeral-storage)
+# Копируем только нужные файлы
 COPY api /app/api
 COPY frontend /app/frontend
 
-ENV PORT=8000
 EXPOSE 8000
 
-CMD ["sh", "-c", "uvicorn index:app --host 0.0.0.0 --port ${PORT} --app-dir api"]
+CMD ["uvicorn", "index:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "api"]

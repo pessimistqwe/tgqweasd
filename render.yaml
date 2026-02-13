@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: eventpredict
+    env: python
+    buildCommand: pip install -r api/requirements-minimal.txt
+    startCommand: uvicorn index:app --host 0.0.0.0 --port $PORT --app-dir api
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: 1
+      - key: PORT
+        value: 8000
