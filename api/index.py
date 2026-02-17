@@ -72,12 +72,12 @@ scheduler = AsyncIOScheduler()
 
 # Ключевые слова для определения категорий
 CATEGORY_KEYWORDS = {
-    'politics': ['trump', 'biden', 'election', 'president', 'congress', 'senate', 'vote', 'democrat', 'republican', 'political', 'government', 'minister', 'parliament', 'putin', 'zelensky', 'ukraine', 'russia', 'china', 'nato'],
-    'sports': ['nba', 'nfl', 'mlb', 'soccer', 'football', 'basketball', 'baseball', 'tennis', 'golf', 'ufc', 'boxing', 'f1', 'formula', 'championship', 'world cup', 'super bowl', 'olympics', 'game', 'match', 'team', 'player'],
-    'crypto': ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'blockchain', 'defi', 'nft', 'token', 'coin', 'binance', 'coinbase', 'solana', 'dogecoin', 'altcoin', 'mining'],
-    'pop_culture': ['movie', 'film', 'oscar', 'grammy', 'emmy', 'celebrity', 'music', 'album', 'artist', 'actor', 'actress', 'tv show', 'netflix', 'disney', 'marvel', 'star wars', 'taylor swift', 'beyonce', 'kanye'],
-    'business': ['stock', 'market', 'company', 'ceo', 'ipo', 'merger', 'earnings', 'revenue', 'tesla', 'apple', 'google', 'amazon', 'microsoft', 'nvidia', 'ai', 'layoff', 'startup', 'fed', 'interest rate', 'inflation'],
-    'science': ['nasa', 'spacex', 'rocket', 'mars', 'moon', 'climate', 'vaccine', 'fda', 'research', 'discovery', 'scientist', 'study', 'experiment', 'technology', 'ai model', 'gpt', 'openai']
+    'politics': ['trump', 'biden', 'election', 'president', 'congress', 'senate', 'vote', 'democrat', 'republican', 'political', 'government', 'minister', 'parliament', 'putin', 'zelensky', 'ukraine', 'russia', 'china', 'nato', 'white house', 'kremlin', 'prime minister', 'governor', 'mayor', 'policy', 'legislation', 'bill', 'veto', 'impeachment', 'sanction', 'tariff', 'embassy', 'ambassador', 'summit', 'treaty', 'alliance', 'coalition', 'party', 'campaign', 'debate', 'poll', 'ballot', 'referendum'],
+    'sports': ['nba', 'nfl', 'mlb', 'soccer', 'football', 'basketball', 'baseball', 'tennis', 'golf', 'ufc', 'boxing', 'f1', 'formula', 'championship', 'world cup', 'super bowl', 'olympics', 'game', 'match', 'team', 'player', 'league', 'tournament', 'finals', 'playoffs', 'coach', 'athlete', 'sport', 'win', 'loss', 'score', 'goal', 'touchdown', 'home run'],
+    'crypto': ['bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'blockchain', 'defi', 'nft', 'token', 'coin', 'binance', 'coinbase', 'solana', 'dogecoin', 'altcoin', 'mining', 'web3', 'metamask', 'wallet', 'exchange', 'trading', 'hodl', 'bull', 'bear', 'market cap', 'altseason', 'layer 2', 'staking', 'yield', 'farm'],
+    'pop_culture': ['movie', 'film', 'oscar', 'grammy', 'emmy', 'celebrity', 'music', 'album', 'artist', 'actor', 'actress', 'tv show', 'netflix', 'disney', 'marvel', 'star wars', 'taylor swift', 'beyonce', 'kanye', 'pop', 'rock', 'hip hop', 'rap', 'country', 'jazz', 'concert', 'tour', 'award', 'red carpet', 'premiere', 'streaming', 'youtube', 'tiktok', 'instagram', 'influencer', 'viral', 'trending', 'meme'],
+    'business': ['stock', 'market', 'company', 'ceo', 'ipo', 'merger', 'earnings', 'revenue', 'tesla', 'apple', 'google', 'amazon', 'microsoft', 'nvidia', 'ai', 'layoff', 'startup', 'fed', 'interest rate', 'inflation', 'economy', 'gdp', 'recession', 'bull market', 'bear market', 'dividend', 'bond', 'etf', 'mutual fund', 'hedge fund', 'private equity', 'venture capital', 'acquisition', 'spinoff', 'bankruptcy', 'restructuring', 'layoffs', 'hiring', 'job', 'career', 'salary', 'bonus'],
+    'science': ['nasa', 'spacex', 'rocket', 'mars', 'moon', 'climate', 'vaccine', 'fda', 'research', 'discovery', 'scientist', 'study', 'experiment', 'technology', 'ai model', 'gpt', 'openai', 'physics', 'chemistry', 'biology', 'medicine', 'health', 'disease', 'treatment', 'drug', 'clinical trial', 'gene', 'dna', 'crispr', 'telescope', 'satellite', 'asteroid', 'comet', 'galaxy', 'universe', 'quantum', 'particle', 'atom', 'energy', 'renewable', 'solar', 'wind', 'fusion', 'fission']
 }
 
 def detect_category(title: str, description: str = '') -> str:
@@ -410,7 +410,7 @@ def sync_polymarket_events(db: Session = None):
         if db is None:
             db = next(get_db())
         
-        polymarket_events = fetch_polymarket_events(limit=100)
+        polymarket_events = fetch_polymarket_events(limit=300)
         synced_count = 0
         added_count = 0
         updated_count = 0

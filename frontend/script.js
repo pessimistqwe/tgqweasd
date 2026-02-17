@@ -224,7 +224,7 @@ function createEventCard(event) {
     const categoryInitial = categoryName.charAt(0).toUpperCase();
     
     const imageHtml = event.image_url 
-        ? `<img src="${event.image_url}" alt="" class="event-image" onerror="this.outerHTML='<div class=\\'event-image-placeholder\\'>${categoryInitial}</div>'">`
+        ? `<img src="${event.image_url}" alt="" class="event-image" crossorigin="anonymous" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"><div class="event-image-placeholder" style="display:none">${categoryInitial}</div>`
         : `<div class="event-image-placeholder">${categoryInitial}</div>`;
     
     return `
