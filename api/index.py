@@ -97,10 +97,13 @@ def detect_category(title: str, description: str = '') -> str:
 def fetch_polymarket_events(limit: int = 50, category: str = None):
     """Получает активные события из Polymarket API"""
     try:
+        print(f"=== fetch_polymarket_events START ===")
+        print(f"Limit: {limit}, Category: {category}")
+        
         # На практике /markets чаще содержит все нужные поля (включая исходы)
         primary_url = "https://gamma-api.polymarket.com/markets"
         secondary_url = "https://gamma-api.polymarket.com/events"
-        
+
         # Заголовки (важно: НЕ запрашиваем brotli 'br', т.к. requests без доп. пакетов может не декодировать)
         headers = {
             "Accept": "application/json",
@@ -109,7 +112,7 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             "Accept-Encoding": "gzip, deflate",
             "Connection": "keep-alive",
         }
-        
+
         # Параметры (для /markets и /events)
         params = {
             "order": "id",
@@ -118,12 +121,14 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             "active": "true",
             "limit": limit,
         }
-        
+
         def _do_get(url: str):
             if POLYMARKET_VERBOSE_LOGS:
                 print(f"Fetching from Polymarket: {url}")
                 print(f"Params: {params}")
-            return requests.get(url, params=params, headers=headers, timeout=30)
+            resp = requests.get(url, params=params, headers=headers, timeout=30)
+            print(f"Response: status={resp.status_code}, content-length={len(resp.content)}")
+            return resp
 
         response = _do_get(primary_url)
         
@@ -269,15 +274,18 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
                 print(f"   Created event data: {title}")
         
         print(f"Processed {len(events)} valid events")
+        print(f"=== fetch_polymarket_events END ===")
         return events
-        
+
     except requests.exceptions.RequestException as e:
         print(f"Network error: {e}")
+        print(f"=== fetch_polymarket_events ERROR ===")
         return []
     except Exception as e:
         print(f"Error fetching Polymarket events: {e}")
         import traceback
         traceback.print_exc()
+        print(f"=== fetch_polymarket_events ERROR ===")
         return []
 
 def parse_polymarket_end_time(end_time: str) -> datetime:
