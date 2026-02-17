@@ -74,6 +74,9 @@ scheduler = AsyncIOScheduler()
 # Admin Telegram ID
 ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "1972885597"))
 
+# CORS proxy для изображений Polymarket
+POLYMARKET_IMAGE_PROXY = os.getenv("POLYMARKET_IMAGE_PROXY", "https://gamma-api.polymarket.com")
+
 # Ключевые слова для определения категорий
 CATEGORY_KEYWORDS = {
     'politics': ['trump', 'biden', 'election', 'president', 'congress', 'senate', 'vote', 'democrat', 'republican', 'political', 'government', 'minister', 'parliament', 'putin', 'zelensky', 'ukraine', 'russia', 'china', 'nato', 'white house', 'kremlin', 'prime minister', 'governor', 'mayor', 'policy', 'legislation', 'bill', 'veto', 'impeachment', 'sanction', 'tariff', 'embassy', 'ambassador', 'summit', 'treaty', 'alliance', 'coalition', 'party', 'campaign', 'debate', 'poll', 'ballot', 'referendum'],
@@ -749,6 +752,51 @@ async def get_price_history(event_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error loading price history: {e}")
         return []
+
+@app.get("/proxy/image")
+async def proxy_image(url: str):
+    """Проксирует изображение для обхода CORS"""
+    try:
+        if not url:
+            raise HTTPException(status_code=400, detail="URL required")
+        
+        # Проверяем что URL с Polymarket
+        if not url.startswith('https://gamma-api.polymarket.com'):
+            # Разрешаем только Polymarket images
+            if not any(domain in url for domain in ['polymarket.com', 'polygon.com']):
+                raise HTTPException(status_code=400, detail="Only Polymarket images allowed")
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+            "Accept-Encoding": "gzip, deflate",
+            "Connection": "keep-alive",
+        }
+        
+        response = requests.get(url, headers=headers, timeout=30)
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=404, detail="Image not found")
+        
+        # Определяем content-type
+        content_type = response.headers.get('content-type', 'image/jpeg')
+        if not content_type.startswith('image/'):
+            content_type = 'image/jpeg'
+        
+        from fastapi.responses import Response
+        return Response(
+            content=response.content,
+            media_type=content_type,
+            headers={
+                "Cache-Control": "public, max-age=86400",  # Кэш на 24 часа
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Proxy image error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/user/{telegram_id}")
 async def get_user(telegram_id: int, db: Session = Depends(get_db)):

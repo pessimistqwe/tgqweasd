@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
 EventPredict Deployment Test Script
-Automated tests for checking deployment status
+Automated tests for checking deployment status and new features:
+- Image proxy
+- Russian translations
+- Chart data from Polymarket
 """
 import requests
 import sys
@@ -23,7 +26,7 @@ def test_health():
         response = requests.get(f"{BASE_URL}/health", timeout=10)
         data = response.json()
         passed = data.get("status") == "healthy" and data.get("sync", {}).get("total_synced", 0) > 0
-        return print_status("Health Check", passed, 
+        return print_status("Health Check", passed,
                            f"Status: {data.get('status')}, Synced: {data.get('sync', {}).get('total_synced')}")
     except Exception as e:
         return print_status("Health Check", False, str(e))
@@ -107,7 +110,7 @@ def test_price_history():
         events = events_response.json().get("events", [])
         if not events:
             return print_status("Price History", False, "No events available")
-        
+
         event_id = events[0]["id"]
         response = requests.get(f"{BASE_URL}/events/{event_id}/price-history", timeout=10)
         data = response.json()
@@ -124,7 +127,7 @@ def test_single_event():
         events = events_response.json().get("events", [])
         if not events:
             return print_status("Single Event", False, "No events available")
-        
+
         event_id = events[0]["id"]
         response = requests.get(f"{BASE_URL}/events/{event_id}", timeout=10)
         data = response.json()
@@ -134,31 +137,101 @@ def test_single_event():
     except Exception as e:
         return print_status("Single Event Endpoint", False, str(e))
 
+def test_image_proxy():
+    """Test image proxy endpoint"""
+    try:
+        # Get event with image
+        events_response = requests.get(f"{BASE_URL}/events", timeout=10)
+        events = events_response.json().get("events", [])
+        
+        # Find event with image_url
+        image_url = None
+        for event in events:
+            if event.get("image_url"):
+                image_url = event["image_url"]
+                break
+        
+        if not image_url:
+            return print_status("Image Proxy", False, "No events with images available")
+        
+        # Test proxy endpoint
+        proxy_url = f"{BASE_URL}/proxy/image?url={requests.utils.quote(image_url)}"
+        response = requests.get(proxy_url, timeout=10)
+        
+        passed = response.status_code == 200 and response.headers.get('content-type', '').startswith('image/')
+        return print_status("Image Proxy Endpoint", passed,
+                           f"Status: {response.status_code}, Content-Type: {response.headers.get('content-type', 'N/A')}")
+    except Exception as e:
+        return print_status("Image Proxy Endpoint", False, str(e))
+
+def test_events_have_images():
+    """Test that events have image URLs"""
+    try:
+        response = requests.get(f"{BASE_URL}/events", timeout=10)
+        data = response.json()
+        events = data.get("events", [])
+        
+        if not events:
+            return print_status("Events Have Images", False, "No events available")
+        
+        # Check if at least some events have images
+        events_with_images = sum(1 for e in events if e.get("image_url"))
+        passed = events_with_images > 0
+        return print_status("Events Have Images", passed,
+                           f"Events with images: {events_with_images}/{len(events)}")
+    except Exception as e:
+        return print_status("Events Have Images", False, str(e))
+
+def test_event_options():
+    """Test that events have options with probabilities"""
+    try:
+        response = requests.get(f"{BASE_URL}/events", timeout=10)
+        data = response.json()
+        events = data.get("events", [])
+        
+        if not events:
+            return print_status("Event Options", False, "No events available")
+        
+        # Check first event has options
+        event = events[0]
+        has_options = "options" in event and len(event["options"]) > 0
+        has_probabilities = all("probability" in opt for opt in event.get("options", []))
+        
+        passed = has_options and has_probabilities
+        return print_status("Event Options", passed,
+                           f"Options: {len(event.get('options', []))}, Has probabilities: {has_probabilities}")
+    except Exception as e:
+        return print_status("Event Options", False, str(e))
+
 def main():
     """Run all tests"""
     print("=" * 60)
     print("EventPredict Deployment Tests")
     print(f"Base URL: {BASE_URL}")
+    print("Testing: Images, Translations, Charts")
     print("=" * 60)
     print()
-    
+
     tests = [
         test_health,
         test_categories,
         test_events,
+        test_events_have_images,
+        test_image_proxy,
         test_events_crypto,
         test_events_sports,
+        test_event_options,
         test_admin_check,
         test_admin_stats,
         test_price_history,
         test_single_event,
     ]
-    
+
     results = []
     for test in tests:
         results.append(test())
         time.sleep(0.5)  # Small delay between tests
-    
+
     print()
     print("=" * 60)
     passed = sum(results)

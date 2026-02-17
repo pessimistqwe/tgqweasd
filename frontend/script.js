@@ -17,79 +17,478 @@ function getUserLanguage() {
 const userLang = getUserLanguage();
 const isRussian = userLang === 'ru';
 
+// Расширенный список сохраняемых терминов (имена, криптовалюты, команды, бренды)
+const PRESERVE_TERMS = [
+    // Криптовалюты и токены
+    'Bitcoin', 'Ethereum', 'Solana', 'XRP', 'Cardano', 'Dogecoin', 'Polkadot',
+    'Avalanche', 'Chainlink', 'Polygon', 'Litecoin', 'Uniswap', 'Cosmos',
+    'Monero', 'Stellar', 'VeChain', 'Filecoin', 'Tron', 'Hedera', 'Algorand',
+    'Elrond', 'Near', 'Fantom', 'Aptos', 'Arbitrum', 'Optimism', 'Injective',
+    'BTC', 'ETH', 'SOL', 'DOGE', 'ADA', 'DOT', 'AVAX', 'LINK', 'MATIC', 'LTC',
+    'UNI', 'ATOM', 'XLM', 'VET', 'FIL', 'TRX', 'HBAR', 'ALGO', 'EGLD', 'NEAR',
+    'FTM', 'APT', 'ARB', 'OP', 'INJ', 'USDT', 'USDC', 'BNB', 'BUSD', 'DAI',
+    // Известные люди
+    'Trump', 'Biden', 'Putin', 'Zelensky', 'Musk', 'Bezos', 'Gates', 'Buffett',
+    'Obama', 'Clinton', 'Bloomberg', 'Zuckerberg', 'Cook', 'Nadella', 'Altman',
+    'Sam', 'Elon', 'Jeff', 'Bill', 'Warren', 'Barack', 'Hillary', 'Mike', 'Mark',
+    'Tim', 'Satya', 'Jensen', 'Huang', 'Dimon', 'Larry', 'Sergey', 'Jack',
+    // Компании и бренды
+    'Tesla', 'Apple', 'Google', 'Amazon', 'Microsoft', 'Nvidia', 'Meta', 'Netflix',
+    'OpenAI', 'SpaceX', 'Blue Origin', 'Boeing', 'Airbus', 'Fed', 'SEC', 'CFTC',
+    'BlackRock', 'Vanguard', 'Fidelity', 'JPMorgan', 'Goldman Sachs', 'Morgan Stanley',
+    'Coinbase', 'Binance', 'Kraken', 'FTX', 'Gemini', 'Bitfinex', 'Huobi', 'OKX',
+    'Bybit', 'KuCoin', 'Gate.io', 'Bitstamp', 'Crypto.com', 'Ledger', 'Trezor',
+    // Команды и лиги
+    'NBA', 'NFL', 'MLB', 'NHL', 'UFC', 'FIFA', 'UEFA', 'Premier League', 'La Liga',
+    'Serie A', 'Bundesliga', 'Ligue 1', 'Champions League', 'Europa League',
+    'World Cup', 'Olympics', 'Super Bowl', 'Stanley Cup', 'Finals', 'Playoffs',
+    'Lakers', 'Celtics', 'Warriors', 'Bulls', 'Heat', 'Nets', 'Knicks', 'Rockets',
+    'Spurs', 'Mavericks', 'Suns', 'Clippers', '76ers', 'Bucks', 'Nuggets', 'Heat',
+    'Chiefs', 'Eagles', '49ers', 'Cowboys', 'Patriots', 'Giants', 'Packers', 'Bills',
+    'Ravens', 'Steelers', 'Bengals', 'Browns', 'Titans', 'Colts', 'Texans', 'Jaguars',
+    'Dolphins', 'Jets', 'Chargers', 'Raiders', 'Seahawks', 'Rams', 'Cardinals', 'Falcons',
+    'Panthers', 'Saints', 'Buccaneers', 'Lions', 'Vikings', 'Bears', 'Lions',
+    'Yankees', 'Red Sox', 'Dodgers', 'Giants', 'Cubs', 'Cardinals', 'Astros', 'Mets',
+    'Real Madrid', 'Barcelona', 'Manchester United', 'Liverpool', 'Chelsea', 'Arsenal',
+    'Manchester City', 'Tottenham', 'Bayern Munich', 'PSG', 'Juventus', 'AC Milan',
+    'Inter Milan', 'Napoli', 'Roma', 'Lazio', 'Atletico Madrid', 'Sevilla', 'Valencia',
+    // Технологии и продукты
+    'ChatGPT', 'GPT', 'Claude', 'Gemini', 'LLaMA', 'Transformer', 'AI', 'ML', 'DL',
+    'iOS', 'Android', 'Windows', 'macOS', 'Linux', 'Ubuntu', 'Red Hat', 'Docker',
+    'Kubernetes', 'AWS', 'Azure', 'GCP', 'Cloudflare', 'Vercel', 'Netlify', 'Heroku',
+    // Страны и города
+    'USA', 'US', 'Russia', 'Ukraine', 'China', 'UK', 'Germany', 'France', 'Italy',
+    'Spain', 'Japan', 'South Korea', 'India', 'Brazil', 'Canada', 'Australia',
+    'Moscow', 'Kyiv', 'Beijing', 'Shanghai', 'London', 'Paris', 'Berlin', 'Rome',
+    'Madrid', 'Tokyo', 'Seoul', 'Mumbai', 'Delhi', 'Sao Paulo', 'Toronto', 'Sydney',
+    'Washington', 'New York', 'Los Angeles', 'San Francisco', 'Chicago', 'Houston',
+    // Другое
+    'Metamask', 'Trust Wallet', 'Phantom', 'Coinbase Wallet', 'Ledger Live',
+    'OpenSea', 'Rarible', 'Foundation', 'SuperRare', 'NFT', 'DeFi', 'CeFi', 'DAO',
+    'Staking', 'Yield Farming', 'Liquidity Pool', 'AMM', 'DEX', 'CEX', 'CEX',
+    'Layer 1', 'Layer 2', 'Rollup', 'Sidechain', 'Bridge', 'Cross-chain',
+    'Bull Market', 'Bear Market', 'HODL', 'FOMO', 'FUD', 'DYOR', 'WAGMI', 'NGMI'
+];
+
+// Расширенный словарь для перевода
+const TRANSLATION_DICT = {
+    // Месяцы
+    'January': 'Январь', 'February': 'Февраль', 'March': 'Март',
+    'April': 'Апрель', 'May': 'Май', 'June': 'Июнь',
+    'July': 'Июль', 'August': 'Август', 'September': 'Сентябрь',
+    'October': 'Октябрь', 'November': 'Ноябрь', 'December': 'Декабрь',
+    // Направления и сравнения
+    'Up': 'Вверх', 'Down': 'Вниз', 'Above': 'Выше', 'Below': 'Ниже',
+    'Higher': 'Выше', 'Lower': 'Ниже', 'Rise': 'Рост', 'Fall': 'Падение',
+    'Increase': 'Увеличение', 'Decrease': 'Уменьшение', 'Grow': 'Рост',
+    'Will': 'Будет', 'will': 'будет', 'Won\'t': 'Не будет', 'won\'t': 'не будет',
+    // Предлоги и союзы
+    'or': 'или', 'and': 'и', 'the': '', 'The': '',
+    'at': 'в', 'by': 'к', 'from': 'с', 'to': 'до', 'To': 'До',
+    'of': '', 'in': 'в', 'In': 'В', 'on': 'на', 'On': 'На', 'for': 'для',
+    'with': 'с', 'Without': 'Без', 'without': 'без',
+    'between': 'между', 'Among': 'Среди', 'among': 'среди',
+    'into': 'в', 'out': 'из', 'over': 'над', 'under': 'под',
+    'before': 'до', 'after': 'после', 'during': 'во время',
+    'Within': 'В пределах', 'within': 'в пределах',
+    // Время
+    'PM': 'МСК', 'AM': 'МСК', 'PM ET': 'МСК', 'AM ET': 'МСК',
+    'end': 'конец', 'End': 'Конец', 'start': 'начало', 'Start': 'Начало',
+    'time': 'время', 'Time': 'Время',
+    'day': 'день', 'Day': 'День', 'week': 'неделя', 'Week': 'Неделя',
+    'month': 'месяц', 'Month': 'Месяц', 'year': 'год', 'Year': 'Год',
+    'today': 'сегодня', 'Tomorrow': 'Завтра', 'tomorrow': 'завтра',
+    'yesterday': 'вчера', 'Yesterday': 'Вчера',
+    'Monday': 'Понедельник', 'Tuesday': 'Вторник', 'Wednesday': 'Среда',
+    'Thursday': 'Четверг', 'Friday': 'Пятница', 'Saturday': 'Суббота', 'Sunday': 'Воскресенье',
+    // Финансы и рынки
+    'price': 'цена', 'Price': 'Цена', 'value': 'значение', 'Value': 'Значение',
+    'market': 'рынок', 'Market': 'Рынок', 'markets': 'рынки', 'Markets': 'Рынки',
+    'trading': 'торговля', 'Trading': 'Торговля', 'trade': 'торговать',
+    'close': 'закрытие', 'Close': 'Закрытие', 'closed': 'закрыто',
+    'high': 'максимум', 'High': 'Максимум', 'low': 'минимум', 'Low': 'Минимум',
+    'open': 'открытие', 'Open': 'Открытие', 'opened': 'открыто',
+    'stock': 'акция', 'Stock': 'Акция', 'stocks': 'акции', 'Stocks': 'Акции',
+    'share': 'акция', 'Share': 'Акция', 'shares': 'акции',
+    'bond': 'облигация', 'Bond': 'Облигация',
+    'fund': 'фонд', 'Fund': 'Фонд', 'ETF': 'ETF', 'Mutual Fund': 'Паевой фонд',
+    'IPO': 'IPO', 'Merger': 'Слияние', 'merger': 'слияние',
+    'Acquisition': 'Поглощение', 'acquisition': 'поглощение',
+    'Revenue': 'Выручка', 'revenue': 'выручка', 'Earnings': 'Прибыль',
+    'Profit': 'Прибыль', 'profit': 'прибыль', 'Loss': 'Убыток', 'loss': 'убыток',
+    'CEO': 'Гендиректор', 'CFO': 'Финдиректор', 'COO': 'Опердиректор',
+    'inflation': 'инфляция', 'Inflation': 'Инфляция',
+    'recession': 'рецессия', 'Recession': 'Рецессия',
+    'economy': 'экономика', 'Economy': 'Экономика',
+    'GDP': 'ВВП', 'interest rate': 'процентная ставка',
+    'Federal Reserve': 'Федеральная резервная система', 'Fed': 'ФРС',
+    // События
+    'event': 'событие', 'Event': 'Событие', 'events': 'события',
+    'election': 'выборы', 'Election': 'Выборы',
+    'vote': 'голосование', 'Vote': 'Голосование', 'voting': 'голосование',
+    'ballot': 'бюллетень', 'Ballot': 'Бюллетень',
+    'game': 'игра', 'Game': 'Игра', 'games': 'игры',
+    'match': 'матч', 'Match': 'Матч', 'matches': 'матчи',
+    'final': 'финал', 'Final': 'Финал', 'finals': 'финалы',
+    'semifinal': 'полуфинал', 'Semifinal': 'Полуфинал',
+    'championship': 'чемпионат', 'Championship': 'Чемпионат',
+    'tournament': 'турнир', 'Tournament': 'Турнир',
+    'season': 'сезон', 'Season': 'Сезон',
+    'playoff': 'плей-офф', 'Playoff': 'Плей-офф', 'playoffs': 'плей-офф',
+    // Крипто
+    'crypto': 'крипто', 'Crypto': 'Крипто', 'cryptocurrency': 'криптовалюта',
+    'blockchain': 'блокчейн', 'Blockchain': 'Блокчейн',
+    'token': 'токен', 'Token': 'Токен', 'tokens': 'токены',
+    'coin': 'монета', 'Coin': 'Монета', 'coins': 'монеты',
+    'altcoin': 'альткоин', 'Altcoin': 'Альткоин',
+    'mining': 'майнинг', 'Mining': 'Майнинг',
+    'wallet': 'кошелёк', 'Wallet': 'Кошелёк',
+    'exchange': 'биржа', 'Exchange': 'Биржа',
+    'bull': 'бык', 'Bull': 'Бык', 'bear': 'медведь', 'Bear': 'Медведь',
+    'staking': 'стейкинг', 'Staking': 'Стейкинг',
+    'yield': 'доходность', 'Yield': 'Доходность',
+    'farm': 'фарминг', 'Farm': 'Фарминг', 'farming': 'фарминг',
+    // Спорт
+    'team': 'команда', 'Team': 'Команда', 'teams': 'команды',
+    'player': 'игрок', 'Player': 'Игрок', 'players': 'игроки',
+    'coach': 'тренер', 'Coach': 'Тренер',
+    'win': 'победа', 'Win': 'Победа', 'wins': 'победы',
+    'loss': 'поражение', 'Loss': 'Поражение', 'losses': 'поражения',
+    'score': 'счёт', 'Score': 'Счёт', 'scores': 'счёты',
+    'points': 'очки', 'Points': 'Очки',
+    'goals': 'голы', 'Goals': 'Голы', 'goal': 'гол', 'Goal': 'Гол',
+    'assist': 'передача', 'Assist': 'Передача',
+    'rebound': 'подбор', 'Rebound': 'Подбор',
+    'touchdown': 'тачдаун', 'Touchdown': 'Тачдаун',
+    'home run': 'хоум-ран', 'Home Run': 'Хоум-ран',
+    'athlete': 'атлет', 'Athlete': 'Атлет',
+    'sport': 'спорт', 'Sport': 'Спорт', 'sports': 'виды спорта',
+    'league': 'лига', 'League': 'Лига',
+    // Политика
+    'president': 'президент', 'President': 'Президент',
+    'congress': 'конгресс', 'Congress': 'Конгресс',
+    'senate': 'сенат', 'Senate': 'Сенат',
+    'democrat': 'демократ', 'Democrat': 'Демократ',
+    'republican': 'республиканец', 'Republican': 'Республиканец',
+    'government': 'правительство', 'Government': 'Правительство',
+    'minister': 'министр', 'Minister': 'Министр',
+    'parliament': 'парламент', 'Parliament': 'Парламент',
+    'policy': 'политика', 'Policy': 'Политика',
+    'legislation': 'законодательство', 'Legislation': 'Законодательство',
+    'bill': 'законопроект', 'Bill': 'Законопроект',
+    'veto': 'вето', 'Veto': 'Вето',
+    'impeachment': 'импичмент', 'Impeachment': 'Импичмент',
+    'sanction': 'санкция', 'Sanction': 'Санкция',
+    'tariff': 'тариф', 'Tariff': 'Тариф',
+    'embassy': 'посольство', 'Embassy': 'Посольство',
+    'ambassador': 'посол', 'Ambassador': 'Посол',
+    'summit': 'саммит', 'Summit': 'Саммит',
+    'treaty': 'договор', 'Treaty': 'Договор',
+    'campaign': 'кампания', 'Campaign': 'Кампания',
+    'debate': 'дебаты', 'Debate': 'Дебаты',
+    'poll': 'опрос', 'Poll': 'Опрос', 'polls': 'опросы',
+    'referendum': 'референдум', 'Referendum': 'Референдум',
+    // Наука и технологии
+    'science': 'наука', 'Science': 'Наука',
+    'research': 'исследование', 'Research': 'Исследование',
+    'discovery': 'открытие', 'Discovery': 'Открытие',
+    'scientist': 'учёный', 'Scientist': 'Учёный',
+    'study': 'исследование', 'Study': 'Исследование',
+    'experiment': 'эксперимент', 'Experiment': 'Эксперимент',
+    'technology': 'технология', 'Technology': 'Технология',
+    'physics': 'физика', 'Physics': 'Физика',
+    'chemistry': 'химия', 'Chemistry': 'Химия',
+    'biology': 'биология', 'Biology': 'Биология',
+    'medicine': 'медицина', 'Medicine': 'Медицина',
+    'health': 'здоровье', 'Health': 'Здоровье',
+    'disease': 'болезнь', 'Disease': 'Болезнь',
+    'treatment': 'лечение', 'Treatment': 'Лечение',
+    'drug': 'препарат', 'Drug': 'Препарат',
+    'vaccine': 'вакцина', 'Vaccine': 'Вакцина',
+    'FDA': 'FDA', 'NASA': 'NASA', 'ESA': 'ESA',
+    'rocket': 'ракета', 'Rocket': 'Ракета',
+    'mars': 'марс', 'Mars': 'Марс', 'moon': 'луна', 'Moon': 'Луна',
+    'climate': 'климат', 'Climate': 'Климат',
+    'space': 'космос', 'Space': 'Космос',
+    'satellite': 'спутник', 'Satellite': 'Спутник',
+    'telescope': 'телескоп', 'Telescope': 'Телескоп',
+    // Поп-культура
+    'movie': 'фильм', 'Movie': 'Фильм', 'movies': 'фильмы',
+    'film': 'фильм', 'Film': 'Фильм',
+    'oscar': 'оскар', 'Oscar': 'Оскар', 'Oscars': 'Оскары',
+    'grammy': 'грэмми', 'Grammy': 'Грэмми', 'Grammys': 'Грэмми',
+    'emmy': 'эмми', 'Emmy': 'Эмми', 'Emmys': 'Эмми',
+    'celebrity': 'знаменитость', 'Celebrity': 'Знаменитость',
+    'music': 'музыка', 'Music': 'Музыка',
+    'album': 'альбом', 'Album': 'Альбом',
+    'artist': 'артист', 'Artist': 'Артист',
+    'actor': 'актёр', 'Actor': 'Актёр',
+    'actress': 'актриса', 'Actress': 'Актриса',
+    'tv show': 'телешоу', 'TV Show': 'Телешоу',
+    'series': 'сериал', 'Series': 'Сериал',
+    'streaming': 'стриминг', 'Streaming': 'Стриминг',
+    'netflix': 'netflix', 'Netflix': 'Netflix',
+    'disney': 'disney', 'Disney': 'Disney',
+    'marvel': 'marvel', 'Marvel': 'Marvel',
+    'award': 'награда', 'Award': 'Награда', 'awards': 'награды',
+    'premiere': 'премьера', 'Premiere': 'Премьера',
+    // Общие слова
+    'more': 'больше', 'More': 'Больше',
+    'less': 'меньше', 'Less': 'Меньше',
+    'than': 'чем', 'Than': 'Чем',
+    'this': 'этот', 'This': 'Этот',
+    'that': 'тот', 'That': 'Тот',
+    'these': 'эти', 'These': 'Эти',
+    'those': 'те', 'Those': 'Те',
+    'what': 'что', 'What': 'Что',
+    'which': 'который', 'Which': 'Который',
+    'who': 'кто', 'Who': 'Кто',
+    'when': 'когда', 'When': 'Когда',
+    'where': 'где', 'Where': 'Где',
+    'why': 'почему', 'Why': 'Почему',
+    'how': 'как', 'How': 'Как',
+    'new': 'новый', 'New': 'Новый',
+    'old': 'старый', 'Old': 'Старый',
+    'first': 'первый', 'First': 'Первый',
+    'last': 'последний', 'Last': 'Последний',
+    'next': 'следующий', 'Next': 'Следующий',
+    'previous': 'предыдущий', 'Previous': 'Предыдущий',
+    'current': 'текущий', 'Current': 'Текущий',
+    'future': 'будущий', 'Future': 'Будущий',
+    'past': 'прошлый', 'Past': 'Прошлый',
+    'same': 'тот же', 'Same': 'Тот же',
+    'different': 'другой', 'Different': 'Другой',
+    'important': 'важный', 'Important': 'Важный',
+    'possible': 'возможный', 'Possible': 'Возможный',
+    'impossible': 'невозможный', 'Impossible': 'Невозможный',
+    'likely': 'вероятный', 'Likely': 'Вероятный',
+    'unlikely': 'маловероятный', 'Unlikely': 'Маловероятный',
+    'certain': 'определённый', 'Certain': 'Определённый',
+    'uncertain': 'неопределённый', 'Uncertain': 'Неопределённый',
+    'sure': 'уверенный', 'Sure': 'Уверенный',
+    'true': 'правда', 'True': 'Правда',
+    'false': 'ложь', 'False': 'Ложь',
+    'yes': 'да', 'Yes': 'Да',
+    'no': 'нет', 'No': 'Нет',
+    'not': 'не', 'Not': 'Не',
+    'never': 'никогда', 'Never': 'Никогда',
+    'always': 'всегда', 'Always': 'Всегда',
+    'sometimes': 'иногда', 'Sometimes': 'Иногда',
+    'often': 'часто', 'Often': 'Часто',
+    'rarely': 'редко', 'Rarely': 'Редко',
+    'already': 'уже', 'Already': 'Уже',
+    'still': 'всё ещё', 'Still': 'Всё ещё',
+    'yet': 'ещё', 'Yet': 'Ещё',
+    'just': 'только что', 'Just': 'Только что',
+    'only': 'только', 'Only': 'Только',
+    'also': 'также', 'Also': 'Также',
+    'too': 'тоже', 'Too': 'Тоже',
+    'either': 'либо', 'Either': 'Либо',
+    'neither': 'ни', 'Neither': 'Ни',
+    'both': 'оба', 'Both': 'Оба',
+    'all': 'все', 'All': 'Все',
+    'some': 'некоторые', 'Some': 'Некоторые',
+    'any': 'любой', 'Any': 'Любой',
+    'each': 'каждый', 'Each': 'Каждый',
+    'every': 'каждый', 'Every': 'Каждый',
+    'many': 'много', 'Many': 'Много',
+    'few': 'немного', 'Few': 'Немного',
+    'several': 'несколько', 'Several': 'Несколько',
+    'most': 'большинство', 'Most': 'Большинство',
+    'such': 'такой', 'Such': 'Такой',
+    'another': 'другой', 'Another': 'Другой',
+    'other': 'другой', 'Other': 'Другой',
+    'others': 'другие', 'Others': 'Другие',
+    // Действия
+    'make': 'делать', 'Make': 'Делать',
+    'do': 'делать', 'Do': 'Делать',
+    'have': 'иметь', 'Have': 'Иметь',
+    'has': 'имеет', 'Has': 'Имеет',
+    'had': 'имел', 'Had': 'Имел',
+    'get': 'получать', 'Get': 'Получать',
+    'got': 'получил', 'Got': 'Получил',
+    'take': 'брать', 'Take': 'Брать',
+    'took': 'взял', 'Took': 'Взял',
+    'come': 'приходить', 'Come': 'Приходить',
+    'came': 'пришёл', 'Came': 'Пришёл',
+    'go': 'идти', 'Go': 'Идти',
+    'went': 'пошёл', 'Went': 'Пошёл',
+    'see': 'видеть', 'See': 'Видеть',
+    'saw': 'увидел', 'Saw': 'Увидел',
+    'know': 'знать', 'Know': 'Знать',
+    'knew': 'знал', 'Knew': 'Знал',
+    'think': 'думать', 'Think': 'Думать',
+    'thought': 'думал', 'Thought': 'Думал',
+    'want': 'хотеть', 'Want': 'Хотеть',
+    'wanted': 'хотел', 'Wanted': 'Хотел',
+    'need': 'нуждаться', 'Need': 'Нуждаться',
+    'needed': 'нуждался', 'Needed': 'Нуждался',
+    'use': 'использовать', 'Use': 'Использовать',
+    'used': 'использовал', 'Used': 'Использовал',
+    'find': 'находить', 'Find': 'Находить',
+    'found': 'нашёл', 'Found': 'Нашёл',
+    'give': 'давать', 'Give': 'Давать',
+    'gave': 'дал', 'Gave': 'Дал',
+    'tell': 'говорить', 'Tell': 'Говорить',
+    'told': 'сказал', 'Told': 'Сказал',
+    'say': 'сказать', 'Say': 'Сказать',
+    'said': 'сказал', 'Said': 'Сказал',
+    'ask': 'спрашивать', 'Ask': 'Спрашивать',
+    'asked': 'спросил', 'Asked': 'Спросил',
+    'answer': 'отвечать', 'Answer': 'Отвечать',
+    'answered': 'ответил', 'Answered': 'Ответил',
+    'work': 'работать', 'Work': 'Работать',
+    'worked': 'работал', 'Worked': 'Работал',
+    'play': 'играть', 'Play': 'Играть',
+    'played': 'играл', 'Played': 'Играл',
+    'run': 'бежать', 'Run': 'Бежать',
+    'ran': 'бежал', 'Ran': 'Бежал',
+    'move': 'двигать', 'Move': 'Двигать',
+    'moved': 'двигал', 'Moved': 'Двигал',
+    'live': 'жить', 'Live': 'Жить',
+    'lived': 'жил', 'Lived': 'Жил',
+    'believe': 'верить', 'Believe': 'Верить',
+    'believed': 'верил', 'Believed': 'Верил',
+    'happen': 'случаться', 'Happen': 'Случаться',
+    'happened': 'случилось', 'Happened': 'Случилось',
+    'become': 'становиться', 'Become': 'Становиться',
+    'became': 'стал', 'Became': 'Стал',
+    'show': 'показывать', 'Show': 'Показывать',
+    'showed': 'показал', 'Showed': 'Показал',
+    'mean': 'означать', 'Mean': 'Означать',
+    'meant': 'означало', 'Meant': 'Означало',
+    'keep': 'держать', 'Keep': 'Держать',
+    'kept': 'держал', 'Kept': 'Держал',
+    'let': 'позволять', 'Let': 'Позволять',
+    'begin': 'начинать', 'Begin': 'Начинать',
+    'began': 'начал', 'Began': 'Начал',
+    'seem': 'казаться', 'Seem': 'Казаться',
+    'seemed': 'казалось', 'Seemed': 'Казалось',
+    'help': 'помогать', 'Help': 'Помогать',
+    'helped': 'помог', 'Helped': 'Помог',
+    'talk': 'говорить', 'Talk': 'Говорить',
+    'talked': 'говорил', 'Talked': 'Говорил',
+    'turn': 'поворачивать', 'Turn': 'Поворачивать',
+    'turned': 'повернул', 'Turned': 'Повернул',
+    'start': 'начинать', 'Start': 'Начинать',
+    'started': 'начал', 'Started': 'Начал',
+    'might': 'мог бы', 'Might': 'Мог бы',
+    'could': 'мог', 'Could': 'Мог',
+    'would': 'бы', 'Would': 'Бы',
+    'should': 'должен', 'Should': 'Должен',
+    'must': 'должен', 'Must': 'Должен',
+    'may': 'может', 'May': 'Может',
+    'can': 'может', 'Can': 'Может',
+    // Существительные
+    'thing': 'вещь', 'Thing': 'Вещь', 'things': 'вещи',
+    'person': 'человек', 'Person': 'Человек', 'people': 'люди',
+    'world': 'мир', 'World': 'Мир',
+    'life': 'жизнь', 'Life': 'Жизнь',
+    'hand': 'рука', 'Hand': 'Рука',
+    'part': 'часть', 'Part': 'Часть',
+    'child': 'ребёнок', 'Child': 'Ребёнок',
+    'eye': 'глаз', 'Eye': 'Глаз',
+    'woman': 'женщина', 'Woman': 'Женщина',
+    'man': 'мужчина', 'Man': 'Мужчина',
+    'face': 'лицо', 'Face': 'Лицо',
+    'head': 'голова', 'Head': 'Голова',
+    'body': 'тело', 'Body': 'Тело',
+    'case': 'случай', 'Case': 'Случай',
+    'week': 'неделя', 'Week': 'Неделя',
+    'company': 'компания', 'Company': 'Компания',
+    'system': 'система', 'System': 'Система',
+    'program': 'программа', 'Program': 'Программа',
+    'question': 'вопрос', 'Question': 'Вопрос',
+    'number': 'число', 'Number': 'Число',
+    'night': 'ночь', 'Night': 'Ночь',
+    'point': 'точка', 'Point': 'Точка',
+    'home': 'дом', 'Home': 'Дом',
+    'water': 'вода', 'Water': 'Вода',
+    'room': 'комната', 'Room': 'Комната',
+    'mother': 'мать', 'Mother': 'Мать',
+    'area': 'область', 'Area': 'Область',
+    'money': 'деньги', 'Money': 'Деньги',
+    'story': 'история', 'Story': 'История',
+    'fact': 'факт', 'Fact': 'Факт',
+    'month': 'месяц', 'Month': 'Месяц',
+    'lot': 'много', 'Lot': 'Много',
+    'right': 'право', 'Right': 'Право',
+    'study': 'учеба', 'Study': 'Учеба',
+    'book': 'книга', 'Book': 'Книга',
+    'job': 'работа', 'Job': 'Работа',
+    'word': 'слово', 'Word': 'Слово',
+    'business': 'бизнес', 'Business': 'Бизнес',
+    'issue': 'вопрос', 'Issue': 'Вопрос',
+    'side': 'сторона', 'Side': 'Сторона',
+    'kind': 'вид', 'Kind': 'Вид',
+    'call': 'звонок', 'Call': 'Звонок',
+    'power': 'сила', 'Power': 'Сила',
+    'history': 'история', 'History': 'История',
+    'family': 'семья', 'Family': 'Семья',
+    'girl': 'девушка', 'Girl': 'Девушка',
+    'boy': 'мальчик', 'Boy': 'Мальчик',
+    'father': 'отец', 'Father': 'Отец',
+    'son': 'сын', 'Son': 'Сын',
+    'daughter': 'дочь', 'Daughter': 'Дочь',
+    'friend': 'друг', 'Friend': 'Друг',
+    'enemy': 'враг', 'Enemy': 'Враг',
+    'name': 'имя', 'Name': 'Имя',
+    'way': 'способ', 'Way': 'Способ',
+    'place': 'место', 'Place': 'Место',
+    'line': 'линия', 'Line': 'Линия',
+    'group': 'группа', 'Group': 'Группа',
+    'problem': 'проблема', 'Problem': 'Проблема',
+    'result': 'результат', 'Result': 'Результат',
+    'change': 'изменение', 'Change': 'Изменение',
+    'reason': 'причина', 'Reason': 'Причина',
+    'research': 'исследование', 'Research': 'Исследование',
+    'girl': 'девушка', 'Girl': 'Девушка',
+    'guy': 'парень', 'Guy': 'Парень',
+    'moment': 'момент', 'Moment': 'Момент',
+    'air': 'воздух', 'Air': 'Воздух',
+    'teacher': 'учитель', 'Teacher': 'Учитель',
+    'force': 'сила', 'Force': 'Сила',
+    'education': 'образование', 'Education': 'Образование'
+};
+
 // Перевод названий и описаний событий
 function translateEventText(text) {
     if (!isRussian || !text) return text;
-    
-    // Сохраняем имена и криптовалюты (не переводим)
-    const preserve = [
-        'Bitcoin', 'Ethereum', 'Solana', 'XRP', 'Cardano', 'Dogecoin', 'Polkadot',
-        'Trump', 'Biden', 'Putin', 'Zelensky', 'Musk', 'Bezos',
-        'BTC', 'ETH', 'SOL', 'DOGE', 'ADA', 'DOT',
-        'USDT', 'USDC', 'BNB', 'MATIC', 'AVAX'
-    ];
-    
-    // Словарь для перевода
-    const translations = {
-        // Месяцы
-        'January': 'Январь', 'February': 'Февраль', 'March': 'Март',
-        'April': 'Апрель', 'May': 'Май', 'June': 'Июнь',
-        'July': 'Июль', 'August': 'Август', 'September': 'Сентябрь',
-        'October': 'Октябрь', 'November': 'Ноябрь', 'December': 'Декабрь',
-        // Направления
-        'Up': 'Вверх', 'Down': 'Вниз', 'Above': 'Выше', 'Below': 'Ниже',
-        'Will': 'Будет', 'will': 'будет',
-        // Предлоги и союзы
-        'or': 'или', 'and': 'и', 'the': '', 'The': '',
-        'at': 'в', 'by': 'к', 'from': 'с', 'to': 'до',
-        'of': '', 'in': 'в', 'on': 'на', 'for': 'для',
-        // Время
-        'PM': 'МСК', 'AM': 'МСК', 'PM ET': 'МСК', 'AM ET': 'МСК',
-        'end': 'конец', 'start': 'начало', 'time': 'время',
-        'day': 'день', 'week': 'неделя', 'month': 'месяц', 'year': 'год',
-        // Финансы
-        'price': 'цена', 'Price': 'Цена', 'value': 'значение',
-        'market': 'рынок', 'Market': 'Рынок', 'trading': 'торговля',
-        'close': 'закрытие', 'Close': 'Закрытие', 'high': 'максимум',
-        'low': 'минимум', 'open': 'открытие', 'Open': 'Открытие',
-        // События
-        'event': 'событие', 'Event': 'Событие', 'election': 'выборы',
-        'vote': 'голосование', 'Vote': 'Голосование', 'game': 'игра',
-        'match': 'матч', 'Match': 'Матч', 'final': 'финал',
-        // Крипто
-        'crypto': 'крипто', 'Crypto': 'Крипто', 'blockchain': 'блокчейн',
-        'token': 'токен', 'coin': 'монета', 'Coin': 'Монета',
-        // Спорт
-        'team': 'команда', 'Team': 'Команда', 'player': 'игрок',
-        'Player': 'Игрок', 'win': 'победа', 'Win': 'Победа',
-        'loss': 'поражение', 'score': 'счёт', 'points': 'очки',
-        'Points': 'Очки', 'goals': 'голы', 'Goals': 'Голы',
-        // Общее
-        'before': 'до', 'after': 'после', 'during': 'во время',
-        'between': 'между', 'more': 'больше', 'less': 'меньше',
-        'than': 'чем', 'this': 'этот', 'that': 'тот',
-        'with': 'с', 'without': 'без', 'within': 'в пределах',
-        'into': 'в', 'out': 'из', 'over': 'над', 'under': 'под'
-    };
-    
+
     let translated = text;
-    
-    // Переводим только если слово не в списке preserve
-    for (const [en, ru] of Object.entries(translations)) {
-        const regex = new RegExp(`\\b${en}\\b`, 'gi');
+
+    // Сначала сохраняем термины из PRESERVE_TERMS
+    const preservedMap = new Map();
+    let preserveIndex = 0;
+
+    PRESERVE_TERMS.forEach(term => {
+        const regex = new RegExp(`\\b${escapeRegExp(term)}\\b`, 'gi');
         translated = translated.replace(regex, (match) => {
-            // Проверяем не является ли слово частью сохраняемого
-            for (const p of preserve) {
-                if (p.toLowerCase() === match.toLowerCase()) {
-                    return match; // Сохраняем оригинал
-                }
-            }
-            return ru;
+            const placeholder = `__PRESERVE_${preserveIndex}__`;
+            preservedMap.set(placeholder, match);
+            preserveIndex++;
+            return placeholder;
         });
+    });
+
+    // Переводим по словарю
+    for (const [en, ru] of Object.entries(TRANSLATION_DICT)) {
+        const regex = new RegExp(`\\b${escapeRegExp(en)}\\b`, 'gi');
+        translated = translated.replace(regex, ru);
     }
-    
+
+    // Восстанавливаем сохранённые термины
+    preservedMap.forEach((original, placeholder) => {
+        translated = translated.replace(placeholder, original);
+    });
+
     // Убираем лишние пробелы
     return translated.replace(/\s+/g, ' ').trim();
+}
+
+// Экранирование специальных символов для regex
+function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // Словарь переводов
@@ -431,12 +830,28 @@ function createEventCard(event) {
     const categoryName = categoryNames[event.category] || 'Other';
     const categoryInitial = categoryName.charAt(0).toUpperCase();
 
-    // Используем CORS proxy для картинок если нужно
+    // CORS proxy для картинок + улучшенный fallback
     const imageUrl = event.image_url;
-    // Пробуем загрузить напрямую, если не выходит - используем placeholder
-    const imageHtml = imageUrl
-        ? `<img src="${imageUrl}" alt="" class="event-image" crossorigin="anonymous" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';"><div class="event-image-placeholder" style="display:none">${categoryInitial}</div>`
-        : `<div class="event-image-placeholder">${categoryInitial}</div>`;
+    let imageHtml;
+    
+    if (imageUrl) {
+        // Используем backend proxy для обхода CORS
+        const proxiedUrl = `${backendUrl}/proxy/image?url=${encodeURIComponent(imageUrl)}`;
+        
+        imageHtml = `
+            <div style="position: relative;">
+                <img src="${proxiedUrl}" 
+                     alt="" 
+                     class="event-image" 
+                     loading="lazy" 
+                     referrerpolicy="no-referrer"
+                     onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <div class="event-image-placeholder" style="display:none">${categoryInitial}</div>
+            </div>
+        `;
+    } else {
+        imageHtml = `<div class="event-image-placeholder">${categoryInitial}</div>`;
+    }
 
     return `
         <div class="event-card" onclick="openEventModal(${event.id})">
@@ -460,7 +875,7 @@ function createEventCard(event) {
                 </div>
                 <div class="event-volume">$${totalPool} Vol.</div>
             </div>
-            
+
             <div class="options-container">
                 ${event.options.map((opt, idx) => createOptionButton(event.id, opt, idx, event.options.length)).join('')}
             </div>
