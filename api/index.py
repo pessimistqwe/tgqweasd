@@ -8,10 +8,12 @@ import requests
 from typing import List, Optional
 import os
 import asyncio
+import logging
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlsplit
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # Импорт моделей
 try:
@@ -29,6 +31,13 @@ app = FastAPI(title="EventPredict API")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # CORS для работы с frontend
 app.add_middleware(
@@ -52,9 +61,14 @@ async def strip_api_prefix(request, call_next):
 # ==================== POLYMARKET API INTEGRATION ====================
 
 POLYMARKET_API_URL = "https://gamma-api.polymarket.com"
-POLYMARKET_SYNC_INTERVAL_SECONDS = int(os.getenv("POLYMARKET_SYNC_INTERVAL", "1800"))  # 30 минут
+# Интервал синхронизации: 2 часа (7200 секунд) для экономии кредитов Railway
+POLYMARKET_SYNC_INTERVAL_SECONDS = int(os.getenv("POLYMARKET_SYNC_INTERVAL", "7200"))
 last_polymarket_sync = datetime.min
+sync_stats = {"total_synced": 0, "last_sync": None, "last_error": None}
 POLYMARKET_VERBOSE_LOGS = os.getenv("POLYMARKET_VERBOSE_LOGS", "0") == "1"
+
+# Инициализация планировщика
+scheduler = AsyncIOScheduler()
 
 # Ключевые слова для определения категорий
 CATEGORY_KEYWORDS = {
@@ -369,77 +383,88 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
     print(f"   New event created successfully")
     return True
 
-def sync_polymarket_events(db: Session):
-    """Syncs events from Polymarket to the database"""
+
+def sync_polymarket_events(db: Session = None):
+    """Синхронизирует события из Polymarket в БД"""
     try:
-        print("Starting Polymarket sync...")
+        logger.info("🔄 Starting Polymarket sync...")
+        
+        # Получаем сессию БД если не передана
+        if db is None:
+            db = next(get_db())
+        
         polymarket_events = fetch_polymarket_events(limit=100)
-        print(f"Fetched {len(polymarket_events)} events from API")
-        
-        if not polymarket_events:
-            print("No events fetched from Polymarket API")
-            return 0
-        
         synced_count = 0
-        
+        added_count = 0
+        updated_count = 0
+
         for pm_event in polymarket_events:
-            print(f"Processing event: {pm_event.get('title', 'Unknown')}")
-            print(f"   - ID: {pm_event.get('polymarket_id', 'No ID')}")
-            print(f"   - Category: {pm_event.get('category', 'No category')}")
-            print(f"   - Options: {pm_event.get('options', [])}")
-            print(f"   - End time: {pm_event.get('end_time', 'No end time')}")
-            
-            try:
-                created = upsert_polymarket_event(db, pm_event)
-                update_event = "Added" if created else "Updated"
-                db.commit()
-                synced_count += 1
-                print(f"{update_event} event: {pm_event['title']}")
-            except Exception as e:
-                print(f"Error processing event {pm_event.get('title', 'Unknown')}: {e}")
-                db.rollback()
-                continue
+            created = upsert_polymarket_event(db, pm_event)
+            if created:
+                added_count += 1
+            else:
+                updated_count += 1
+            synced_count += 1
+            logger.info(f"  {'✅ Added' if created else '🔄 Updated'}: {pm_event['title'][:50]}...")
+
+        db.commit()
         
-        print(f"Sync completed: {synced_count} events processed")
+        # Обновляем статистику
+        sync_stats["total_synced"] = synced_count
+        sync_stats["last_sync"] = datetime.utcnow()
+        sync_stats["last_error"] = None
         
-        # Проверяем сколько событий в базе
-        total_events = db.query(Event).count()
-        active_events = db.query(Event).filter(Event.is_active == True).count()
-        print(f"Database stats: {total_events} total events, {active_events} active")
-        
+        logger.info(f"✅ Sync completed: {synced_count} events ({added_count} new, {updated_count} updated)")
         return synced_count
     except Exception as e:
-        db.rollback()
-        print(f"Critical error syncing events: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"❌ Error syncing events: {e}")
+        sync_stats["last_error"] = str(e)
         return 0
 
-def _sync_polymarket_once_safe() -> None:
-    db = None
-    try:
-        db = next(get_db())
-        sync_polymarket_events(db)
-    except Exception as e:
-        print(f"Background Polymarket sync failed: {e}")
-    finally:
-        try:
-            if db is not None:
-                db.close()
-        except Exception:
-            pass
 
-async def _polymarket_sync_loop() -> None:
-    await asyncio.sleep(2)
-    while True:
-        await asyncio.to_thread(_sync_polymarket_once_safe)
-        await asyncio.sleep(POLYMARKET_SYNC_INTERVAL_SECONDS)
+def scheduled_sync():
+    """Обёртка для планировщика"""
+    try:
+        sync_polymarket_events()
+    except Exception as e:
+        logger.error(f"Scheduled sync error: {e}")
 
 @app.on_event("startup")
 async def startup_event():
-    """Запуск фоновой синхронизации Polymarket (не блокирует старт)"""
-    print("EventPredict API starting up...")
-    asyncio.create_task(_polymarket_sync_loop())
+    """Инициализация при старте приложения"""
+    logger.info("🚀 Starting EventPredict API...")
+
+    # Отключаем scheduler в тестовом режиме
+    if not os.getenv("DISABLE_SCHEDULER"):
+        # Запускаем планировщик
+        scheduler.add_job(
+            scheduled_sync,
+            'interval',
+            seconds=POLYMARKET_SYNC_INTERVAL_SECONDS,
+            id='polymarket_sync',
+            replace_existing=True
+        )
+        scheduler.start()
+        logger.info(f"⏰ Scheduler started (interval: {POLYMARKET_SYNC_INTERVAL_SECONDS}s)")
+
+        # Первая синхронизация при старте
+        try:
+            db = next(get_db())
+            sync_polymarket_events(db)
+        except Exception as e:
+            logger.error(f"Initial sync error: {e}")
+    else:
+        logger.info("🧪 Test mode: scheduler disabled")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Остановка при завершении работы"""
+    logger.info("🛑 Shutting down EventPredict API...")
+    if not os.getenv("DISABLE_SCHEDULER"):
+        scheduler.shutdown(wait=False)
+
+# ==================== PYDANTIC MODELS ====================
 
 class PredictionRequest(BaseModel):
     telegram_id: int
@@ -453,6 +478,8 @@ class UserResponse(BaseModel):
     points: float
     stats: dict
 
+
+# ==================== API ENDPOINTS ====================
 @app.get("/", include_in_schema=False)
 async def root():
     index_path = os.path.join(FRONTEND_DIR, "index.html")
@@ -698,7 +725,15 @@ async def force_sync_polymarket(
 # Health check
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "sync": {
+            "last_sync": sync_stats["last_sync"].isoformat() if sync_stats["last_sync"] else None,
+            "total_synced": sync_stats["total_synced"],
+            "last_error": sync_stats["last_error"],
+            "next_sync_in": POLYMARKET_SYNC_INTERVAL_SECONDS
+        }
+    }
 
 
 if os.path.isdir(FRONTEND_DIR):

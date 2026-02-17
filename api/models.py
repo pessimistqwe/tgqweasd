@@ -128,8 +128,8 @@ class Transaction(Base):
     user = relationship("User", back_populates="transactions")
 
 # Database setup - Vercel compatible
-# Используем /tmp для временной БД на Vercel
-db_path = "/tmp/events.db"
+# Используем /tmp для временной БД на Vercel, или тестовую БД если задана
+db_path = os.getenv("TEST_DB_PATH", "/tmp/events.db")
 engine = create_engine(f"sqlite:///{db_path}", echo=False, connect_args={"check_same_thread": False})
 Base.metadata.create_all(engine)
 with engine.connect() as connection:
