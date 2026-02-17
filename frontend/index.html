@@ -235,6 +235,27 @@
             </section>
         </main>
 
+        <!-- Event Detail Modal -->
+        <div id="event-modal" class="modal hidden">
+            <div class="modal-content event-modal-content">
+                <div class="modal-header">
+                    <h3 id="event-modal-title">Event Details</h3>
+                    <button class="modal-close" onclick="closeEventModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="event-modal-body">
+                    <div class="event-chart" id="event-chart">
+                        <canvas id="event-chart-canvas"></canvas>
+                    </div>
+                    <div class="event-options" id="event-options"></div>
+                    <div class="event-description" id="event-description"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Bet Modal -->
         <div id="bet-modal" class="modal hidden">
             <div class="modal-content">

@@ -627,6 +627,46 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/events/{event_id}")
+async def get_event(event_id: int, db: Session = Depends(get_db)):
+    """Get single event by ID"""
+    try:
+        event = db.query(Event).filter(Event.id == event_id).first()
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        options = db.query(EventOption).filter(EventOption.event_id == event_id).all()
+        time_left = int((event.end_time - datetime.utcnow()).total_seconds())
+        total_stakes = sum(
+            (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
+            for opt in options
+        ) or 1
+
+        return {
+            "id": event.id,
+            "title": event.title,
+            "description": event.description,
+            "category": event.category or "other",
+            "image_url": event.image_url,
+            "end_time": event.end_time.isoformat(),
+            "time_left": max(0, time_left),
+            "total_pool": event.total_pool,
+            "options": [
+                {
+                    "index": opt.option_index,
+                    "text": opt.option_text,
+                    "total_points": (opt.total_stake or 0.0) + (opt.market_stake or 0.0),
+                    "probability": round(((opt.total_stake or 0.0) + (opt.market_stake or 0.0)) / total_stakes * 100, 1)
+                }
+                for opt in options
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error loading event: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/user/{telegram_id}")
 async def get_user(telegram_id: int, db: Session = Depends(get_db)):
     """Получить информацию о пользователе"""

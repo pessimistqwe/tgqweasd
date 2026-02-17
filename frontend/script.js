@@ -226,9 +226,9 @@ function createEventCard(event) {
     const imageHtml = event.image_url 
         ? `<img src="${event.image_url}" alt="" class="event-image" crossorigin="anonymous" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"><div class="event-image-placeholder" style="display:none">${categoryInitial}</div>`
         : `<div class="event-image-placeholder">${categoryInitial}</div>`;
-    
+
     return `
-        <div class="event-card">
+        <div class="event-card" onclick="openEventModal(${event.id})">
             <div class="event-header">
                 ${imageHtml}
                 <div class="event-info">
@@ -238,7 +238,7 @@ function createEventCard(event) {
                     <h3 class="event-title">${escapeHtml(event.title)}</h3>
                 </div>
             </div>
-            
+
             <div class="event-meta">
                 <div class="event-timer">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -682,6 +682,111 @@ function showSection(sectionName) {
 function showMyPredictions() {
     // TODO: Implement predictions history
     showNotification('Coming soon!', 'info');
+}
+
+// ==================== EVENT MODAL ====================
+
+let selectedOptionIndex = null;
+
+async function openEventModal(eventId) {
+    try {
+        const event = await apiRequest(`/events/${eventId}`);
+        if (!event) return;
+
+        selectedOptionIndex = null;
+        document.getElementById('event-modal-title').textContent = event.title;
+        document.getElementById('event-description').innerHTML = `
+            <strong>Description:</strong><br>
+            ${event.description || 'No description available.'}
+        `;
+
+        // Render options
+        const optionsContainer = document.getElementById('event-options');
+        optionsContainer.innerHTML = event.options.map((opt, idx) => `
+            <div class="event-option-btn" onclick="selectEventOption(${idx}, ${opt.probability})">
+                <span class="event-option-text">${opt.text}</span>
+                <span class="event-option-probability">${opt.probability}%</span>
+            </div>
+        `).join('');
+
+        // Show modal
+        document.getElementById('event-modal').classList.remove('hidden');
+
+        // Render chart after modal is shown
+        setTimeout(() => renderEventChart(event.options), 100);
+    } catch (e) {
+        console.error('Error loading event:', e);
+        showNotification('Failed to load event details', 'error');
+    }
+}
+
+function selectEventOption(index, probability) {
+    selectedOptionIndex = index;
+    document.querySelectorAll('.event-option-btn').forEach((btn, idx) => {
+        btn.classList.toggle('selected', idx === index);
+    });
+
+    // Open bet modal after selection
+    setTimeout(() => {
+        const eventTitle = document.getElementById('event-modal-title').textContent;
+        const optionText = document.querySelectorAll('.event-option-text')[index]?.textContent;
+        openBetModal(eventTitle, optionText, probability);
+    }, 200);
+}
+
+function closeEventModal() {
+    document.getElementById('event-modal').classList.add('hidden');
+    selectedOptionIndex = null;
+}
+
+function openBetModal(title, option, probability) {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-option').textContent = `Predicting: ${option}`;
+    document.getElementById('bet-modal').classList.remove('hidden');
+}
+
+// Simple chart rendering using CSS
+function renderEventChart(options) {
+    const canvas = document.getElementById('event-chart-canvas');
+    if (!canvas) return;
+
+    // Clear canvas
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width - 40;
+    canvas.height = rect.height - 40;
+
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const radius = Math.min(centerX, centerY) - 20;
+
+    // Draw pie chart
+    let startAngle = -Math.PI / 2;
+    const colors = ['#22c55e', '#ef4444', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899'];
+
+    options.forEach((opt, idx) => {
+        const sliceAngle = (opt.probability / 100) * 2 * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle);
+        ctx.closePath();
+        ctx.fillStyle = colors[idx % colors.length];
+        ctx.fill();
+        startAngle += sliceAngle;
+    });
+
+    // Draw center circle (donut chart)
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius * 0.6, 0, 2 * Math.PI);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--bg-secondary');
+    ctx.fill();
+
+    // Draw total in center
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('100%', centerX, centerY);
 }
 
 // ==================== UTILITY FUNCTIONS ====================
