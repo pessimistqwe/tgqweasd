@@ -87,8 +87,21 @@ class EventOption(Base):
     option_text = Column(String(255), nullable=False)
     total_stake = Column(Float, default=0.0)
     market_stake = Column(Float, default=0.0)
-    
+    current_price = Column(Float, default=0.5)  # Current probability as price
+
     event = relationship("Event", back_populates="event_options")
+
+class PriceHistory(Base):
+    """История изменения цен для графика"""
+    __tablename__ = "price_history"
+    id = Column(Integer, primary_key=True)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
+    option_index = Column(Integer, nullable=False)
+    price = Column(Float, nullable=False)  # Probability as price (0.0 - 1.0)
+    volume = Column(Float, default=0.0)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+    event = relationship("Event", backref="price_history")
 
 class UserPrediction(Base):
     __tablename__ = "user_predictions"
@@ -133,10 +146,36 @@ db_path = os.getenv("TEST_DB_PATH", "/tmp/events.db")
 engine = create_engine(f"sqlite:///{db_path}", echo=False, connect_args={"check_same_thread": False})
 Base.metadata.create_all(engine)
 with engine.connect() as connection:
+    # Миграция: добавление market_stake
     columns = [row[1] for row in connection.execute(text("PRAGMA table_info(event_options)")).fetchall()]
     if "market_stake" not in columns:
         connection.execute(text("ALTER TABLE event_options ADD COLUMN market_stake FLOAT DEFAULT 0.0"))
         connection.commit()
+    
+    # Миграция: добавление current_price
+    columns = [row[1] for row in connection.execute(text("PRAGMA table_info(event_options)")).fetchall()]
+    if "current_price" not in columns:
+        connection.execute(text("ALTER TABLE event_options ADD COLUMN current_price FLOAT DEFAULT 0.5"))
+        connection.commit()
+    
+    # Миграция: создание таблицы price_history
+    tables = [row[0] for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
+    if "price_history" not in tables:
+        connection.execute(text("""
+            CREATE TABLE price_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                option_index INTEGER NOT NULL,
+                price REAL NOT NULL,
+                volume REAL DEFAULT 0.0,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (event_id) REFERENCES events(id)
+            )
+        """))
+        connection.execute(text("CREATE INDEX idx_price_history_event ON price_history(event_id)"))
+        connection.execute(text("CREATE INDEX idx_price_history_timestamp ON price_history(timestamp)"))
+        connection.commit()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():

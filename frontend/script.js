@@ -1,4 +1,122 @@
 let tg = window.Telegram.WebApp;
+
+// Авто-определение языка
+const userLang = tg.initDataUnsafe?.user?.language_code || 'en';
+const isRussian = userLang === 'ru';
+
+// Словарь переводов
+const translations = {
+    en: {
+        loading: 'Loading markets...',
+        markets: 'Markets',
+        wallet: 'Wallet',
+        profile: 'Profile',
+        admin: 'Admin Panel',
+        all: 'All',
+        politics: 'Politics',
+        sports: 'Sports',
+        crypto: 'Crypto',
+        culture: 'Culture',
+        business: 'Business',
+        science: 'Science',
+        other: 'Other',
+        deposit: 'Deposit',
+        withdraw: 'Withdraw',
+        balance: 'Balance',
+        available: 'Available',
+        amount: 'Amount',
+        description: 'Description',
+        category: 'Category',
+        image_url: 'Image URL',
+        end_time: 'End Time',
+        options: 'Options',
+        create_event: 'Create Event',
+        cancel: 'Cancel',
+        confirm: 'Confirm',
+        place_bet: 'Place Bet',
+        yes: 'Yes',
+        no: 'No',
+        up: 'Up',
+        down: 'Down',
+        volume: 'Volume',
+        time_left: 'Time left',
+        my_predictions: 'My Predictions',
+        transaction_history: 'Transaction History',
+        no_transactions: 'No transactions yet',
+        pending_withdrawals: 'Pending Withdrawals',
+        sync_polymarket: 'Sync Polymarket',
+        users: 'Users',
+        events: 'Events',
+        pending: 'Pending',
+        event_details: 'Event Details',
+        predict: 'Predict',
+        min_10: 'Minimum $10 required',
+        event_created: 'Event created! Waiting for moderation.',
+        insufficient_balance: 'Insufficient balance',
+        bet_placed: 'Bet placed successfully!',
+        error: 'Error',
+        success: 'Success'
+    },
+    ru: {
+        loading: 'Загрузка рынков...',
+        markets: 'Рынки',
+        wallet: 'Кошелёк',
+        profile: 'Профиль',
+        admin: 'Админ-панель',
+        all: 'Все',
+        politics: 'Политика',
+        sports: 'Спорт',
+        crypto: 'Крипто',
+        culture: 'Культура',
+        business: 'Бизнес',
+        science: 'Наука',
+        other: 'Другое',
+        deposit: 'Депозит',
+        withdraw: 'Вывод',
+        balance: 'Баланс',
+        available: 'Доступно',
+        amount: 'Сумма',
+        description: 'Описание',
+        category: 'Категория',
+        image_url: 'Ссылка на изображение',
+        end_time: 'Время окончания',
+        options: 'Варианты',
+        create_event: 'Создать событие',
+        cancel: 'Отмена',
+        confirm: 'Подтвердить',
+        place_bet: 'Сделать ставку',
+        yes: 'Да',
+        no: 'Нет',
+        up: 'Вверх',
+        down: 'Вниз',
+        volume: 'Объём',
+        time_left: 'Осталось',
+        my_predictions: 'Мои прогнозы',
+        transaction_history: 'История транзакций',
+        no_transactions: 'Пока нет транзакций',
+        pending_withdrawals: 'Ожидающие выводы',
+        sync_polymarket: 'Синхронизация',
+        users: 'Пользователи',
+        events: 'События',
+        pending: 'Ожидает',
+        event_details: 'Детали события',
+        predict: 'Предсказать',
+        min_10: 'Минимум $10 требуется',
+        event_created: 'Событие создано! Ожидает модерации.',
+        insufficient_balance: 'Недостаточно средств',
+        bet_placed: 'Ставка сделана!',
+        error: 'Ошибка',
+        success: 'Успешно'
+    }
+};
+
+// Текущий язык
+const t = translations[isRussian ? 'ru' : 'en'];
+
+// Функция перевода
+function tr(key) {
+    return t[key] || key;
+}
 // Автоматическое определение backend URL
 const configuredBackendUrl = window.__BACKEND_URL__;
 let backendUrl = configuredBackendUrl
@@ -484,13 +602,31 @@ async function processWithdraw() {
 function openBetModal(eventId, optionIndex, optionText) {
     const eventCard = event.target.closest('.event-card');
     const title = eventCard.querySelector('.event-title').textContent;
-    
+
     document.getElementById('modal-title').textContent = title;
-    document.getElementById('modal-option').textContent = `Your prediction: ${optionText}`;
+    
+    // Определяем цвет кнопки по тексту варианта
+    const optionLower = optionText.toLowerCase();
+    const isYes = optionLower.includes('yes') || optionLower.includes('да') || optionLower.includes('up') || optionLower.includes('вверх');
+    const isNo = optionLower.includes('no') || optionLower.includes('нет') || optionLower.includes('down') || optionLower.includes('вниз');
+    
+    let buttonClass = 'confirm';
+    if (isYes) buttonClass = 'yes-btn';
+    if (isNo) buttonClass = 'no-btn';
+    
+    document.getElementById('modal-option').textContent = `${tr('predict')}: ${optionText}`;
+    
+    // Обновляем класс кнопки
+    const confirmBtn = document.querySelector('#bet-modal .modal-btn.confirm');
+    if (confirmBtn) {
+        confirmBtn.className = `modal-btn ${buttonClass}`;
+        confirmBtn.textContent = tr('place_bet');
+    }
+    
     document.getElementById('bet-modal').classList.remove('hidden');
     document.getElementById('points-input').value = '';
     document.getElementById('points-input').focus();
-    
+
     currentEventId = eventId;
     currentOptionIndex = optionIndex;
 }
@@ -986,3 +1122,29 @@ async function submitCreateEvent() {
 
 // Initialize category scroll on page load
 setupCategoryScroll();
+
+// Apply translations on page load
+function applyTranslations() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (t[key]) {
+            el.textContent = t[key];
+        }
+    });
+    
+    // Перевод категорий
+    document.querySelectorAll('.category-btn').forEach(btn => {
+        const cat = btn.dataset.category;
+        const nameSpan = btn.querySelector('.category-name');
+        if (nameSpan && t[cat]) {
+            nameSpan.textContent = t[cat];
+        }
+    });
+}
+
+// Apply translations after DOM loaded
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', applyTranslations);
+} else {
+    applyTranslations();
+}
