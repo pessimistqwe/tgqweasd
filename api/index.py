@@ -539,11 +539,32 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
         )
 
         if category and category != 'all':
-            query = query.filter(Event.category == category)
-            print(f"   Filtering by category: {category}")
-
-        events = query.order_by(Event.total_pool.desc()).limit(50).all()
-        print(f"   Found {len(events)} events in database")
+            # Сначала пробуем получить события категории
+            query = db.query(Event).filter(
+                Event.is_active == True,
+                Event.end_time > datetime.utcnow(),
+                Event.category == category
+            )
+            events = query.order_by(Event.total_pool.desc()).limit(50).all()
+            
+            # Если категория пустая, добавляем "other" события
+            if not events and category not in ['crypto', 'sports', 'business']:
+                query = db.query(Event).filter(
+                    Event.is_active == True,
+                    Event.end_time > datetime.utcnow(),
+                    Event.category == 'other'
+                )
+                events = query.order_by(Event.total_pool.desc()).limit(50).all()
+                print(f"   Category {category} is empty, showing {len(events)} 'other' events")
+            
+            print(f"   Found {len(events)} events for category: {category}")
+        else:
+            query = db.query(Event).filter(
+                Event.is_active == True,
+                Event.end_time > datetime.utcnow()
+            )
+            events = query.order_by(Event.total_pool.desc()).limit(50).all()
+            print(f"   Found {len(events)} events in database")
         
         result = []
         for event in events:
