@@ -17,49 +17,75 @@ function getUserLanguage() {
 const userLang = getUserLanguage();
 const isRussian = userLang === 'ru';
 
-// Перевод названий событий через Telegram
+// Перевод названий и описаний событий
 function translateEventText(text) {
     if (!isRussian || !text) return text;
     
-    // Словарь популярных слов для перевода
+    // Сохраняем имена и криптовалюты (не переводим)
+    const preserve = [
+        'Bitcoin', 'Ethereum', 'Solana', 'XRP', 'Cardano', 'Dogecoin', 'Polkadot',
+        'Trump', 'Biden', 'Putin', 'Zelensky', 'Musk', 'Bezos',
+        'BTC', 'ETH', 'SOL', 'DOGE', 'ADA', 'DOT',
+        'USDT', 'USDC', 'BNB', 'MATIC', 'AVAX'
+    ];
+    
+    // Словарь для перевода
     const translations = {
-        'Bitcoin': 'Биткоин',
-        'Ethereum': 'Эфириум',
-        'Solana': 'Солана',
-        'XRP': 'XRP',
-        'Up': 'Вверх',
-        'Down': 'Вниз',
-        'or': 'или',
-        'February': 'Февраль',
-        'March': 'Март',
-        'April': 'Апрель',
-        'May': 'Май',
-        'June': 'Июнь',
-        'July': 'Июль',
-        'August': 'Август',
-        'September': 'Сентябрь',
-        'October': 'Октябрь',
-        'November': 'Ноябрь',
-        'December': 'Декабрь',
-        'Will': 'Будет',
-        'the': '',
-        'price': 'цена',
-        'be': 'быть',
-        'above': 'выше',
-        'below': 'ниже',
-        'at': 'в',
-        'end': 'конец',
-        'of': '',
-        'day': 'день',
-        'week': 'неделя',
-        'month': 'месяц',
-        'year': 'год'
+        // Месяцы
+        'January': 'Январь', 'February': 'Февраль', 'March': 'Март',
+        'April': 'Апрель', 'May': 'Май', 'June': 'Июнь',
+        'July': 'Июль', 'August': 'Август', 'September': 'Сентябрь',
+        'October': 'Октябрь', 'November': 'Ноябрь', 'December': 'Декабрь',
+        // Направления
+        'Up': 'Вверх', 'Down': 'Вниз', 'Above': 'Выше', 'Below': 'Ниже',
+        'Will': 'Будет', 'will': 'будет',
+        // Предлоги и союзы
+        'or': 'или', 'and': 'и', 'the': '', 'The': '',
+        'at': 'в', 'by': 'к', 'from': 'с', 'to': 'до',
+        'of': '', 'in': 'в', 'on': 'на', 'for': 'для',
+        // Время
+        'PM': 'МСК', 'AM': 'МСК', 'PM ET': 'МСК', 'AM ET': 'МСК',
+        'end': 'конец', 'start': 'начало', 'time': 'время',
+        'day': 'день', 'week': 'неделя', 'month': 'месяц', 'year': 'год',
+        // Финансы
+        'price': 'цена', 'Price': 'Цена', 'value': 'значение',
+        'market': 'рынок', 'Market': 'Рынок', 'trading': 'торговля',
+        'close': 'закрытие', 'Close': 'Закрытие', 'high': 'максимум',
+        'low': 'минимум', 'open': 'открытие', 'Open': 'Открытие',
+        // События
+        'event': 'событие', 'Event': 'Событие', 'election': 'выборы',
+        'vote': 'голосование', 'Vote': 'Голосование', 'game': 'игра',
+        'match': 'матч', 'Match': 'Матч', 'final': 'финал',
+        // Крипто
+        'crypto': 'крипто', 'Crypto': 'Крипто', 'blockchain': 'блокчейн',
+        'token': 'токен', 'coin': 'монета', 'Coin': 'Монета',
+        // Спорт
+        'team': 'команда', 'Team': 'Команда', 'player': 'игрок',
+        'Player': 'Игрок', 'win': 'победа', 'Win': 'Победа',
+        'loss': 'поражение', 'score': 'счёт', 'points': 'очки',
+        'Points': 'Очки', 'goals': 'голы', 'Goals': 'Голы',
+        // Общее
+        'before': 'до', 'after': 'после', 'during': 'во время',
+        'between': 'между', 'more': 'больше', 'less': 'меньше',
+        'than': 'чем', 'this': 'этот', 'that': 'тот',
+        'with': 'с', 'without': 'без', 'within': 'в пределах',
+        'into': 'в', 'out': 'из', 'over': 'над', 'under': 'под'
     };
     
     let translated = text;
+    
+    // Переводим только если слово не в списке preserve
     for (const [en, ru] of Object.entries(translations)) {
-        const regex = new RegExp(en, 'gi');
-        translated = translated.replace(regex, ru);
+        const regex = new RegExp(`\\b${en}\\b`, 'gi');
+        translated = translated.replace(regex, (match) => {
+            // Проверяем не является ли слово частью сохраняемого
+            for (const p of preserve) {
+                if (p.toLowerCase() === match.toLowerCase()) {
+                    return match; // Сохраняем оригинал
+                }
+            }
+            return ru;
+        });
     }
     
     // Убираем лишние пробелы
@@ -409,7 +435,7 @@ function createEventCard(event) {
     const imageUrl = event.image_url;
     // Пробуем загрузить напрямую, если не выходит - используем placeholder
     const imageHtml = imageUrl
-        ? `<img src="${imageUrl}" alt="" class="event-image" crossorigin="anonymous" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';"><div class="event-image-placeholder" style="display:none">${categoryInitial}</div>`
+        ? `<img src="${imageUrl}" alt="" class="event-image" crossorigin="anonymous" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';"><div class="event-image-placeholder" style="display:none">${categoryInitial}</div>`
         : `<div class="event-image-placeholder">${categoryInitial}</div>`;
 
     return `
@@ -966,6 +992,7 @@ async function renderEventChart(eventId, options) {
         const response = await fetch(`${backendUrl}/events/${eventId}/price-history`);
         if (response.ok) {
             priceHistory = await response.json();
+            console.log(`Price history loaded: ${priceHistory.length} points for event ${eventId}`);
         }
     } catch (e) {
         console.log('Price history not available, using current probabilities');
