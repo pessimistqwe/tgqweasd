@@ -290,43 +290,24 @@ body::before {
     overflow-y: hidden;
     padding-bottom: 16px;
     margin-bottom: 20px;
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
     -webkit-overflow-scrolling: touch;
     scroll-behavior: smooth;
     /* Prevent categories from shrinking */
     flex-shrink: 0;
     /* Allow container to scroll within its parent */
     max-width: 100%;
+    /* Hide scrollbar but keep functionality */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
 }
 
 .categories-container::-webkit-scrollbar {
-    height: 4px;
-    border-radius: var(--radius-full);
+    display: none;
 }
 
-.categories-container::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.categories-container::-webkit-scrollbar-thumb {
-    background: var(--border);
-    border-radius: var(--radius-full);
-}
-
-.categories-container::-webkit-scrollbar-thumb:hover {
-    background: var(--border-hover);
-}
-
-/* Hide scrollbar when not scrolling */
+/* Enable smooth scrolling */
 .categories-container {
-    scrollbar-color: transparent transparent;
-    transition: scrollbar-color 0.3s ease;
-}
-
-.categories-container:hover,
-.categories-container:active {
-    scrollbar-color: var(--border) transparent;
+    scroll-padding: 8px;
 }
 
 .category-btn {
