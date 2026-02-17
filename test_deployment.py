@@ -11,10 +11,10 @@ BASE_URL = "https://eventpredict-production.up.railway.app"
 
 def print_status(name, passed, message=""):
     """Print test status"""
-    status = "✅ PASS" if passed else "❌ FAIL"
+    status = "[PASS]" if passed else "[FAIL]"
     print(f"{status}: {name}")
     if message and not passed:
-        print(f"   └─ {message}")
+        print(f"   + {message}")
     return passed
 
 def test_health():
@@ -164,14 +164,14 @@ def main():
     passed = sum(results)
     total = len(results)
     print(f"Results: {passed}/{total} tests passed")
-    
+
     if passed == total:
-        print("✅ All tests passed! Deployment is working correctly.")
+        print("[OK] All tests passed! Deployment is working correctly.")
     else:
-        print(f"❌ {total - passed} tests failed. Check the errors above.")
-    
+        print(f"[ERR] {total - passed} tests failed. Check the errors above.")
+
     print("=" * 60)
-    
+
     return 0 if passed == total else 1
 
 if __name__ == "__main__":
