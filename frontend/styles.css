@@ -334,15 +334,14 @@ body::before {
 }
 
 .category-btn.active {
-    background: var(--accent);
-    border-color: transparent;
+    background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+    border: none;
     color: #000;
     font-weight: 600;
     /* Плавное свечение без чётких границ */
     box-shadow: 
-        0 0 20px rgba(34, 197, 94, 0.4),
-        0 0 40px rgba(34, 197, 94, 0.2),
-        0 0 60px rgba(34, 197, 94, 0.1);
+        0 2px 8px rgba(34, 197, 94, 0.3),
+        0 4px 16px rgba(34, 197, 94, 0.2);
 }
 
 .category-icon {

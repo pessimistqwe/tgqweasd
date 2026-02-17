@@ -539,24 +539,14 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
         )
 
         if category and category != 'all':
-            # Сначала пробуем получить события категории
+            # Получаем события выбранной категории
             query = db.query(Event).filter(
                 Event.is_active == True,
                 Event.end_time > datetime.utcnow(),
                 Event.category == category
             )
             events = query.order_by(Event.total_pool.desc()).limit(50).all()
-            
-            # Если категория пустая, показываем все события
-            if not events:
-                query = db.query(Event).filter(
-                    Event.is_active == True,
-                    Event.end_time > datetime.utcnow()
-                )
-                events = query.order_by(Event.total_pool.desc()).limit(50).all()
-                print(f"   Category {category} is empty, showing {len(events)} events from all categories")
-            else:
-                print(f"   Found {len(events)} events for category: {category}")
+            print(f"   Found {len(events)} events for category: {category}")
         else:
             query = db.query(Event).filter(
                 Event.is_active == True,
