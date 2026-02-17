@@ -19,13 +19,13 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 # Импорт моделей
 try:
     from .models import (
-        get_db, User, Event, EventOption, UserPrediction, 
-        Transaction, TransactionType, TransactionStatus
+        get_db, User, Event, EventOption, UserPrediction,
+        Transaction, TransactionType, TransactionStatus, PriceHistory
     )
 except ImportError:
     from models import (
-        get_db, User, Event, EventOption, UserPrediction, 
-        Transaction, TransactionType, TransactionStatus
+        get_db, User, Event, EventOption, UserPrediction,
+        Transaction, TransactionType, TransactionStatus, PriceHistory
     )
 
 app = FastAPI(title="EventPredict API")
@@ -352,14 +352,24 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
             if option:
                 option.option_text = option_text
                 option.market_stake = volume
-                print(f"   Updated option {idx}: {option_text}")
+                # Сохраняем историю цен
+                price = volume / (sum(volumes) or 1)
+                new_history = PriceHistory(
+                    event_id=existing.id,
+                    option_index=idx,
+                    price=price,
+                    volume=volume
+                )
+                db.add(new_history)
+                print(f"   Updated option {idx}: {option_text}, price: {price:.2%}")
             else:
                 new_option = EventOption(
                     event_id=existing.id,
                     option_index=idx,
                     option_text=option_text,
                     total_stake=0.0,
-                    market_stake=volume
+                    market_stake=volume,
+                    current_price=volume / (sum(volumes) or 1)
                 )
                 db.add(new_option)
                 print(f"   Added option {idx}: {option_text}")
@@ -686,6 +696,29 @@ async def get_event(event_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error loading event: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/events/{event_id}/price-history")
+async def get_price_history(event_id: int, db: Session = Depends(get_db)):
+    """Get price history for event chart"""
+    try:
+        # Get last 48 hours of price history
+        history = db.query(PriceHistory).filter(
+            PriceHistory.event_id == event_id
+        ).order_by(PriceHistory.timestamp.desc()).limit(100).all()
+
+        return [
+            {
+                "event_id": h.event_id,
+                "option_index": h.option_index,
+                "price": h.price,
+                "volume": h.volume,
+                "timestamp": h.timestamp.isoformat()
+            }
+            for h in history
+        ]
+    except Exception as e:
+        print(f"Error loading price history: {e}")
+        return []
 
 @app.get("/user/{telegram_id}")
 async def get_user(telegram_id: int, db: Session = Depends(get_db)):

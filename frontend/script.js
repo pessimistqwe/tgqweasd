@@ -1,7 +1,20 @@
 let tg = window.Telegram.WebApp;
 
-// Авто-определение языка
-const userLang = tg.initDataUnsafe?.user?.language_code || 'en';
+// Авто-определение языка (с проверкой готовности Telegram WebApp)
+function getUserLanguage() {
+    try {
+        const user = tg.initDataUnsafe?.user;
+        if (user && user.language_code) {
+            return user.language_code;
+        }
+    } catch (e) {
+        console.log('Telegram WebApp not ready, using browser language');
+    }
+    // Fallback на язык браузера
+    return navigator.language?.startsWith('ru') ? 'ru' : 'en';
+}
+
+const userLang = getUserLanguage();
 const isRussian = userLang === 'ru';
 
 // Словарь переводов
@@ -340,9 +353,11 @@ function createEventCard(event) {
     const totalPool = formatNumber(event.total_pool || 0);
     const categoryName = categoryNames[event.category] || 'Other';
     const categoryInitial = categoryName.charAt(0).toUpperCase();
-    
-    const imageHtml = event.image_url 
-        ? `<img src="${event.image_url}" alt="" class="event-image" crossorigin="anonymous" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"><div class="event-image-placeholder" style="display:none">${categoryInitial}</div>`
+
+    // Используем CORS proxy для картинок если нужно
+    const imageUrl = event.image_url;
+    const imageHtml = imageUrl
+        ? `<img src="${imageUrl}" alt="" class="event-image" crossorigin="anonymous" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex'; console.log('Image failed to load:', '${imageUrl}');"><div class="event-image-placeholder" style="display:none">${categoryInitial}</div>`
         : `<div class="event-image-placeholder">${categoryInitial}</div>`;
 
     return `
@@ -849,7 +864,7 @@ async function openEventModal(eventId) {
         document.getElementById('event-modal').classList.remove('hidden');
 
         // Render chart after modal is shown
-        setTimeout(() => renderEventChart(event.options), 100);
+        setTimeout(() => renderEventChart(event.id, event.options), 100);
     } catch (e) {
         console.error('Error loading event:', e);
         showNotification('Failed to load event details', 'error');
@@ -881,10 +896,10 @@ function openBetModal(title, option, probability) {
     document.getElementById('bet-modal').classList.remove('hidden');
 }
 
-// Simple chart rendering using Chart.js (Polymarket style)
+// Chart rendering using Chart.js (Polymarket style) with real data
 let eventChart = null;
 
-function renderEventChart(options) {
+async function renderEventChart(eventId, options) {
     const canvas = document.getElementById('event-chart-canvas');
     if (!canvas) return;
 
@@ -893,44 +908,89 @@ function renderEventChart(options) {
         eventChart.destroy();
     }
 
-    // Generate mock price history (Polymarket style)
-    const now = Date.now();
-    const historyPoints = 24;
-    const labels = [];
-    const datasets = [];
-
-    // Generate time labels (every hour for 24h)
-    for (let i = historyPoints; i >= 0; i--) {
-        const time = new Date(now - i * 3600000);
-        labels.push(time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+    // Try to fetch real price history from backend
+    let priceHistory = null;
+    try {
+        const response = await fetch(`${backendUrl}/events/${eventId}/price-history`);
+        if (response.ok) {
+            priceHistory = await response.json();
+        }
+    } catch (e) {
+        console.log('Price history not available, using current probabilities');
     }
 
-    // Generate price data for each option
+    const labels = [];
+    const datasets = [];
     const colors = ['#22c55e', '#ef4444', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899'];
-    
-    options.forEach((opt, idx) => {
-        const prices = [];
-        let basePrice = opt.probability / 100;
-        
-        for (let i = 0; i <= historyPoints; i++) {
-            // Add some randomness to simulate price movement
-            const randomChange = (Math.random() - 0.5) * 0.1;
-            let price = basePrice + randomChange;
-            price = Math.max(0.01, Math.min(0.99, price));
-            prices.push(price);
-        }
-        
-        datasets.push({
-            label: opt.text,
-            data: prices,
-            borderColor: colors[idx % colors.length],
-            backgroundColor: colors[idx % colors.length] + '20',
-            borderWidth: 2,
-            fill: true,
-            tension: 0.4,
-            pointRadius: 0
+
+    if (priceHistory && priceHistory.length > 0) {
+        // Use real price history from database
+        const timestamps = [...new Set(priceHistory.map(p => p.timestamp))];
+        timestamps.sort();
+
+        // Show last 24 data points
+        const displayData = timestamps.slice(-24);
+
+        displayData.forEach(ts => {
+            const date = new Date(ts);
+            labels.push(date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
         });
-    });
+
+        // Group by option
+        options.forEach((opt, idx) => {
+            const data = displayData.map(ts => {
+                const point = priceHistory.find(p =>
+                    p.option_index === opt.index &&
+                    new Date(p.timestamp).getTime() === new Date(ts).getTime()
+                );
+                return point ? point.price : opt.probability / 100;
+            });
+
+            datasets.push({
+                label: opt.text,
+                data: data,
+                borderColor: colors[idx % colors.length],
+                backgroundColor: colors[idx % colors.length] + '20',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0
+            });
+        });
+    } else {
+        // Fallback: generate simulated history based on current probabilities
+        const now = Date.now();
+        const historyPoints = 24;
+
+        for (let i = historyPoints; i >= 0; i--) {
+            const time = new Date(now - i * 3600000);
+            labels.push(time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+        }
+
+        options.forEach((opt, idx) => {
+            const prices = [];
+            let basePrice = opt.probability / 100;
+
+            for (let i = 0; i <= historyPoints; i++) {
+                // Simulate realistic price movement
+                const randomChange = (Math.random() - 0.5) * 0.05;
+                let price = basePrice + randomChange;
+                price = Math.max(0.01, Math.min(0.99, price));
+                prices.push(price);
+            }
+
+            datasets.push({
+                label: opt.text,
+                data: prices,
+                borderColor: colors[idx % colors.length],
+                backgroundColor: colors[idx % colors.length] + '20',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0
+            });
+        });
+    }
 
     // Create chart
     const ctx = canvas.getContext('2d');
