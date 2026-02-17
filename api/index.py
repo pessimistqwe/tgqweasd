@@ -292,7 +292,9 @@ def parse_polymarket_end_time(end_time: str) -> datetime:
     if not end_time:
         return datetime.utcnow() + timedelta(days=7)
     try:
-        return datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+        # Parse with timezone and convert to naive UTC
+        dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+        return dt.replace(tzinfo=None)  # Convert to naive UTC
     except Exception as e:
         print(f"Error parsing end time: {e}")
         return datetime.utcnow() + timedelta(days=7)
