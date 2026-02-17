@@ -120,12 +120,68 @@ async function checkAdminStatus() {
 
 function selectCategory(category) {
     currentCategory = category;
-    
+
     document.querySelectorAll('.category-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.category === category);
     });
-    
+
     loadEvents();
+}
+
+// Setup horizontal scroll for categories
+function setupCategoryScroll() {
+    const container = document.getElementById('categories-container');
+    if (!container) return;
+
+    let isDown = false;
+    let startX;
+    let scrollLeft;
+
+    // Mouse drag scroll
+    container.addEventListener('mousedown', (e) => {
+        isDown = true;
+        startX = e.pageX - container.offsetLeft;
+        scrollLeft = container.scrollLeft;
+        container.style.cursor = 'grabbing';
+    });
+
+    container.addEventListener('mouseleave', () => {
+        isDown = false;
+        container.style.cursor = 'grab';
+    });
+
+    container.addEventListener('mouseup', () => {
+        isDown = false;
+        container.style.cursor = 'grab';
+    });
+
+    container.addEventListener('mousemove', (e) => {
+        if (!isDown) return;
+        e.preventDefault();
+        const x = e.pageX - container.offsetLeft;
+        const walk = (x - startX) * 2;
+        container.scrollLeft = scrollLeft - walk;
+    });
+
+    // Mouse wheel horizontal scroll
+    container.addEventListener('wheel', (e) => {
+        if (e.deltaY !== 0) {
+            container.scrollLeft += e.deltaY;
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    // Touch scroll is native, but add visual feedback
+    container.addEventListener('touchstart', () => {
+        container.style.cursor = 'grabbing';
+    });
+
+    container.addEventListener('touchend', () => {
+        container.style.cursor = 'grab';
+    });
+
+    // Set cursor style
+    container.style.cursor = 'grab';
 }
 
 async function loadEvents(silent = false) {
@@ -717,3 +773,6 @@ document.addEventListener('click', function(e) {
         e.target.classList.add('hidden');
     }
 });
+
+// Initialize category scroll on page load
+setupCategoryScroll();
