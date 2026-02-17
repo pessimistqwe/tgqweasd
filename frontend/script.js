@@ -140,25 +140,28 @@ function setupCategoryScroll() {
     // Mouse drag scroll
     container.addEventListener('mousedown', (e) => {
         isDown = true;
-        startX = e.pageX - container.offsetLeft;
+        startX = e.pageX - container.getBoundingClientRect().left;
         scrollLeft = container.scrollLeft;
         container.style.cursor = 'grabbing';
+        container.style.userSelect = 'none';
     });
 
     container.addEventListener('mouseleave', () => {
         isDown = false;
         container.style.cursor = 'grab';
+        container.style.userSelect = '';
     });
 
     container.addEventListener('mouseup', () => {
         isDown = false;
         container.style.cursor = 'grab';
+        container.style.userSelect = '';
     });
 
     container.addEventListener('mousemove', (e) => {
         if (!isDown) return;
         e.preventDefault();
-        const x = e.pageX - container.offsetLeft;
+        const x = e.pageX - container.getBoundingClientRect().left;
         const walk = (x - startX) * 2;
         container.scrollLeft = scrollLeft - walk;
     });
