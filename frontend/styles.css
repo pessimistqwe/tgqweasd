@@ -173,14 +173,38 @@ body::before {
     align-items: center;
     gap: 8px;
     background: linear-gradient(135deg, var(--accent), #15803d);
-    padding: 10px 16px;
+    padding: 8px 16px 8px 12px;
     border-radius: var(--radius-full);
     font-weight: 600;
     font-size: 14px;
-    color: #000;
+    color: #fff;
     cursor: pointer;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     box-shadow: var(--shadow-glow);
+}
+
+.balance-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 50%;
+    padding: 4px;
+    margin-right: 4px;
+}
+
+.balance-icon svg {
+    width: 20px;
+    height: 20px;
+}
+
+.balance-currency {
+    font-size: 12px;
+    font-weight: 500;
+    opacity: 0.8;
+    margin-left: 2px;
 }
 
 .balance-card:hover {

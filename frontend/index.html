@@ -30,11 +30,14 @@
                     Predict
                 </h1>
                 <div class="balance-card" onclick="showSection('wallet')">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="12" cy="12" r="10"/>
-                        <text x="12" y="16" text-anchor="middle" fill="#121212" font-size="10" font-weight="bold">$</text>
-                    </svg>
+                    <div class="balance-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="10" fill="rgba(255,255,255,0.2)"/>
+                            <text x="12" y="16" text-anchor="middle" fill="#fff" font-size="12" font-weight="700">$</text>
+                        </svg>
+                    </div>
                     <span id="user-balance">0</span>
+                    <span class="balance-currency">USDT</span>
                 </div>
             </div>
         </header>
