@@ -201,6 +201,13 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             options = []
             volumes = []
 
+            # Парсим outcomes если это JSON строка
+            if isinstance(outcomes, str):
+                try:
+                    outcomes = json.loads(outcomes)
+                except Exception:
+                    pass
+
             # 1) tokens (новый формат)
             if isinstance(tokens, list) and tokens:
                 for token in tokens:
