@@ -737,6 +737,39 @@ async def force_sync_polymarket(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/admin/debug-sync")
+async def debug_sync(db: Session = Depends(get_db)):
+    """Debug sync endpoint with detailed output"""
+    import io
+    import sys
+    
+    # Capture stdout
+    old_stdout = sys.stdout
+    sys.stdout = buffer = io.StringIO()
+    
+    try:
+        # Call fetch directly
+        events = fetch_polymarket_events(limit=5)
+        
+        # Get captured output
+        sys.stdout = old_stdout
+        logs = buffer.getvalue()
+        
+        return {
+            "success": True,
+            "events_count": len(events),
+            "events": events[:2] if events else [],
+            "logs": logs[:2000] if logs else "No logs captured"
+        }
+    except Exception as e:
+        sys.stdout = old_stdout
+        logs = buffer.getvalue()
+        return {
+            "success": False,
+            "error": str(e),
+            "logs": logs[:2000] if logs else "No logs captured"
+        }
+
 # Health check
 @app.get("/health")
 async def health_check():
