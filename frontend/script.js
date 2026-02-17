@@ -17,6 +17,55 @@ function getUserLanguage() {
 const userLang = getUserLanguage();
 const isRussian = userLang === 'ru';
 
+// Перевод названий событий через Telegram
+function translateEventText(text) {
+    if (!isRussian || !text) return text;
+    
+    // Словарь популярных слов для перевода
+    const translations = {
+        'Bitcoin': 'Биткоин',
+        'Ethereum': 'Эфириум',
+        'Solana': 'Солана',
+        'XRP': 'XRP',
+        'Up': 'Вверх',
+        'Down': 'Вниз',
+        'or': 'или',
+        'February': 'Февраль',
+        'March': 'Март',
+        'April': 'Апрель',
+        'May': 'Май',
+        'June': 'Июнь',
+        'July': 'Июль',
+        'August': 'Август',
+        'September': 'Сентябрь',
+        'October': 'Октябрь',
+        'November': 'Ноябрь',
+        'December': 'Декабрь',
+        'Will': 'Будет',
+        'the': '',
+        'price': 'цена',
+        'be': 'быть',
+        'above': 'выше',
+        'below': 'ниже',
+        'at': 'в',
+        'end': 'конец',
+        'of': '',
+        'day': 'день',
+        'week': 'неделя',
+        'month': 'месяц',
+        'year': 'год'
+    };
+    
+    let translated = text;
+    for (const [en, ru] of Object.entries(translations)) {
+        const regex = new RegExp(en, 'gi');
+        translated = translated.replace(regex, ru);
+    }
+    
+    // Убираем лишние пробелы
+    return translated.replace(/\s+/g, ' ').trim();
+}
+
 // Словарь переводов
 const translations = {
     en: {
@@ -56,6 +105,7 @@ const translations = {
         my_predictions: 'My Predictions',
         transaction_history: 'Transaction History',
         no_transactions: 'No transactions yet',
+        no_description: 'No description available',
         pending_withdrawals: 'Pending Withdrawals',
         sync_polymarket: 'Sync Polymarket',
         users: 'Users',
@@ -107,6 +157,7 @@ const translations = {
         my_predictions: 'Мои прогнозы',
         transaction_history: 'История транзакций',
         no_transactions: 'Пока нет транзакций',
+        no_description: 'Описание отсутствует',
         pending_withdrawals: 'Ожидающие выводы',
         sync_polymarket: 'Синхронизация',
         users: 'Пользователи',
@@ -356,8 +407,9 @@ function createEventCard(event) {
 
     // Используем CORS proxy для картинок если нужно
     const imageUrl = event.image_url;
+    // Пробуем загрузить напрямую, если не выходит - используем placeholder
     const imageHtml = imageUrl
-        ? `<img src="${imageUrl}" alt="" class="event-image" crossorigin="anonymous" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex'; console.log('Image failed to load:', '${imageUrl}');"><div class="event-image-placeholder" style="display:none">${categoryInitial}</div>`
+        ? `<img src="${imageUrl}" alt="" class="event-image" crossorigin="anonymous" loading="lazy" onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';"><div class="event-image-placeholder" style="display:none">${categoryInitial}</div>`
         : `<div class="event-image-placeholder">${categoryInitial}</div>`;
 
     return `
@@ -368,7 +420,7 @@ function createEventCard(event) {
                     <div class="event-category">
                         <span class="category-badge">${categoryName}</span>
                     </div>
-                    <h3 class="event-title">${escapeHtml(event.title)}</h3>
+                    <h3 class="event-title">${escapeHtml(translateEventText(event.title))}</h3>
                 </div>
             </div>
 
@@ -845,17 +897,17 @@ async function openEventModal(eventId) {
         if (!event) return;
 
         selectedOptionIndex = null;
-        document.getElementById('event-modal-title').textContent = event.title;
+        document.getElementById('event-modal-title').textContent = translateEventText(event.title);
         document.getElementById('event-description').innerHTML = `
-            <strong>Description:</strong><br>
-            ${event.description || 'No description available.'}
+            <strong>${tr('description')}:</strong><br>
+            ${translateEventText(event.description) || tr('no_description')}
         `;
 
         // Render options
         const optionsContainer = document.getElementById('event-options');
         optionsContainer.innerHTML = event.options.map((opt, idx) => `
             <div class="event-option-btn" onclick="selectEventOption(${idx}, ${opt.probability})">
-                <span class="event-option-text">${opt.text}</span>
+                <span class="event-option-text">${translateEventText(opt.text)}</span>
                 <span class="event-option-probability">${opt.probability}%</span>
             </div>
         `).join('');

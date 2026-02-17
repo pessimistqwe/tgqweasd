@@ -354,13 +354,27 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
                 option.market_stake = volume
                 # Сохраняем историю цен
                 price = volume / (sum(volumes) or 1)
-                new_history = PriceHistory(
-                    event_id=existing.id,
-                    option_index=idx,
-                    price=price,
-                    volume=volume
-                )
-                db.add(new_history)
+                option.current_price = price
+                # Создаем несколько точек истории для графика (симуляция)
+                for h in range(24):
+                    hist_time = datetime.utcnow() - timedelta(hours=h)
+                    # Проверяем есть ли уже запись
+                    existing_hist = db.query(PriceHistory).filter(
+                        PriceHistory.event_id == existing.id,
+                        PriceHistory.option_index == idx,
+                        PriceHistory.timestamp == hist_time
+                    ).first()
+                    if not existing_hist:
+                        # Симуляция исторической цены с небольшим разбросом
+                        hist_price = price + (0.5 - h/48) * 0.1  # Плавное изменение
+                        hist_price = max(0.01, min(0.99, hist_price))
+                        new_history = PriceHistory(
+                            event_id=existing.id,
+                            option_index=idx,
+                            price=hist_price,
+                            volume=volume
+                        )
+                        db.add(new_history)
                 print(f"   Updated option {idx}: {option_text}, price: {price:.2%}")
             else:
                 new_option = EventOption(
@@ -406,9 +420,25 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
             option_index=idx,
             option_text=option_text,
             total_stake=0.0,
-            market_stake=volume
+            market_stake=volume,
+            current_price=volume / (sum(volumes) or 1)
         )
         db.add(new_option)
+        
+        # Создаем историю цен для графика (24 часа)
+        price = volume / (sum(volumes) or 1)
+        for h in range(24):
+            hist_time = datetime.utcnow() - timedelta(hours=h)
+            hist_price = price + (0.5 - h/48) * 0.1
+            hist_price = max(0.01, min(0.99, hist_price))
+            new_history = PriceHistory(
+                event_id=new_event.id,
+                option_index=idx,
+                price=hist_price,
+                volume=volume
+            )
+            db.add(new_history)
+        
         print(f"   Added option {idx}: {option_text}")
 
     print(f"   New event created successfully")
