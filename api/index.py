@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 import json
@@ -69,6 +70,9 @@ POLYMARKET_VERBOSE_LOGS = os.getenv("POLYMARKET_VERBOSE_LOGS", "0") == "1"
 
 # Инициализация планировщика
 scheduler = AsyncIOScheduler()
+
+# Admin Telegram ID
+ADMIN_TELEGRAM_ID = int(os.getenv("ADMIN_TELEGRAM_ID", "1972885597"))
 
 # Ключевые слова для определения категорий
 CATEGORY_KEYWORDS = {
@@ -489,6 +493,22 @@ class PredictionRequest(BaseModel):
     option_index: int
     points: float
 
+class CreateEventRequest(BaseModel):
+    telegram_id: int
+    title: str
+    description: str
+    category: str
+    image_url: str
+    end_time: str
+    options: list[str]
+
+class AdminStats(BaseModel):
+    total_users: int
+    total_events: int
+    pending_events: int
+    total_volume: float
+    total_transactions: int
+
 class UserResponse(BaseModel):
     telegram_id: int
     username: Optional[str]
@@ -821,6 +841,190 @@ async def debug_sync(db: Session = Depends(get_db)):
             "error": str(e),
             "logs": logs[:2000] if logs else "No logs captured"
         }
+
+# ==================== ADMIN ENDPOINTS ====================
+
+@app.get("/admin/check/{telegram_id}")
+async def check_admin(telegram_id: int):
+    """Check if user is admin"""
+    return {"is_admin": telegram_id == ADMIN_TELEGRAM_ID}
+
+@app.get("/admin/stats")
+async def get_admin_stats(db: Session = Depends(get_db)):
+    """Get admin statistics"""
+    total_users = db.query(User).count()
+    total_events = db.query(Event).filter(Event.is_moderated == True).count()
+    pending_events = db.query(Event).filter(Event.is_moderated == False).count()
+    total_volume = db.query(Event).filter(
+        Event.is_moderated == True
+    ).with_entities(func.sum(Event.total_pool)).scalar() or 0.0
+    total_transactions = db.query(Transaction).count()
+
+    return {
+        "total_users": total_users,
+        "total_events": total_events,
+        "pending_events": pending_events,
+        "total_volume": round(total_volume, 2),
+        "total_transactions": total_transactions
+    }
+
+@app.get("/admin/pending-events")
+async def get_pending_events(db: Session = Depends(get_db)):
+    """Get events pending moderation"""
+    events = db.query(Event).filter(Event.is_moderated == False).all()
+    return {
+        "events": [
+            {
+                "id": e.id,
+                "title": e.title,
+                "category": e.category,
+                "created_by": e.creator_id,
+                "end_time": e.end_time.isoformat()
+            }
+            for e in events
+        ]
+    }
+
+@app.post("/admin/event/action")
+async def moderate_event(
+    event_id: int,
+    action: str,  # "approve" or "reject"
+    telegram_id: int,
+    db: Session = Depends(get_db)
+):
+    """Approve or reject event"""
+    if telegram_id != ADMIN_TELEGRAM_ID:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    if action == "approve":
+        event.is_moderated = True
+        db.commit()
+        return {"success": True, "message": "Event approved"}
+    elif action == "reject":
+        db.delete(event)
+        db.commit()
+        return {"success": True, "message": "Event rejected"}
+    else:
+        raise HTTPException(status_code=400, detail="Invalid action")
+
+@app.get("/admin/user/{telegram_id}")
+async def get_user_admin(telegram_id: int, db: Session = Depends(get_db)):
+    """Get user info for admin"""
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    transactions = db.query(Transaction).filter(
+        Transaction.user_id == user.id
+    ).order_by(Transaction.created_at.desc()).limit(20).all()
+
+    return {
+        "telegram_id": user.telegram_id,
+        "username": user.username,
+        "balance_usdt": user.balance_usdt,
+        "balance_ton": user.balance_ton,
+        "is_blocked": user.is_blocked,
+        "created_at": user.created_at.isoformat(),
+        "transactions": [
+            {
+                "id": t.id,
+                "type": t.type,
+                "amount": t.amount,
+                "status": t.status,
+                "created_at": t.created_at.isoformat()
+            }
+            for t in transactions
+        ]
+    }
+
+@app.post("/admin/user/balance")
+async def update_user_balance(
+    telegram_id: int,
+    amount: float,
+    action: str,  # "add" or "set"
+    admin_telegram_id: int,
+    db: Session = Depends(get_db)
+):
+    """Update user balance (admin only)"""
+    if admin_telegram_id != ADMIN_TELEGRAM_ID:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if action == "add":
+        user.balance_usdt += amount
+    elif action == "set":
+        user.balance_usdt = amount
+
+    db.commit()
+    return {"success": True, "new_balance": user.balance_usdt}
+
+@app.post("/events/create")
+async def create_event(request: CreateEventRequest, db: Session = Depends(get_db)):
+    """Create a new event (requires moderation)"""
+    try:
+        # Check if user has enough balance for creation (min $10)
+        user = db.query(User).filter(User.telegram_id == request.telegram_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if user.balance_usdt < 10:
+            raise HTTPException(status_code=400, detail="Insufficient balance. Minimum $10 required to create event")
+
+        # Parse end time
+        try:
+            end_time = datetime.fromisoformat(request.end_time.replace('Z', '+00:00'))
+        except:
+            end_time = datetime.utcnow() + timedelta(days=7)
+
+        # Create event (not moderated by default)
+        new_event = Event(
+            polymarket_id=f"user_{request.telegram_id}_{int(datetime.utcnow().timestamp())}",
+            title=request.title[:500],
+            description=request.description[:1000] if request.description else None,
+            category=request.category or 'other',
+            image_url=request.image_url or '',
+            options=json.dumps(request.options),
+            end_time=end_time,
+            is_active=True,
+            is_moderated=False,  # Requires moderation
+            is_resolved=False,
+            total_pool=0.0,
+            creator_id=user.id
+        )
+        db.add(new_event)
+        db.flush()
+
+        # Create options
+        for idx, option_text in enumerate(request.options):
+            new_option = EventOption(
+                event_id=new_event.id,
+                option_index=idx,
+                option_text=option_text[:255],
+                total_stake=0.0,
+                market_stake=0.0
+            )
+            db.add(new_option)
+
+        db.commit()
+        db.refresh(new_event)
+
+        return {
+            "success": True,
+            "event_id": new_event.id,
+            "message": "Event created and sent for moderation"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating event: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Health check
 @app.get("/health")

@@ -10,7 +10,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <title>Predict - Predictions Market</title>
 </head>
 <body>
@@ -48,19 +47,12 @@
             <section id="events-section" class="section">
                 <div class="section-header">
                     <h2>Markets</h2>
-                    <div style="display: flex; gap: 8px;">
-                        <button class="refresh-btn" onclick="openCreateEventModal()" title="Create Event">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 5v14M5 12h14"/>
-                            </svg>
-                        </button>
-                        <button class="refresh-btn" onclick="loadEvents()">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
-                                <path d="M21 3v5h-5"/>
-                            </svg>
-                        </button>
-                    </div>
+                    <button class="refresh-btn" onclick="loadEvents()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+                            <path d="M21 3v5h-5"/>
+                        </svg>
+                    </button>
                 </div>
                 
                 <div class="categories-container" id="categories-container">
@@ -242,82 +234,6 @@
                 </div>
             </section>
         </main>
-
-        <!-- Event Detail Modal -->
-        <div id="event-modal" class="modal hidden">
-            <div class="modal-content event-modal-content">
-                <div class="modal-header">
-                    <h3 id="event-modal-title">Event Details</h3>
-                    <button class="modal-close" onclick="closeEventModal()">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M18 6L6 18M6 6l12 12"/>
-                        </svg>
-                    </button>
-                </div>
-                <div class="event-modal-body">
-                    <div class="event-chart" id="event-chart">
-                        <canvas id="event-chart-canvas"></canvas>
-                    </div>
-                    <div class="event-options" id="event-options"></div>
-                    <div class="event-description" id="event-description"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Create Event Modal -->
-        <div id="create-event-modal" class="modal hidden">
-            <div class="modal-content event-modal-content">
-                <div class="modal-header">
-                    <h3>Create Event</h3>
-                    <button class="modal-close" onclick="closeCreateEventModal()">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M18 6L6 18M6 6l12 12"/>
-                        </svg>
-                    </button>
-                </div>
-                <div class="event-modal-body">
-                    <div class="input-group">
-                        <label>Title</label>
-                        <input type="text" id="create-title" placeholder="Event title" maxlength="500">
-                    </div>
-                    <div class="input-group">
-                        <label>Description</label>
-                        <textarea id="create-description" placeholder="Event description" rows="3" maxlength="1000"></textarea>
-                    </div>
-                    <div class="input-group">
-                        <label>Category</label>
-                        <select id="create-category" style="width: 100%; padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);">
-                            <option value="crypto">Crypto</option>
-                            <option value="politics">Politics</option>
-                            <option value="sports">Sports</option>
-                            <option value="business">Business</option>
-                            <option value="pop_culture">Pop Culture</option>
-                            <option value="science">Science</option>
-                            <option value="other">Other</option>
-                        </select>
-                    </div>
-                    <div class="input-group">
-                        <label>Image URL</label>
-                        <input type="text" id="create-image" placeholder="https://...">
-                    </div>
-                    <div class="input-group">
-                        <label>End Time</label>
-                        <input type="datetime-local" id="create-end-time">
-                    </div>
-                    <div class="input-group">
-                        <label>Options (comma separated)</label>
-                        <input type="text" id="create-options" placeholder="Yes, No">
-                    </div>
-                    <div class="balance-info" style="margin: 16px 0; padding: 12px; background: var(--accent-muted); border-radius: var(--radius-md); font-size: 13px;">
-                        <strong>Requirement:</strong> Minimum $10 balance required to create event
-                    </div>
-                    <div class="modal-buttons">
-                        <button class="modal-btn cancel" onclick="closeCreateEventModal()">Cancel</button>
-                        <button class="modal-btn confirm" onclick="submitCreateEvent()">Create Event</button>
-                    </div>
-                </div>
-            </div>
-        </div>
 
         <!-- Bet Modal -->
         <div id="bet-modal" class="modal hidden">
