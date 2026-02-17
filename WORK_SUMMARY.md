@@ -328,6 +328,22 @@ apscheduler==3.10.4
 - ✅ История цен сохраняется
 - ✅ Ошибок нет
 
+**Автоматические тесты:**
+```bash
+python test_deployment.py
+```
+
+Проверяет:
+- Health endpoint
+- Categories endpoint
+- Events endpoint (все категории)
+- Admin check (TG ID: 1972885597)
+- Admin stats
+- Price history endpoint
+- Single event endpoint
+
+**Результат:** 9/9 тестов проходят ✅
+
 ---
 
 ## 🚀 Быстрый старт
@@ -354,6 +370,47 @@ curl https://eventpredict-production.up.railway.app/health
 ### Админ-доступ:
 - Telegram ID: `1972885597`
 - Проверка: `GET /admin/check/1972885597`
+
+---
+
+## 🧪 Тесты
+
+### Запуск тестов деплоя:
+```bash
+python test_deployment.py
+```
+
+### Backend тесты (pytest):
+```bash
+pytest api/test_api.py -v
+```
+
+### Frontend тесты (pytest):
+```bash
+pytest frontend/test_frontend.py -v
+```
+
+### Что проверяют тесты:
+
+**API (test_api.py):**
+- ✅ Health endpoint (status: healthy)
+- ✅ Categories endpoint (7+ категорий)
+- ✅ Events endpoint (события есть)
+- ✅ Crypto категория (все события crypto)
+- ✅ Sports категория (все события sports)
+- ✅ Admin check (TG ID: 1972885597 → is_admin: true)
+- ✅ Admin stats (статистика платформы)
+- ✅ Price history endpoint (список истории)
+- ✅ Single event endpoint (детали события)
+
+**Frontend (test_frontend.py):**
+- ✅ Определение языка (RU/EN)
+- ✅ Перевод событий (Bitcoin→Биткоин)
+- ✅ Рендеринг картинок (с fallback)
+- ✅ Цвета кнопок (Yes=зелёный, No=красный)
+- ✅ Скролл категорий
+- ✅ Модальное окно создания событий
+- ✅ График с историей цен
 
 ---
 
