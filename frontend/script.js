@@ -1446,39 +1446,55 @@ function closeModal() {
     currentOptionIndex = null;
 }
 
+// Price Prediction Betting Functions
+let currentPredictionType = null;
+let currentPredictionEventId = null;
+
+function openPredictionBet(direction) {
+    currentPredictionType = direction;
+    
+    const modal = document.getElementById('bet-modal');
+    document.getElementById('modal-title').textContent = direction === 'up' ? 'Прогноз: ВВЕРХ' : 'Прогноз: ВНИЗ';
+    document.getElementById('modal-option').textContent = `Цена ${direction === 'up' ? 'вырастет' : 'упадет'} в ближайшие 5 минут`;
+    document.getElementById('points-input').value = '';
+    
+    modal.classList.remove('hidden');
+}
+
 async function confirmPrediction() {
     const points = parseFloat(document.getElementById('points-input').value);
-    
+
     if (!points || points < 1) {
         showNotification('Enter a valid amount (minimum 1 USDT)', 'error');
         return;
     }
-    
+
     if (points > userBalance) {
         showNotification('Insufficient balance', 'error');
         return;
     }
-    
+
     try {
         const confirmBtn = document.querySelector('#bet-modal .modal-btn.confirm');
         confirmBtn.textContent = 'Processing...';
         confirmBtn.disabled = true;
-        
+
+        // Use regular predict endpoint for now
         const result = await apiRequest('/predict', {
             method: 'POST',
             body: JSON.stringify({
                 telegram_id: getUserId(),
                 event_id: currentEventId,
-                option_index: currentOptionIndex,
+                option_index: currentPredictionType === 'up' ? 0 : 1,
                 points: points
             })
         });
-        
+
         showNotification(`Bet placed! New balance: ${formatNumber(result.new_balance)} USDT`, 'success');
         closeModal();
         loadEvents();
         loadUserBalance();
-        
+
         if (tg.HapticFeedback) {
             tg.HapticFeedback.notificationOccurred('success');
         }
@@ -2152,20 +2168,20 @@ async function renderBetHistory(eventId) {
     }
 }
 
-// Render price chart for crypto/business/science events with REAL Binance data
-let binanceWebSocket = null; // WebSocket для реальных данных
+// Render chart with REAL Binance WebSocket data - Polymarket Style
+let binanceWebSocket = null;
+let currentChartInterval = '15m';
+let chartPriceData = { firstPrice: 0, lastPrice: 0 };
 
 async function renderPriceChart(eventId, options) {
     const canvas = document.getElementById('event-chart-canvas');
     if (!canvas) return;
 
-    // Close existing WebSocket
     if (binanceWebSocket) {
         binanceWebSocket.close();
         binanceWebSocket = null;
     }
 
-    // Get event to determine crypto symbol
     let event = null;
     try {
         event = await apiRequest(`/events/${eventId}`);
@@ -2174,10 +2190,9 @@ async function renderPriceChart(eventId, options) {
         return;
     }
 
-    // Try to find crypto symbol in event title/description
     let binanceSymbol = null;
     const eventText = (event.title + ' ' + (event.description || '')).toLowerCase();
-    
+
     for (const [key, symbol] of Object.entries(CRYPTO_SYMBOLS)) {
         if (eventText.includes(key)) {
             binanceSymbol = symbol;
@@ -2186,26 +2201,34 @@ async function renderPriceChart(eventId, options) {
     }
 
     if (!binanceSymbol) {
-        // No crypto found - use simulated data
         renderSimulatedChart(canvas, options);
         return;
     }
 
-    // Load real-time data from Binance via WebSocket
     renderRealtimeChart(canvas, binanceSymbol, options, eventId);
 }
 
-// Render chart with REAL Binance WebSocket data
 function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
     const ctx = canvas.getContext('2d');
-    const primaryColor = '#22c55e';
-
-    // Initialize chart with empty data
+    const chartColor = '#f2b03d';
+    
     const labels = [];
     const prices = [];
-    const maxPoints = 60;
+    
+    // Show timeframe buttons and price info
+    document.getElementById('event-chart-timeframe').style.display = 'flex';
+    document.getElementById('event-chart-info').style.display = 'block';
 
-    // Create initial chart with Polymarket-style settings
+    // Setup timeframe buttons
+    document.querySelectorAll('.timeframe-btn').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentChartInterval = btn.dataset.interval;
+            loadChartData(binanceSymbol, currentChartInterval);
+        };
+    });
+
     eventChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -2213,49 +2236,46 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
             datasets: [{
                 label: binanceSymbol,
                 data: prices,
-                borderColor: primaryColor,
+                borderColor: chartColor,
                 borderWidth: 2,
                 fill: true,
                 tension: 0.4,
                 pointRadius: 0,
                 pointHoverRadius: 4,
-                pointHoverBackgroundColor: primaryColor,
-                pointHoverBorderColor: '#fff',
-                pointHoverBorderWidth: 1
+                pointHoverBackgroundColor: '#fff',
+                pointHoverBorderColor: chartColor,
+                pointHoverBorderWidth: 2
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            layout: {
-                padding: 0
-            },
-            animation: {
-                duration: 0,
-                x: { duration: 0 },
-                y: { duration: 0 }
-            },
+            layout: { padding: 0 },
+            animation: { duration: 0 },
             interaction: {
                 intersect: false,
-                mode: 'nearest'
+                mode: 'index',
+                axis: 'x'
             },
             plugins: {
                 legend: { display: false },
                 tooltip: {
-                    backgroundColor: 'rgba(15, 15, 18, 0.98)',
-                    titleColor: '#fff',
-                    bodyColor: '#a1a1aa',
-                    borderColor: 'rgba(34, 197, 94, 0.5)',
+                    backgroundColor: 'rgba(13, 17, 23, 0.98)',
+                    titleColor: '#f2b03d',
+                    bodyColor: '#f0f6fc',
+                    borderColor: 'rgba(242, 176, 61, 0.5)',
                     borderWidth: 1,
                     padding: 12,
                     displayColors: false,
-                    titleFont: { size: 12, weight: '600' },
-                    bodyFont: { size: 11 },
-                    cornerRadius: 6,
+                    titleFont: { size: 13, weight: '700' },
+                    bodyFont: { size: 12 },
+                    cornerRadius: 8,
                     callbacks: {
                         title: (ctx) => {
                             const date = new Date(ctx[0].label);
-                            return date.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', {
+                            return date.toLocaleString(isRussian ? 'ru-RU' : 'en-US', {
+                                month: 'short',
+                                day: 'numeric',
                                 hour: '2-digit',
                                 minute: '2-digit'
                             });
@@ -2270,34 +2290,27 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                     grid: { display: false },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 9 },
+                        font: { size: 10 },
                         maxTicksLimit: 6,
                         maxRotation: 0,
                         autoSkip: true,
-                        padding: 0
+                        padding: 8
                     },
-                    offset: false,
-                    min: 0,
-                    max: maxPoints - 1
+                    offset: false
                 },
                 y: {
                     display: true,
                     position: 'right',
                     grid: {
-                        color: 'rgba(255,255,255,0.05)',
+                        color: 'rgba(255,255,255,0.03)',
                         drawBorder: false
                     },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 9 },
-                        padding: 0,
-                        maxTicksLimit: 5,
-                        callback: (value) => {
-                            if (value >= 1000) {
-                                return '$' + (value / 1000).toFixed(1) + 'K';
-                            }
-                            return '$' + value.toFixed(2);
-                        }
+                        font: { size: 10 },
+                        padding: 8,
+                        maxTicksLimit: 6,
+                        callback: (value) => `$${value.toFixed(2)}`
                     },
                     min: undefined,
                     max: undefined
@@ -2306,33 +2319,85 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
         }
     });
 
-    // Apply gradient
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, 'rgba(34, 197, 94, 0.5)');
-    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.15)');
-    gradient.addColorStop(1, 'rgba(239, 68, 68, 0.2)');
+    gradient.addColorStop(0, 'rgba(242, 176, 61, 0.3)');
+    gradient.addColorStop(0.5, 'rgba(242, 176, 61, 0.08)');
+    gradient.addColorStop(1, 'rgba(242, 176, 61, 0.02)');
     eventChart.data.datasets[0].backgroundColor = gradient;
 
-    // Fetch historical data first (REST API)
-    fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=1m&limit=${maxPoints}`)
-        .then(res => res.json())
-        .then(data => {
-            data.forEach(candle => {
-                const timestamp = candle[0];
-                const close = parseFloat(candle[4]);
-                const time = new Date(timestamp);
-                labels.push(time.toISOString());
-                prices.push(close);
-            });
+    // Load chart data
+    loadChartData(binanceSymbol, currentChartInterval);
+}
 
-            // Connect WebSocket - it will set fixed scale and start real-time updates
-            connectBinanceWebSocket(binanceSymbol, labels, prices);
-        })
-        .catch(err => {
-            console.error('Error fetching historical data:', err);
-            // Fallback to WebSocket only
-            connectBinanceWebSocket(binanceSymbol, labels, prices);
+async function loadChartData(symbol, interval) {
+    const intervals = {
+        '1m': { binanceInterval: '1m', points: 1440 },
+        '5m': { binanceInterval: '5m', points: 288 },
+        '15m': { binanceInterval: '15m', points: 96 },
+        '1h': { binanceInterval: '1h', points: 168 },
+        '4h': { binanceInterval: '4h', points: 168 },
+        '1d': { binanceInterval: '1d', points: 90 }
+    };
+    
+    const config = intervals[interval] || intervals['15m'];
+    
+    try {
+        const response = await fetch(
+            `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${config.binanceInterval}&limit=${config.points}`
+        );
+        const data = await response.json();
+        
+        const labels = [];
+        const prices = [];
+        
+        data.forEach(candle => {
+            const timestamp = candle[0];
+            const close = parseFloat(candle[4]);
+            const time = new Date(timestamp);
+            labels.push(time.toISOString());
+            prices.push(close);
         });
+        
+        if (prices.length > 0) {
+            chartPriceData.firstPrice = prices[0];
+            chartPriceData.lastPrice = prices[prices.length - 1];
+            updateChartPriceDisplay(prices[prices.length - 1]);
+        }
+        
+        if (eventChart) {
+            eventChart.data.labels = labels;
+            eventChart.data.datasets[0].data = prices;
+            
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+            const range = maxPrice - minPrice;
+            const padding = range * 0.1;
+            
+            eventChart.options.scales.y.min = minPrice - padding;
+            eventChart.options.scales.y.max = maxPrice + padding;
+            eventChart.update('none');
+        }
+        
+        connectBinanceWebSocket(symbol, labels, prices);
+    } catch (err) {
+        console.error('Error loading chart data:', err);
+    }
+}
+
+function updateChartPriceDisplay(currentPrice) {
+    const priceEl = document.getElementById('chart-price');
+    const changeEl = document.getElementById('chart-change');
+    
+    if (!priceEl || !changeEl) return;
+    
+    priceEl.textContent = `$${currentPrice.toFixed(2)}`;
+    
+    const firstPrice = chartPriceData.firstPrice || currentPrice;
+    const change = ((currentPrice - firstPrice) / firstPrice) * 100;
+    const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
+    
+    changeEl.textContent = changeStr;
+    changeEl.className = 'event-chart-change' + (change >= 0 ? '' : ' negative');
 }
 
 // Connect to Binance WebSocket for real-time price updates
@@ -2340,24 +2405,15 @@ function connectBinanceWebSocket(symbol, labels, prices) {
     const streamName = `${symbol.toLowerCase()}@trade`;
     binanceWebSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
 
-    // FIXED scaling - center the price in the middle of the chart
-    const currentPrice = prices.length > 0 ? prices[prices.length - 1] : 0;
+    // Calculate scale from loaded data
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    const range = maxPrice - minPrice;
+    const padding = range * 0.1;
 
-    // Set fixed percentage range around current price (±10% for stability)
-    const priceRange = 0.10; // 10% range on each side
-    let fixedMinPrice = currentPrice * (1 - priceRange);
-    let fixedMaxPrice = currentPrice * (1 + priceRange);
-
-    // Ensure min price is positive
-    if (fixedMinPrice <= 0) {
-        fixedMinPrice = currentPrice * 0.5;
-        fixedMaxPrice = currentPrice * 1.5;
-    }
-
-    // Apply fixed scale immediately
     if (eventChart) {
-        eventChart.options.scales.y.min = fixedMinPrice;
-        eventChart.options.scales.y.max = fixedMaxPrice;
+        eventChart.options.scales.y.min = minPrice - padding;
+        eventChart.options.scales.y.max = maxPrice + padding;
         eventChart.update('none');
     }
 
@@ -2370,19 +2426,26 @@ function connectBinanceWebSocket(symbol, labels, prices) {
         labels.push(timestamp.toISOString());
         prices.push(price);
 
-        // Keep only last 60 points for wider horizontal view
-        if (labels.length > 60) {
+        // Keep last N points based on interval
+        const maxPoints = currentChartInterval === '1m' ? 100 : 
+                         currentChartInterval === '5m' ? 100 : 
+                         currentChartInterval === '15m' ? 96 :
+                         currentChartInterval === '1h' ? 168 : 168;
+        
+        if (labels.length > maxPoints) {
             labels.shift();
             prices.shift();
         }
 
-        // Update chart WITHOUT changing Y-axis scale (fixed scale)
+        // Update chart
         if (eventChart) {
             eventChart.data.labels = labels;
             eventChart.data.datasets[0].data = prices;
-            // Smooth update without animation
             eventChart.update('none');
         }
+
+        // Update price display
+        updateChartPriceDisplay(price);
     };
 
     binanceWebSocket.onerror = function(err) {
@@ -2391,7 +2454,6 @@ function connectBinanceWebSocket(symbol, labels, prices) {
 
     binanceWebSocket.onclose = function() {
         console.log('WebSocket closed');
-        // Reconnect after 5 seconds
         setTimeout(() => {
             if (binanceWebSocket && binanceWebSocket.readyState === WebSocket.CLOSED) {
                 connectBinanceWebSocket(symbol, labels, prices);

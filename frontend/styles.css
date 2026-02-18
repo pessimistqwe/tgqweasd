@@ -1239,13 +1239,79 @@ body::before {
 }
 
 .event-chart {
-    background: linear-gradient(180deg, rgba(47, 129, 247, 0.1) 0%, rgba(35, 134, 54, 0.06) 100%);
+    background: linear-gradient(180deg, rgba(242, 176, 61, 0.06) 0%, rgba(242, 176, 61, 0.02) 50%, rgba(242, 176, 61, 0.01) 100%);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: 4px 8px;
-    margin-bottom: 20px;
-    height: 200px;
+    padding: 0;
+    margin-bottom: 16px;
+    height: 280px;
     position: relative;
+    overflow: hidden;
+}
+
+.event-chart-info {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    pointer-events: none;
+}
+
+.event-chart-price {
+    font-size: 22px;
+    font-weight: 700;
+    color: #f2b03d;
+    line-height: 1.2;
+    text-shadow: 0 2px 8px rgba(242, 176, 61, 0.3);
+}
+
+.event-chart-change {
+    font-size: 13px;
+    font-weight: 600;
+    color: #238636;
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.event-chart-change.negative {
+    color: #da3633;
+}
+
+.event-chart-timeframe {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    gap: 4px;
+    padding: 8px 12px;
+    background: linear-gradient(to top, rgba(13, 17, 23, 0.95), transparent);
+    z-index: 10;
+}
+
+.timeframe-btn {
+    padding: 6px 12px;
+    background: rgba(242, 176, 61, 0.15);
+    border: 1px solid rgba(242, 176, 61, 0.3);
+    border-radius: 6px;
+    color: #f2b03d;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.timeframe-btn:hover {
+    background: rgba(242, 176, 61, 0.25);
+    border-color: rgba(242, 176, 61, 0.5);
+}
+
+.timeframe-btn.active {
+    background: #f2b03d;
+    color: #0d1117;
+    border-color: #f2b03d;
 }
 
 #event-chart-canvas {
@@ -1253,6 +1319,73 @@ body::before {
     height: 100% !important;
     position: relative;
     z-index: 1;
+}
+
+/* Price Prediction Buttons */
+.prediction-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 20px 16px;
+    background: var(--bg-card);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: var(--text-primary);
+}
+
+.prediction-btn.up {
+    border-color: rgba(35, 134, 54, 0.5);
+}
+
+.prediction-btn.up:hover {
+    background: rgba(35, 134, 54, 0.15);
+    border-color: #238636;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(35, 134, 54, 0.3);
+}
+
+.prediction-btn.down {
+    border-color: rgba(218, 54, 51, 0.5);
+}
+
+.prediction-btn.down:hover {
+    background: rgba(218, 54, 51, 0.15);
+    border-color: #da3633;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(218, 54, 51, 0.3);
+}
+
+.prediction-btn svg {
+    width: 28px;
+    height: 28px;
+}
+
+.prediction-btn.up svg {
+    stroke: #238636;
+}
+
+.prediction-btn.down svg {
+    stroke: #da3633;
+}
+
+.prediction-btn span:first-of-type {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+
+.prediction-odds {
+    font-size: 12px;
+    font-weight: 600;
+    color: #f2b03d;
+    background: rgba(242, 176, 61, 0.1);
+    padding: 4px 10px;
+    border-radius: 12px;
+    margin-top: 4px;
 }
 
 .event-options {
