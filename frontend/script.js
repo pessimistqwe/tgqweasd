@@ -1696,11 +1696,7 @@ async function openEventModal(eventId) {
         // Загружаем комментарии для события (из localStorage для демо)
         loadCommentsForEvent(eventId);
 
-        // Форматируем время окончания в МСК
-        const endTimeMSK = event.end_time ? formatTimeMSK(event.end_time) : '';
-        const endTimeDisplay = endTimeMSK ? ` • ${endTimeMSK}` : '';
-
-        document.getElementById('event-modal-title').textContent = translateEventText(event.title) + endTimeDisplay;
+        document.getElementById('event-modal-title').textContent = translateEventText(event.title);
         document.getElementById('event-description').innerHTML = `
             <strong>${tr('description')}:</strong><br>
             ${translateEventText(event.description) || tr('no_description')}
@@ -1752,6 +1748,12 @@ function closeEventModal() {
     document.getElementById('event-modal').classList.add('hidden');
     selectedOptionIndex = null;
     currentEventIdForComments = null;
+    
+    // Clear chart update interval
+    if (chartUpdateInterval) {
+        clearInterval(chartUpdateInterval);
+        chartUpdateInterval = null;
+    }
 }
 
 // Toggle description visibility
@@ -1902,10 +1904,17 @@ function openBetModal(title, option, probability) {
 
 // Chart rendering using Chart.js (Polymarket style) with gradient
 let eventChart = null;
+let chartUpdateInterval = null; // Auto-update interval
 
 async function renderEventChart(eventId, options) {
     const canvas = document.getElementById('event-chart-canvas');
     if (!canvas) return;
+
+    // Clear any existing update interval
+    if (chartUpdateInterval) {
+        clearInterval(chartUpdateInterval);
+        chartUpdateInterval = null;
+    }
 
     // Destroy existing chart
     if (eventChart) {
@@ -1945,15 +1954,15 @@ async function renderEventChart(eventId, options) {
             const now = new Date();
             if (date.toDateString() === now.toDateString()) {
                 // Russian 24-hour format or English 12-hour
-                labels.push(date.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', { 
-                    hour: '2-digit', 
+                labels.push(date.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', {
+                    hour: '2-digit',
                     minute: '2-digit',
                     hour12: !isRussian
                 }));
             } else {
-                labels.push(date.toLocaleDateString(isRussian ? 'ru-RU' : 'en-US', { 
-                    month: 'short', 
-                    day: 'numeric' 
+                labels.push(date.toLocaleDateString(isRussian ? 'ru-RU' : 'en-US', {
+                    month: 'short',
+                    day: 'numeric'
                 }));
             }
         });
@@ -1991,8 +2000,8 @@ async function renderEventChart(eventId, options) {
         for (let i = historyPoints; i >= 0; i--) {
             const time = new Date(now - i * 3600000);
             // Russian 24-hour format or English 12-hour
-            labels.push(time.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', { 
-                hour: '2-digit', 
+            labels.push(time.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', {
+                hour: '2-digit',
                 minute: '2-digit',
                 hour12: !isRussian
             }));
@@ -2065,7 +2074,7 @@ async function renderEventChart(eventId, options) {
                             return context[0].label;
                         },
                         label: function(context) {
-                            return 'Price: ' + (context.parsed.y * 100).toFixed(1) + '%';
+                            return 'Цена: ' + (context.parsed.y * 100).toFixed(1) + '%';
                         }
                     }
                 }
@@ -2111,13 +2120,74 @@ async function renderEventChart(eventId, options) {
 
     // Apply gradient fill after chart creation
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, 'rgba(34, 197, 94, 0.4)');
-    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.15)');
-    gradient.addColorStop(1, 'rgba(34, 197, 94, 0.02)');
+    gradient.addColorStop(0, 'rgba(34, 197, 94, 0.5)');   // Green top (60% opacity)
+    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.2)'); // Middle transition
+    gradient.addColorStop(1, 'rgba(239, 68, 68, 0.3)');   // Red bottom (50% opacity)
 
     if (eventChart.data.datasets.length > 0) {
         eventChart.data.datasets[0].backgroundColor = gradient;
-        eventChart.update();
+    }
+
+    // Auto-update chart every 10 seconds when modal is open
+    const currentEventId = eventId;
+    chartUpdateInterval = setInterval(async () => {
+        try {
+            const response = await fetch(`${backendUrl}/events/${currentEventId}/price-history`);
+            if (response.ok) {
+                const newPriceHistory = await response.json();
+                if (newPriceHistory && newPriceHistory.length > 0) {
+                    updateChartData(newPriceHistory, options);
+                }
+            }
+        } catch (e) {
+            console.log('Chart update failed, continuing with existing data');
+        }
+    }, 10000); // Update every 10 seconds
+}
+
+// Update chart data with new price history
+function updateChartData(priceHistory, options) {
+    if (!eventChart || !priceHistory || priceHistory.length === 0) return;
+
+    const timestampsSet = new Set(priceHistory.map(p => p.timestamp));
+    const timestamps = Array.from(timestampsSet);
+    timestamps.sort();
+
+    const maxPoints = 48;
+    const displayData = timestamps.slice(-maxPoints);
+    const labels = [];
+
+    displayData.forEach(ts => {
+        const date = new Date(ts);
+        const now = new Date();
+        if (date.toDateString() === now.toDateString()) {
+            labels.push(date.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: !isRussian
+            }));
+        } else {
+            labels.push(date.toLocaleDateString(isRussian ? 'ru-RU' : 'en-US', {
+                month: 'short',
+                day: 'numeric'
+            }));
+        }
+    });
+
+    // Update first dataset with new data
+    if (options.length > 0 && eventChart.data.datasets.length > 0) {
+        const opt = options[0];
+        const data = displayData.map(ts => {
+            const point = priceHistory.find(p =>
+                p.option_index === opt.index &&
+                new Date(p.timestamp).getTime() === new Date(ts).getTime()
+            );
+            return point ? point.price : opt.probability / 100;
+        });
+
+        eventChart.data.labels = labels;
+        eventChart.data.datasets[0].data = data;
+        eventChart.update('none'); // Smooth update without full re-render
     }
 }
 
