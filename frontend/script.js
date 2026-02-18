@@ -2094,18 +2094,13 @@ async function renderPriceChart(eventId, options) {
 function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
     const ctx = canvas.getContext('2d');
     const primaryColor = '#22c55e';
-    
+
     // Initialize chart with empty data
     const labels = [];
     const prices = [];
     const maxPoints = 50;
-    
-    // Variables for fixed Y-axis scaling
-    let minPrice = Infinity;
-    let maxPrice = -Infinity;
-    const pricePadding = 0.02; // 2% padding top/bottom
 
-    // Create initial chart with FIXED scaling
+    // Create initial chart
     eventChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -2213,39 +2208,20 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
     fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=1m&limit=${maxPoints}`)
         .then(res => res.json())
         .then(data => {
-            let allPrices = [];
             data.forEach(candle => {
                 const timestamp = candle[0];
                 const close = parseFloat(candle[4]);
                 const time = new Date(timestamp);
                 labels.push(time.toISOString());
                 prices.push(close);
-                allPrices.push(close);
             });
-            
-            // Calculate initial min/max with padding
-            const initialMin = Math.min(...allPrices);
-            const initialMax = Math.max(...allPrices);
-            const range = initialMax - initialMin;
-            minPrice = initialMin - (range * pricePadding);
-            maxPrice = initialMax + (range * pricePadding);
-            
-            // Ensure min/max are reasonable
-            if (minPrice <= 0) minPrice = initialMin * 0.95;
-            if (maxPrice <= minPrice) maxPrice = minPrice * 1.05;
-            
-            // Update Y-axis scale
-            eventChart.options.scales.y.min = minPrice;
-            eventChart.options.scales.y.max = maxPrice;
-            
-            eventChart.update();
 
-            // Now connect WebSocket for real-time updates
+            // Connect WebSocket - it will set fixed scale and start real-time updates
             connectBinanceWebSocket(binanceSymbol, labels, prices);
         })
         .catch(err => {
             console.error('Error fetching historical data:', err);
-            // Fallback to WebSocket only with default scaling
+            // Fallback to WebSocket only
             connectBinanceWebSocket(binanceSymbol, labels, prices);
         });
 }
@@ -2254,13 +2230,32 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
 function connectBinanceWebSocket(symbol, labels, prices) {
     const streamName = `${symbol.toLowerCase()}@trade`;
     binanceWebSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
+
+    // FIXED scaling - calculate once from historical data
+    const historicalMin = prices.length > 0 ? Math.min(...prices) : Infinity;
+    const historicalMax = prices.length > 0 ? Math.max(...prices) : -Infinity;
+    const range = historicalMax - historicalMin;
+    const pricePadding = 0.15; // 15% padding for stability
     
-    // Track min/max for FIXED scaling
-    let currentMin = prices.length > 0 ? Math.min(...prices) : Infinity;
-    let currentMax = prices.length > 0 ? Math.max(...prices) : -Infinity;
-    const pricePadding = 0.05; // 5% padding for stability
-    let scaleUpdateCounter = 0;
-    const scaleUpdateThreshold = 20; // Update scale only every 20 ticks
+    // Set fixed min/max with padding - will NOT change during chart lifetime
+    let fixedMinPrice = historicalMin - (range * pricePadding);
+    let fixedMaxPrice = historicalMax + (range * pricePadding);
+
+    // Ensure reasonable bounds (minimum 5% range for very stable prices)
+    const minRange = historicalMin * 0.05;
+    if (range < minRange) {
+        fixedMinPrice = historicalMin * 0.975;
+        fixedMaxPrice = historicalMax * 1.025;
+    }
+    if (fixedMinPrice <= 0) fixedMinPrice = historicalMin * 0.9;
+    if (fixedMaxPrice <= fixedMinPrice) fixedMaxPrice = fixedMinPrice * 1.1;
+
+    // Apply fixed scale immediately
+    if (eventChart) {
+        eventChart.options.scales.y.min = fixedMinPrice;
+        eventChart.options.scales.y.max = fixedMaxPrice;
+        eventChart.update('none');
+    }
 
     binanceWebSocket.onmessage = function(event) {
         const data = JSON.parse(event.data);
@@ -2271,41 +2266,16 @@ function connectBinanceWebSocket(symbol, labels, prices) {
         labels.push(timestamp.toISOString());
         prices.push(price);
 
-        // Update min/max
-        if (price < currentMin) currentMin = price;
-        if (price > currentMax) currentMax = price;
-
         // Keep only last 50 points
         if (labels.length > 50) {
             labels.shift();
             prices.shift();
-            // Recalculate min/max from visible data
-            if (prices.length > 0) {
-                currentMin = Math.min(...prices);
-                currentMax = Math.max(...prices);
-            }
         }
 
-        // Update chart
+        // Update chart WITHOUT changing Y-axis scale (fixed scale)
         if (eventChart) {
             eventChart.data.labels = labels;
             eventChart.data.datasets[0].data = prices;
-            
-            // Update Y-axis scale only every N ticks to prevent jumping
-            scaleUpdateCounter++;
-            if (scaleUpdateCounter >= scaleUpdateThreshold) {
-                const range = currentMax - currentMin;
-                const minPrice = currentMin - (range * pricePadding);
-                const maxPrice = currentMax + (range * pricePadding);
-                
-                // Ensure reasonable bounds
-                if (minPrice > 0 && maxPrice > minPrice && range > 0) {
-                    eventChart.options.scales.y.min = minPrice;
-                    eventChart.options.scales.y.max = maxPrice;
-                    scaleUpdateCounter = 0; // Reset counter
-                }
-            }
-            
             // Smooth update without animation
             eventChart.update('none');
         }
