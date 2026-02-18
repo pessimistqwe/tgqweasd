@@ -1464,44 +1464,63 @@ let currentPredictionType = null;
 let currentPredictionEventId = null;
 let currentOdds = { up: 1.95, down: 1.95 };
 
-// Calculate dynamic odds based on price volatility and trend
+// Calculate dynamic odds based on 5-minute price volatility
 function calculateDynamicOdds(prices) {
-    if (prices.length < 10) {
+    if (prices.length < 2) {
         return { up: 1.95, down: 1.95 };
     }
 
-    // Calculate recent trend (last 10 candles)
-    const recentPrices = prices.slice(-10);
-    const firstRecent = recentPrices[0];
-    const lastRecent = recentPrices[recentPrices.length - 1];
-    const trend = (lastRecent - firstRecent) / firstRecent;
+    // Берём последние 5 минут данных в зависимости от интервала
+    // 1m: 5 свечей, 5m: 1 свеча, 15m: часть свечи, 1h+: часть свечи
+    const candlesFor5Min = {
+        '1m': 5,
+        '5m': 1,
+        '15m': 1,
+        '1h': 1,
+        '4h': 1,
+        '1d': 1
+    };
+    
+    const candlesCount = candlesFor5Min[currentChartInterval] || 1;
+    const recentPrices = prices.slice(-Math.max(candlesCount, 5));
+    
+    if (recentPrices.length < 2) {
+        return { up: 1.95, down: 1.95 };
+    }
 
-    // Calculate volatility (standard deviation)
-    const mean = recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length;
-    const variance = recentPrices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / recentPrices.length;
-    const volatility = Math.sqrt(variance) / mean;
+    // Расчёт изменения цены за последние 5 минут
+    const firstPrice = recentPrices[0];
+    const lastPrice = recentPrices[recentPrices.length - 1];
+    const priceChange = (lastPrice - firstPrice) / firstPrice;
+    
+    // Расчёт волатильности (максимальное отклонение за период)
+    const minPrice = Math.min(...recentPrices);
+    const maxPrice = Math.max(...recentPrices);
+    const volatility = (maxPrice - minPrice) / firstPrice;
 
-    // Base odds
+    // Базовые коэффициенты
     let upOdds = 1.95;
     let downOdds = 1.95;
 
-    // Adjust odds based on trend
-    if (trend > 0.005) {
-        // Upward trend - lower odds for UP, higher for DOWN
-        upOdds = Math.max(1.2, 1.95 - (trend * 100));
-        downOdds = Math.min(3.0, 1.95 + (trend * 100));
-    } else if (trend < -0.005) {
-        // Downward trend - higher odds for UP, lower for DOWN
-        upOdds = Math.min(3.0, 1.95 + (Math.abs(trend) * 100));
-        downOdds = Math.max(1.2, 1.95 - (Math.abs(trend) * 100));
+    // Корректировка по тренду
+    if (priceChange > 0.001) {
+        // Восходящий тренд - снижаем коэффициент на UP, повышаем на DOWN
+        const trendStrength = Math.min(priceChange * 100, 0.5);
+        upOdds = Math.max(1.2, 1.95 - trendStrength);
+        downOdds = Math.min(3.0, 1.95 + trendStrength);
+    } else if (priceChange < -0.001) {
+        // Нисходящий тренд - повышаем коэффициент на UP, снижаем на DOWN
+        const trendStrength = Math.min(Math.abs(priceChange) * 100, 0.5);
+        upOdds = Math.min(3.0, 1.95 + trendStrength);
+        downOdds = Math.max(1.2, 1.95 - trendStrength);
     }
 
-    // Adjust for volatility (higher volatility = higher odds for both)
-    const volMultiplier = 1 + (volatility * 10);
+    // Корректировка по волатильности (высокая волатильность = выше коэффициенты)
+    const volMultiplier = 1 + (volatility * 5);
     upOdds *= volMultiplier;
     downOdds *= volMultiplier;
 
-    // Ensure minimum odds
+    // Ограничиваем коэффициенты
     upOdds = Math.max(1.1, Math.min(5.0, upOdds));
     downOdds = Math.max(1.1, Math.min(5.0, downOdds));
 
@@ -2395,7 +2414,7 @@ async function renderBetHistory(eventId) {
     }
 }
 
-// Render chart with REAL Binance WebSocket data - Polymarket Style
+// Render chart with REAL Binance WebSocket data - Polymarket/Binance Style
 let binanceWebSocket = null;
 let currentChartInterval = '15m';
 let chartPriceData = { firstPrice: 0, lastPrice: 0 };
@@ -2405,17 +2424,25 @@ let currentChartLabels = [];
 let currentChartPrices = [];
 let chartYMin = null;
 let chartYMax = null;
-let currentCandle = null; // Текущая свеча для агрегации
-let candleStartTime = null; // Время начала текущей свечи
 
-// Конфигурация интервалов в миллисекундах
-const INTERVAL_MS = {
-    '1m': 60000,
-    '5m': 300000,
-    '15m': 900000,
-    '1h': 3600000,
-    '4h': 14400000,
-    '1d': 86400000
+// Конфигурация интервалов для Binance API
+const BINANCE_INTERVALS = {
+    '1m': '1m',
+    '5m': '5m',
+    '15m': '15m',
+    '1h': '1h',
+    '4h': '4h',
+    '1d': '1d'
+};
+
+// Количество свечей для загрузки
+const CANDLE_LIMITS = {
+    '1m': 100,
+    '5m': 100,
+    '15m': 96,
+    '1h': 168,
+    '4h': 168,
+    '1d': 90
 };
 
 async function renderPriceChart(eventId, options) {
@@ -2432,8 +2459,6 @@ async function renderPriceChart(eventId, options) {
     currentChartPrices = [];
     chartYMin = null;
     chartYMax = null;
-    currentCandle = null;
-    candleStartTime = null;
 
     let event = null;
     try {
@@ -2490,8 +2515,6 @@ function renderRealtimeChart(canvas, binanceSymbol, options) {
             currentChartPrices = [];
             chartYMin = null;
             chartYMax = null;
-            currentCandle = null;
-            candleStartTime = null;
             
             if (webSocketUpdateTimeout) {
                 clearTimeout(webSocketUpdateTimeout);
@@ -2516,7 +2539,7 @@ function renderRealtimeChart(canvas, binanceSymbol, options) {
                 borderColor: chartColor,
                 borderWidth: 2,
                 fill: true,
-                tension: 0.4,
+                tension: 0.1,
                 pointRadius: 0,
                 pointHoverRadius: 4,
                 pointHoverBackgroundColor: '#fff',
@@ -2527,10 +2550,7 @@ function renderRealtimeChart(canvas, binanceSymbol, options) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: {
-                duration: 600,
-                easing: 'easeOutQuart'
-            },
+            animation: false,
             interaction: {
                 intersect: false,
                 mode: 'index',
@@ -2605,24 +2625,15 @@ function renderRealtimeChart(canvas, binanceSymbol, options) {
 }
 
 async function loadChartData(symbol, interval) {
-    const intervals = {
-        '1m': { binanceInterval: '1m', points: 1440 },
-        '5m': { binanceInterval: '5m', points: 288 },
-        '15m': { binanceInterval: '15m', points: 96 },
-        '1h': { binanceInterval: '1h', points: 168 },
-        '4h': { binanceInterval: '4h', points: 168 },
-        '1d': { binanceInterval: '1d', points: 90 }
-    };
-
-    const config = intervals[interval] || intervals['15m'];
+    const binanceInterval = BINANCE_INTERVALS[interval] || '15m';
+    const limit = CANDLE_LIMITS[interval] || 96;
 
     try {
         const response = await fetch(
-            `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${config.binanceInterval}&limit=${config.points}`
+            `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${binanceInterval}&limit=${limit}`
         );
         const data = await response.json();
 
-        // Очищаем и заполняем глобальные массивы
         currentChartLabels = [];
         currentChartPrices = [];
 
@@ -2640,7 +2651,6 @@ async function loadChartData(symbol, interval) {
             updateChartPriceDisplay(currentChartPrices[currentChartPrices.length - 1]);
             updatePredictionOdds(currentChartPrices);
             
-            // Устанавливаем фиксированный масштаб Y-оси
             const minPrice = Math.min(...currentChartPrices);
             const maxPrice = Math.max(...currentChartPrices);
             const range = maxPrice - minPrice;
@@ -2693,31 +2703,19 @@ function connectBinanceWebSocket(symbol) {
         clearTimeout(webSocketUpdateTimeout);
     }
 
-    // Частота обновления графика в зависимости от интервала
-    const updateIntervals = {
-        '1m': 1000,    // Обновляем каждую секунду для 1m
-        '5m': 5000,    // Каждые 5 секунд для 5m
-        '15m': 15000,  // Каждые 15 секунд для 15m
-        '1h': 30000,   // Каждые 30 секунд для 1h
-        '4h': 60000,   // Каждую минуту для 4h
-        '1d': 120000   // Каждые 2 минуты для 1d
-    };
-    
-    const updateInterval = updateIntervals[currentChartInterval] || 15000;
-
     // Функция обновления графика
     function updateChartFromBuffer() {
         if (webSocketPriceBuffer.length === 0 || !eventChart) return;
 
-        // Получаем последнюю цену из буфера
+        // Получаем последнюю цену
         const lastTrade = webSocketPriceBuffer[webSocketPriceBuffer.length - 1];
         const lastPrice = lastTrade.price;
         
-        // Добавляем новую точку на график
+        // Добавляем новую точку
         currentChartLabels.push(lastTrade.timestamp.toISOString());
         currentChartPrices.push(lastPrice);
 
-        // Keep last N points based on interval
+        // Keep last N points
         const maxPoints = currentChartInterval === '1m' ? 100 :
                          currentChartInterval === '5m' ? 100 :
                          currentChartInterval === '15m' ? 96 :
@@ -2728,7 +2726,7 @@ function connectBinanceWebSocket(symbol) {
             currentChartPrices.shift();
         }
 
-        // Проверяем, нужно ли обновить масштаб Y
+        // Проверяем масштаб Y
         if (chartYMin !== null && chartYMax !== null) {
             const threshold = 0.1;
             if (lastPrice > chartYMax * (1 - threshold) || lastPrice < chartYMin * (1 + threshold)) {
@@ -2745,7 +2743,7 @@ function connectBinanceWebSocket(symbol) {
             }
         }
 
-        // Обновляем данные графика
+        // Обновляем график
         eventChart.data.labels = currentChartLabels;
         eventChart.data.datasets[0].data = currentChartPrices;
         eventChart.update('none');
@@ -2753,7 +2751,6 @@ function connectBinanceWebSocket(symbol) {
         updateChartPriceDisplay(lastPrice);
         updatePredictionOdds(currentChartPrices);
 
-        // Очищаем буфер
         webSocketPriceBuffer = [];
     }
 
@@ -2765,14 +2762,14 @@ function connectBinanceWebSocket(symbol) {
         webSocketPriceBuffer.push({ price, timestamp });
         updateChartPriceDisplay(price);
 
-        // Обновляем график с интервалом зависящим от таймфрейма
+        // Обновляем каждые 200мс для плавности
         if (webSocketUpdateTimeout) {
             clearTimeout(webSocketUpdateTimeout);
         }
 
         webSocketUpdateTimeout = setTimeout(() => {
             updateChartFromBuffer();
-        }, updateInterval);
+        }, 200);
     };
 
     binanceWebSocket.onerror = function(err) {
