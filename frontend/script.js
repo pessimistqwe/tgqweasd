@@ -1999,18 +1999,27 @@ function closeEventModal() {
         webSocketUpdateTimeout = null;
     }
 
+    // Close Binance WebSocket
+    if (binanceWebSocket) {
+        binanceWebSocket.close();
+        binanceWebSocket = null;
+    }
+
+    // Destroy chart instance to free memory
+    if (eventChart) {
+        eventChart.destroy();
+        eventChart = null;
+    }
+
     // Clear price buffer
     webSocketPriceBuffer = [];
 
     // Clear chart data arrays
     currentChartLabels = [];
     currentChartPrices = [];
-
-    // Close Binance WebSocket
-    if (binanceWebSocket) {
-        binanceWebSocket.close();
-        binanceWebSocket = null;
-    }
+    
+    // Reset chart price data
+    chartPriceData = { firstPrice: 0, lastPrice: 0 };
 }
 
 // Event Tabs Switching
@@ -2442,18 +2451,30 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
     document.getElementById('event-chart-timeframe').style.display = 'flex';
     document.getElementById('event-chart-info').style.display = 'block';
 
-    // Setup timeframe buttons
+    // Setup timeframe buttons with debounce to prevent rapid switching
+    let timeframeSwitchDebounce = null;
     document.querySelectorAll('.timeframe-btn').forEach(btn => {
         btn.onclick = () => {
+            // Предотвращаем быстрое переключение между интервалами
+            if (timeframeSwitchDebounce) return;
+            
             document.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentChartInterval = btn.dataset.interval;
+            
             // Очищаем буфер при переключении интервала
             webSocketPriceBuffer = [];
             if (webSocketUpdateTimeout) {
                 clearTimeout(webSocketUpdateTimeout);
             }
+            
+            // Загружаем данные с плавным переходом
             loadChartData(binanceSymbol, currentChartInterval);
+            
+            // Блокируем переключение на 500мс
+            timeframeSwitchDebounce = setTimeout(() => {
+                timeframeSwitchDebounce = null;
+            }, 500);
         };
     });
 
@@ -2532,7 +2553,7 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                     },
                     offset: false,
                     min: 0,
-                    max: prices.length - 1
+                    max: 100
                 },
                 y: {
                     display: true,
@@ -2611,18 +2632,20 @@ async function loadChartData(symbol, interval) {
             eventChart.data.labels = currentChartLabels;
             eventChart.data.datasets[0].data = currentChartPrices;
 
-            // Calculate and set fixed Y-axis scale
+            // Calculate and set fixed Y-axis scale with smooth transition
             const minPrice = Math.min(...currentChartPrices);
             const maxPrice = Math.max(...currentChartPrices);
             const range = maxPrice - minPrice;
             const padding = range > 0 ? range * 0.15 : minPrice * 0.15;
 
+            // Плавно обновляем шкалу вместо мгновенного скачка
             eventChart.options.scales.y.min = minPrice - padding;
             eventChart.options.scales.y.max = maxPrice + padding;
 
             // Set X-axis max based on data length
             eventChart.options.scales.x.max = currentChartLabels.length - 1;
 
+            // Используем 'none' для мгновенного обновления без анимации при переключении
             eventChart.update('none');
         }
 
@@ -2659,25 +2682,57 @@ function connectBinanceWebSocket(symbol) {
         clearTimeout(webSocketUpdateTimeout);
     }
 
-    // Store initial scale
+    // Store initial scale - инициализируем текущими значениями из графика или данными
     let currentMin = eventChart.options.scales.y.min;
     let currentMax = eventChart.options.scales.y.max;
+    
+    // Если шкала ещё не установлена, используем текущие данные
+    if (currentMin === undefined || currentMin === null) {
+        currentMin = currentChartPrices.length > 0 ? Math.min(...currentChartPrices) : 0;
+    }
+    if (currentMax === undefined || currentMax === null) {
+        currentMax = currentChartPrices.length > 0 ? Math.max(...currentChartPrices) : 1;
+    }
+    
+    // Добавляем padding к начальным значениям
+    const initialPadding = (currentMax - currentMin) * 0.15 || currentMin * 0.15;
+    currentMin = currentMin - initialPadding;
+    currentMax = currentMax + initialPadding;
+    
+    let scaleUpdateCounter = 0; // Счётчик для плавного обновления шкалы
 
-    // Функция сглаживания цены (простое скользящее среднее)
-    function applySmoothing(pricesArray, windowSize = 3) {
-        if (pricesArray.length <= windowSize) return pricesArray;
-        
+    // Улучшенная функция сглаживания с экспоненциальным скользящим средним (EMA)
+    function applyEMASmoothing(pricesArray, windowSize = 5) {
+        if (pricesArray.length <= 1) return pricesArray;
+
         const smoothed = [];
-        for (let i = 0; i < pricesArray.length; i++) {
-            if (i < windowSize - 1) {
-                smoothed.push(pricesArray[i]);
-            } else {
-                const slice = pricesArray.slice(i - windowSize + 1, i + 1);
-                const avg = slice.reduce((a, b) => a + b, 0) / slice.length;
-                smoothed.push(avg);
-            }
+        const multiplier = 2 / (windowSize + 1);
+
+        // Первая точка - просто первая цена
+        smoothed.push(pricesArray[0]);
+
+        // EMA для остальных точек
+        for (let i = 1; i < pricesArray.length; i++) {
+            const ema = pricesArray[i] * multiplier + smoothed[i - 1] * (1 - multiplier);
+            smoothed.push(ema);
         }
+
         return smoothed;
+    }
+
+    // Функция плавного обновления шкалы Y
+    function smoothlyUpdateScale(newMin, newMax) {
+        const targetPadding = (newMax - newMin) * 0.15;
+        const targetMin = newMin - targetPadding;
+        const targetMax = newMax + targetPadding;
+
+        // Плавная интерполяция текущих значений к целевым
+        const smoothFactor = 0.3; // Коэффициент сглаживания (0.3 = 30% за шаг)
+        currentMin = currentMin + (targetMin - currentMin) * smoothFactor;
+        currentMax = currentMax + (targetMax - currentMax) * smoothFactor;
+
+        eventChart.options.scales.y.min = currentMin;
+        eventChart.options.scales.y.max = currentMax;
     }
 
     // Функция пакетного обновления графика
@@ -2701,33 +2756,27 @@ function connectBinanceWebSocket(symbol) {
             currentChartPrices.shift();
         }
 
-        // Применяем сглаживание к последним нескольким точкам для плавности
-        const smoothingWindow = Math.min(3, currentChartPrices.length);
-        const smoothedPrices = applySmoothing(currentChartPrices, smoothingWindow);
-        
-        // Проверяем, выходит ли цена за пределы шкалы
+        // Применяем EMA сглаживание ко всем данным для плавности
+        const smoothedPrices = applyEMASmoothing(currentChartPrices, 5);
+
+        // Получаем последнюю сглаженную цену
         const lastPrice = smoothedPrices[smoothedPrices.length - 1];
-        const padding = (currentMax - currentMin) * 0.1;
-        
-        if (lastPrice > currentMax - padding || lastPrice < currentMin + padding) {
-            const newMin = Math.min(...smoothedPrices);
-            const newMax = Math.max(...smoothedPrices);
-            const newRange = newMax - newMin;
-            const newPadding = newRange > 0 ? newRange * 0.15 : newMin * 0.15;
 
-            currentMin = newMin - newPadding;
-            currentMax = newMax + newPadding;
-
-            eventChart.options.scales.y.min = currentMin;
-            eventChart.options.scales.y.max = currentMax;
+        // Обновляем шкалу Y только каждые 5 обновлений (для стабильности)
+        scaleUpdateCounter++;
+        if (scaleUpdateCounter >= 5 || scaleUpdateCounter === 1) {
+            const minPrice = Math.min(...smoothedPrices);
+            const maxPrice = Math.max(...smoothedPrices);
+            smoothlyUpdateScale(minPrice, maxPrice);
+            scaleUpdateCounter = 0;
         }
 
         // Обновляем данные графика
         eventChart.data.labels = currentChartLabels;
         eventChart.data.datasets[0].data = smoothedPrices;
-        
-        // Используем 'default' анимацию для плавного обновления
-        eventChart.update('default');
+
+        // Используем 'none' для минимальной анимации при обновлении (убираем дрожание)
+        eventChart.update('none');
 
         // Обновляем отображение цены и коэффициенты
         updateChartPriceDisplay(lastPrice);
@@ -2752,7 +2801,7 @@ function connectBinanceWebSocket(symbol) {
         if (webSocketUpdateTimeout) {
             clearTimeout(webSocketUpdateTimeout);
         }
-        
+
         webSocketUpdateTimeout = setTimeout(() => {
             updateChartFromBuffer();
         }, 200); // 200ms задержка для пакетного обновления
