@@ -2203,7 +2203,7 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
     // Initialize chart with empty data
     const labels = [];
     const prices = [];
-    const maxPoints = 60; // More points for wider horizontal view
+    const maxPoints = 60;
 
     // Create initial chart with Polymarket-style settings
     eventChart = new Chart(ctx, {
@@ -2216,7 +2216,7 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                 borderColor: primaryColor,
                 borderWidth: 2,
                 fill: true,
-                tension: 0.4, // Smoother curve like Polymarket
+                tension: 0.4,
                 pointRadius: 0,
                 pointHoverRadius: 4,
                 pointHoverBackgroundColor: primaryColor,
@@ -2227,6 +2227,9 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            layout: {
+                padding: 0
+            },
             animation: {
                 duration: 0,
                 x: { duration: 0 },
@@ -2271,10 +2274,11 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                         maxTicksLimit: 6,
                         maxRotation: 0,
                         autoSkip: true,
-                        padding: 8
+                        padding: 0
                     },
-                    // Fix: Add offset to prevent cutting off left side
-                    offset: true
+                    offset: false,
+                    min: 0,
+                    max: maxPoints - 1
                 },
                 y: {
                     display: true,
@@ -2286,7 +2290,7 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                     ticks: {
                         color: '#71717a',
                         font: { size: 9 },
-                        padding: 6,
+                        padding: 0,
                         maxTicksLimit: 5,
                         callback: (value) => {
                             if (value >= 1000) {
