@@ -1980,6 +1980,15 @@ function closeEventModal() {
         chartUpdateInterval = null;
     }
 
+    // Clear WebSocket debounce timer
+    if (webSocketUpdateTimeout) {
+        clearTimeout(webSocketUpdateTimeout);
+        webSocketUpdateTimeout = null;
+    }
+
+    // Clear price buffer
+    webSocketPriceBuffer = [];
+
     // Close Binance WebSocket
     if (binanceWebSocket) {
         binanceWebSocket.close();
@@ -2364,6 +2373,8 @@ async function renderBetHistory(eventId) {
 let binanceWebSocket = null;
 let currentChartInterval = '15m';
 let chartPriceData = { firstPrice: 0, lastPrice: 0 };
+let webSocketPriceBuffer = []; // Buffer for price updates
+let webSocketUpdateTimeout = null; // Debounce timer
 
 async function renderPriceChart(eventId, options) {
     const canvas = document.getElementById('event-chart-canvas');
@@ -2443,7 +2454,18 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
             responsive: true,
             maintainAspectRatio: false,
             layout: { padding: 0 },
-            animation: { duration: 0 },
+            animation: {
+                duration: 750,
+                easing: 'easeOutQuart',
+                x: {
+                    duration: 750,
+                    easing: 'easeOutQuart'
+                },
+                y: {
+                    duration: 750,
+                    easing: 'easeOutQuart'
+                }
+            },
             interaction: {
                 intersect: false,
                 mode: 'index',
@@ -2605,58 +2627,109 @@ function connectBinanceWebSocket(symbol, labels, prices) {
     const streamName = `${symbol.toLowerCase()}@trade`;
     binanceWebSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
 
+    // Clear buffer
+    webSocketPriceBuffer = [];
+    if (webSocketUpdateTimeout) {
+        clearTimeout(webSocketUpdateTimeout);
+    }
+
     // Store initial scale
     let currentMin = eventChart.options.scales.y.min;
     let currentMax = eventChart.options.scales.y.max;
+
+    // Функция сглаживания цены (простое скользящее среднее)
+    function applySmoothing(pricesArray, windowSize = 3) {
+        if (pricesArray.length <= windowSize) return pricesArray;
+        
+        const smoothed = [];
+        for (let i = 0; i < pricesArray.length; i++) {
+            if (i < windowSize - 1) {
+                smoothed.push(pricesArray[i]);
+            } else {
+                const slice = pricesArray.slice(i - windowSize + 1, i + 1);
+                const avg = slice.reduce((a, b) => a + b, 0) / slice.length;
+                smoothed.push(avg);
+            }
+        }
+        return smoothed;
+    }
+
+    // Функция пакетного обновления графика
+    function updateChartFromBuffer() {
+        if (webSocketPriceBuffer.length === 0 || !eventChart) return;
+
+        // Добавляем все накопленные цены из буфера
+        webSocketPriceBuffer.forEach(({ price, timestamp }) => {
+            labels.push(timestamp.toISOString());
+            prices.push(price);
+        });
+
+        // Keep last N points based on interval
+        const maxPoints = currentChartInterval === '1m' ? 100 :
+                         currentChartInterval === '5m' ? 100 :
+                         currentChartInterval === '15m' ? 96 :
+                         currentChartInterval === '1h' ? 168 : 168;
+
+        while (labels.length > maxPoints) {
+            labels.shift();
+            prices.shift();
+        }
+
+        // Применяем сглаживание к последним нескольким точкам для плавности
+        const smoothingWindow = Math.min(3, prices.length);
+        const smoothedPrices = applySmoothing(prices, smoothingWindow);
+        
+        // Проверяем, выходит ли цена за пределы шкалы
+        const lastPrice = smoothedPrices[smoothedPrices.length - 1];
+        const padding = (currentMax - currentMin) * 0.1;
+        
+        if (lastPrice > currentMax - padding || lastPrice < currentMin + padding) {
+            const newMin = Math.min(...smoothedPrices);
+            const newMax = Math.max(...smoothedPrices);
+            const newRange = newMax - newMin;
+            const newPadding = newRange > 0 ? newRange * 0.15 : newMin * 0.15;
+
+            currentMin = newMin - newPadding;
+            currentMax = newMax + newPadding;
+
+            eventChart.options.scales.y.min = currentMin;
+            eventChart.options.scales.y.max = currentMax;
+        }
+
+        // Обновляем данные графика
+        eventChart.data.labels = labels;
+        eventChart.data.datasets[0].data = smoothedPrices;
+        
+        // Используем 'default' анимацию для плавного обновления
+        eventChart.update('default');
+
+        // Обновляем отображение цены и коэффициенты
+        updateChartPriceDisplay(lastPrice);
+        updatePredictionOdds(smoothedPrices);
+
+        // Очищаем буфер
+        webSocketPriceBuffer = [];
+    }
 
     binanceWebSocket.onmessage = function(event) {
         const data = JSON.parse(event.data);
         const price = parseFloat(data.p);
         const timestamp = new Date(data.T);
 
-        // Add new data point
-        labels.push(timestamp.toISOString());
-        prices.push(price);
+        // Добавляем цену в буфер вместо немедленного обновления
+        webSocketPriceBuffer.push({ price, timestamp });
 
-        // Keep last N points based on interval
-        const maxPoints = currentChartInterval === '1m' ? 100 : 
-                         currentChartInterval === '5m' ? 100 : 
-                         currentChartInterval === '15m' ? 96 :
-                         currentChartInterval === '1h' ? 168 : 168;
-
-        if (labels.length > maxPoints) {
-            labels.shift();
-            prices.shift();
-        }
-
-        // Check if price is going out of scale - adjust if needed
-        const padding = (currentMax - currentMin) * 0.1;
-        if (price > currentMax - padding || price < currentMin + padding) {
-            // Recalculate scale from current data
-            const newMin = Math.min(...prices);
-            const newMax = Math.max(...prices);
-            const newRange = newMax - newMin;
-            const newPadding = newRange > 0 ? newRange * 0.15 : newMin * 0.15;
-            
-            currentMin = newMin - newPadding;
-            currentMax = newMax + newPadding;
-            
-            if (eventChart) {
-                eventChart.options.scales.y.min = currentMin;
-                eventChart.options.scales.y.max = currentMax;
-            }
-        }
-
-        // Update chart data
-        if (eventChart) {
-            eventChart.data.labels = labels;
-            eventChart.data.datasets[0].data = prices;
-            eventChart.update('none');
-        }
-
-        // Update price display and odds
+        // Обновляем цену в реальном времени (для отображения)
         updateChartPriceDisplay(price);
-        updatePredictionOdds(prices);
+
+        // Дебаунс обновлений графика - обновляем каждые 200мс вместо каждого сообщения
+        if (webSocketUpdateTimeout) {
+            clearTimeout(webSocketUpdateTimeout);
+        }
+        
+        webSocketUpdateTimeout = setTimeout(() => {
+            updateChartFromBuffer();
+        }, 200); // 200ms задержка для пакетного обновления
     };
 
     binanceWebSocket.onerror = function(err) {
@@ -2665,6 +2738,10 @@ function connectBinanceWebSocket(symbol, labels, prices) {
 
     binanceWebSocket.onclose = function() {
         console.log('WebSocket closed');
+        // Очищаем таймер при закрытии
+        if (webSocketUpdateTimeout) {
+            clearTimeout(webSocketUpdateTimeout);
+        }
         setTimeout(() => {
             if (binanceWebSocket && binanceWebSocket.readyState === WebSocket.CLOSED) {
                 connectBinanceWebSocket(symbol, labels, prices);
@@ -2688,20 +2765,33 @@ function renderSimulatedChart(canvas, options) {
         labels.push(time.toISOString());
     }
 
-    // Generate simulated prices based on option probability
+    // Generate simulated prices with smooth random walk (Perlin-like noise)
     if (options.length > 0) {
         const opt = options[0];
         let basePrice = opt.probability / 100;
+        let currentPrice = basePrice;
+        let velocity = 0;
         
         for (let i = 0; i <= historyPoints; i++) {
-            const randomChange = (Math.random() - 0.5) * 0.02;
-            let price = basePrice + randomChange;
-            price = Math.max(0.01, Math.min(0.99, price));
-            prices.push(price);
+            // Smooth random walk with momentum
+            const acceleration = (Math.random() - 0.5) * 0.008;
+            velocity = velocity * 0.85 + acceleration; // Smooth with damping
+            currentPrice = currentPrice + velocity;
+            
+            // Keep price in valid range with soft boundaries
+            if (currentPrice < 0.05) {
+                velocity += 0.02; // Push back up
+                currentPrice = 0.05 + Math.abs(currentPrice - 0.05) * 0.5;
+            } else if (currentPrice > 0.95) {
+                velocity -= 0.02; // Push back down
+                currentPrice = 0.95 - Math.abs(currentPrice - 0.95) * 0.5;
+            }
+            
+            prices.push(Math.max(0.01, Math.min(0.99, currentPrice)));
         }
     }
 
-    // Create chart
+    // Create chart with smooth animation
     eventChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -2720,6 +2810,18 @@ function renderSimulatedChart(canvas, options) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: {
+                duration: 1000,
+                easing: 'easeOutQuart',
+                x: {
+                    duration: 1000,
+                    easing: 'easeOutQuart'
+                },
+                y: {
+                    duration: 1000,
+                    easing: 'easeOutQuart'
+                }
+            },
             plugins: {
                 legend: { display: false },
                 tooltip: {
