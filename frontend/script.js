@@ -2194,9 +2194,9 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                             return '$' + value.toFixed(2);
                         }
                     },
-                    // FIXED: Don't auto-scale on every update
-                    suggestedMin: 0,
-                    suggestedMax: 1
+                    // FIXED: Set explicit min/max, will be updated after data loads
+                    min: undefined,
+                    max: undefined
                 }
             }
         }
@@ -2255,12 +2255,12 @@ function connectBinanceWebSocket(symbol, labels, prices) {
     const streamName = `${symbol.toLowerCase()}@trade`;
     binanceWebSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
     
-    // Track min/max for dynamic scaling
+    // Track min/max for FIXED scaling
     let currentMin = prices.length > 0 ? Math.min(...prices) : Infinity;
     let currentMax = prices.length > 0 ? Math.max(...prices) : -Infinity;
-    const pricePadding = 0.02;
-    let lastScaleUpdate = Date.now();
-    const scaleUpdateInterval = 5000; // Update scale only every 5 seconds
+    const pricePadding = 0.05; // 5% padding for stability
+    let scaleUpdateCounter = 0;
+    const scaleUpdateThreshold = 20; // Update scale only every 20 ticks
 
     binanceWebSocket.onmessage = function(event) {
         const data = JSON.parse(event.data);
@@ -2275,7 +2275,7 @@ function connectBinanceWebSocket(symbol, labels, prices) {
         if (price < currentMin) currentMin = price;
         if (price > currentMax) currentMax = price;
 
-        // Keep only last N points
+        // Keep only last 50 points
         if (labels.length > 50) {
             labels.shift();
             prices.shift();
@@ -2291,22 +2291,23 @@ function connectBinanceWebSocket(symbol, labels, prices) {
             eventChart.data.labels = labels;
             eventChart.data.datasets[0].data = prices;
             
-            // Update Y-axis scale only every few seconds to prevent jumping
-            const now = Date.now();
-            if (now - lastScaleUpdate > scaleUpdateInterval) {
+            // Update Y-axis scale only every N ticks to prevent jumping
+            scaleUpdateCounter++;
+            if (scaleUpdateCounter >= scaleUpdateThreshold) {
                 const range = currentMax - currentMin;
                 const minPrice = currentMin - (range * pricePadding);
                 const maxPrice = currentMax + (range * pricePadding);
                 
                 // Ensure reasonable bounds
-                if (minPrice > 0 && maxPrice > minPrice) {
+                if (minPrice > 0 && maxPrice > minPrice && range > 0) {
                     eventChart.options.scales.y.min = minPrice;
                     eventChart.options.scales.y.max = maxPrice;
-                    lastScaleUpdate = now;
+                    scaleUpdateCounter = 0; // Reset counter
                 }
             }
             
-            eventChart.update('none'); // Smooth update without animation
+            // Smooth update without animation
+            eventChart.update('none');
         }
     };
 
