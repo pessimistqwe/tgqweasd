@@ -1449,13 +1449,80 @@ function closeModal() {
 // Price Prediction Betting Functions
 let currentPredictionType = null;
 let currentPredictionEventId = null;
+let currentOdds = { up: 1.95, down: 1.95 };
+
+// Calculate dynamic odds based on price volatility and trend
+function calculateDynamicOdds(prices) {
+    if (prices.length < 10) {
+        return { up: 1.95, down: 1.95 };
+    }
+
+    // Calculate recent trend (last 10 candles)
+    const recentPrices = prices.slice(-10);
+    const firstRecent = recentPrices[0];
+    const lastRecent = recentPrices[recentPrices.length - 1];
+    const trend = (lastRecent - firstRecent) / firstRecent;
+
+    // Calculate volatility (standard deviation)
+    const mean = recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length;
+    const variance = recentPrices.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / recentPrices.length;
+    const volatility = Math.sqrt(variance) / mean;
+
+    // Base odds
+    let upOdds = 1.95;
+    let downOdds = 1.95;
+
+    // Adjust odds based on trend
+    if (trend > 0.005) {
+        // Upward trend - lower odds for UP, higher for DOWN
+        upOdds = Math.max(1.2, 1.95 - (trend * 100));
+        downOdds = Math.min(3.0, 1.95 + (trend * 100));
+    } else if (trend < -0.005) {
+        // Downward trend - higher odds for UP, lower for DOWN
+        upOdds = Math.min(3.0, 1.95 + (Math.abs(trend) * 100));
+        downOdds = Math.max(1.2, 1.95 - (Math.abs(trend) * 100));
+    }
+
+    // Adjust for volatility (higher volatility = higher odds for both)
+    const volMultiplier = 1 + (volatility * 10);
+    upOdds *= volMultiplier;
+    downOdds *= volMultiplier;
+
+    // Ensure minimum odds
+    upOdds = Math.max(1.1, Math.min(5.0, upOdds));
+    downOdds = Math.max(1.1, Math.min(5.0, downOdds));
+
+    return {
+        up: parseFloat(upOdds.toFixed(2)),
+        down: parseFloat(downOdds.toFixed(2))
+    };
+}
+
+function updatePredictionOdds(prices) {
+    const odds = calculateDynamicOdds(prices);
+    currentOdds = odds;
+
+    const upEl = document.getElementById('up-odds');
+    const downEl = document.getElementById('down-odds');
+
+    if (upEl) upEl.textContent = `${odds.up}x`;
+    if (downEl) downEl.textContent = `${odds.down}x`;
+}
 
 function openPredictionBet(direction) {
     currentPredictionType = direction;
     
     const modal = document.getElementById('bet-modal');
+    const odds = currentOdds[direction];
+    const potentialWin = (odds * 100).toFixed(0);
+    
     document.getElementById('modal-title').textContent = direction === 'up' ? 'Прогноз: ВВЕРХ' : 'Прогноз: ВНИЗ';
-    document.getElementById('modal-option').textContent = `Цена ${direction === 'up' ? 'вырастет' : 'упадет'} в ближайшие 5 минут`;
+    document.getElementById('modal-option').innerHTML = `
+        Цена ${direction === 'up' ? 'вырастет' : 'упадет'} в ближайшие 5 минут<br>
+        <span style="color: #f2b03d; font-size: 13px; margin-top: 8px; display: block;">
+            Коэффициент: ${odds}x (выигрыш +${potentialWin}%)
+        </span>
+    `;
     document.getElementById('points-input').value = '';
     
     modal.classList.remove('hidden');
@@ -2364,6 +2431,7 @@ async function loadChartData(symbol, interval) {
             chartPriceData.firstPrice = prices[0];
             chartPriceData.lastPrice = prices[prices.length - 1];
             updateChartPriceDisplay(prices[prices.length - 1]);
+            updatePredictionOdds(prices);
         }
 
         if (eventChart) {
@@ -2443,8 +2511,9 @@ function connectBinanceWebSocket(symbol, labels, prices) {
             eventChart.update('none');
         }
 
-        // Update price display
+        // Update price display and odds
         updateChartPriceDisplay(price);
+        updatePredictionOdds(prices);
     };
 
     binanceWebSocket.onerror = function(err) {
