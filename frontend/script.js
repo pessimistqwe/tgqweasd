@@ -2099,8 +2099,13 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
     const labels = [];
     const prices = [];
     const maxPoints = 50;
+    
+    // Variables for fixed Y-axis scaling
+    let minPrice = Infinity;
+    let maxPrice = -Infinity;
+    const pricePadding = 0.02; // 2% padding top/bottom
 
-    // Create initial chart
+    // Create initial chart with FIXED scaling
     eventChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -2109,11 +2114,11 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                 label: binanceSymbol,
                 data: prices,
                 borderColor: primaryColor,
-                borderWidth: 3,
+                borderWidth: 2.5,
                 fill: true,
-                tension: 0.4,
+                tension: 0.3, // Less tension for smoother curve
                 pointRadius: 0,
-                pointHoverRadius: 6,
+                pointHoverRadius: 5,
                 pointHoverBackgroundColor: primaryColor,
                 pointHoverBorderColor: '#fff',
                 pointHoverBorderWidth: 2
@@ -2122,9 +2127,14 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            animation: {
+                duration: 0, // Disable animation for performance
+                x: { duration: 0 },
+                y: { duration: 0 }
+            },
             interaction: {
                 intersect: false,
-                mode: 'index'
+                mode: 'nearest'
             },
             plugins: {
                 legend: { display: false },
@@ -2136,8 +2146,18 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                     borderWidth: 1,
                     padding: 14,
                     displayColors: false,
+                    titleFont: { size: 13, weight: '600' },
+                    bodyFont: { size: 12 },
+                    cornerRadius: 8,
                     callbacks: {
-                        title: (ctx) => new Date(ctx[0].label).toLocaleTimeString(),
+                        title: (ctx) => {
+                            const date = new Date(ctx[0].label);
+                            return date.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit'
+                            });
+                        },
                         label: (ctx) => `$${ctx.parsed.y.toFixed(2)}`
                     }
                 }
@@ -2148,18 +2168,35 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                     grid: { display: false },
                     ticks: {
                         color: '#71717a',
-                        maxTicksLimit: 6,
+                        font: { size: 10 },
+                        maxTicksLimit: 5,
                         maxRotation: 0,
-                        autoSkip: true
+                        autoSkip: true,
+                        padding: 4
                     }
                 },
                 y: {
                     display: true,
-                    grid: { color: 'rgba(255,255,255,0.03)' },
+                    position: 'right',
+                    grid: { 
+                        color: 'rgba(255,255,255,0.05)',
+                        drawBorder: false
+                    },
                     ticks: {
                         color: '#71717a',
-                        callback: (value) => `$${value.toFixed(2)}`
-                    }
+                        font: { size: 10 },
+                        padding: 4,
+                        callback: (value) => {
+                            // Format large numbers nicely
+                            if (value >= 1000) {
+                                return '$' + (value / 1000).toFixed(1) + 'K';
+                            }
+                            return '$' + value.toFixed(2);
+                        }
+                    },
+                    // FIXED: Don't auto-scale on every update
+                    suggestedMin: 0,
+                    suggestedMax: 1
                 }
             }
         }
@@ -2168,21 +2205,39 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
     // Apply gradient
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
     gradient.addColorStop(0, 'rgba(34, 197, 94, 0.5)');
-    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.2)');
-    gradient.addColorStop(1, 'rgba(239, 68, 68, 0.3)');
+    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.15)');
+    gradient.addColorStop(1, 'rgba(239, 68, 68, 0.2)');
     eventChart.data.datasets[0].backgroundColor = gradient;
 
     // Fetch historical data first (REST API)
     fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=1m&limit=${maxPoints}`)
         .then(res => res.json())
         .then(data => {
+            let allPrices = [];
             data.forEach(candle => {
                 const timestamp = candle[0];
                 const close = parseFloat(candle[4]);
                 const time = new Date(timestamp);
                 labels.push(time.toISOString());
                 prices.push(close);
+                allPrices.push(close);
             });
+            
+            // Calculate initial min/max with padding
+            const initialMin = Math.min(...allPrices);
+            const initialMax = Math.max(...allPrices);
+            const range = initialMax - initialMin;
+            minPrice = initialMin - (range * pricePadding);
+            maxPrice = initialMax + (range * pricePadding);
+            
+            // Ensure min/max are reasonable
+            if (minPrice <= 0) minPrice = initialMin * 0.95;
+            if (maxPrice <= minPrice) maxPrice = minPrice * 1.05;
+            
+            // Update Y-axis scale
+            eventChart.options.scales.y.min = minPrice;
+            eventChart.options.scales.y.max = maxPrice;
+            
             eventChart.update();
 
             // Now connect WebSocket for real-time updates
@@ -2190,7 +2245,7 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
         })
         .catch(err => {
             console.error('Error fetching historical data:', err);
-            // Fallback to WebSocket only
+            // Fallback to WebSocket only with default scaling
             connectBinanceWebSocket(binanceSymbol, labels, prices);
         });
 }
@@ -2199,6 +2254,13 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
 function connectBinanceWebSocket(symbol, labels, prices) {
     const streamName = `${symbol.toLowerCase()}@trade`;
     binanceWebSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
+    
+    // Track min/max for dynamic scaling
+    let currentMin = prices.length > 0 ? Math.min(...prices) : Infinity;
+    let currentMax = prices.length > 0 ? Math.max(...prices) : -Infinity;
+    const pricePadding = 0.02;
+    let lastScaleUpdate = Date.now();
+    const scaleUpdateInterval = 5000; // Update scale only every 5 seconds
 
     binanceWebSocket.onmessage = function(event) {
         const data = JSON.parse(event.data);
@@ -2209,17 +2271,42 @@ function connectBinanceWebSocket(symbol, labels, prices) {
         labels.push(timestamp.toISOString());
         prices.push(price);
 
+        // Update min/max
+        if (price < currentMin) currentMin = price;
+        if (price > currentMax) currentMax = price;
+
         // Keep only last N points
         if (labels.length > 50) {
             labels.shift();
             prices.shift();
+            // Recalculate min/max from visible data
+            if (prices.length > 0) {
+                currentMin = Math.min(...prices);
+                currentMax = Math.max(...prices);
+            }
         }
 
         // Update chart
         if (eventChart) {
             eventChart.data.labels = labels;
             eventChart.data.datasets[0].data = prices;
-            eventChart.update('none'); // Smooth update
+            
+            // Update Y-axis scale only every few seconds to prevent jumping
+            const now = Date.now();
+            if (now - lastScaleUpdate > scaleUpdateInterval) {
+                const range = currentMax - currentMin;
+                const minPrice = currentMin - (range * pricePadding);
+                const maxPrice = currentMax + (range * pricePadding);
+                
+                // Ensure reasonable bounds
+                if (minPrice > 0 && maxPrice > minPrice) {
+                    eventChart.options.scales.y.min = minPrice;
+                    eventChart.options.scales.y.max = maxPrice;
+                    lastScaleUpdate = now;
+                }
+            }
+            
+            eventChart.update('none'); // Smooth update without animation
         }
     };
 
