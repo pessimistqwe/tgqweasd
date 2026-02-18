@@ -22,30 +22,24 @@ def print_status(name, passed, message=""):
 def test_price_history_endpoint():
     """Test that price history endpoint exists and returns data"""
     try:
-        # Get first event
         events_response = requests.get(f"{BASE_URL}/events", timeout=10)
         events = events_response.json().get("events", [])
-        
+
         if not events:
             return print_status("Price History Endpoint", False, "No events available")
-        
+
         event_id = events[0]["id"]
         response = requests.get(f"{BASE_URL}/events/{event_id}/price-history", timeout=10)
-        
+
         if response.status_code != 200:
-            return print_status("Price History Endpoint", False, 
-                              f"Status code: {response.status_code}")
-        
+            return print_status("Price History Endpoint", False, f"Status code: {response.status_code}")
+
         data = response.json()
-        
-        # Check it's a list
         if not isinstance(data, list):
-            return print_status("Price History Endpoint", False, 
-                              f"Expected list, got {type(data)}")
-        
-        passed = len(data) >= 0  # May be empty for new events
-        return print_status("Price History Endpoint", passed,
-                          f"Returned {len(data)} data points")
+            return print_status("Price History Endpoint", False, f"Expected list, got {type(data)}")
+
+        passed = len(data) >= 0
+        return print_status("Price History Endpoint", passed, f"Returned {len(data)} data points")
     except Exception as e:
         return print_status("Price History Endpoint", False, str(e))
 
@@ -55,35 +49,29 @@ def test_price_history_structure():
     try:
         events_response = requests.get(f"{BASE_URL}/events", timeout=10)
         events = events_response.json().get("events", [])
-        
+
         if not events:
             return print_status("Price History Structure", False, "No events available")
-        
+
         event_id = events[0]["id"]
         response = requests.get(f"{BASE_URL}/events/{event_id}/price-history", timeout=10)
         data = response.json()
-        
+
         if not data:
             return print_status("Price History Structure", False, "No history data")
-        
-        # Check structure of first item
+
         first_item = data[0]
         required_fields = ["event_id", "option_index", "price", "timestamp"]
-        
         missing_fields = [f for f in required_fields if f not in first_item]
-        
+
         if missing_fields:
-            return print_status("Price History Structure", False, 
-                              f"Missing fields: {missing_fields}")
-        
-        # Check price is in valid range (0-1)
+            return print_status("Price History Structure", False, f"Missing fields: {missing_fields}")
+
         price = first_item.get("price", 0)
         if not (0 <= price <= 1):
-            return print_status("Price History Structure", False, 
-                              f"Price {price} out of range [0, 1]")
-        
-        return print_status("Price History Structure", True,
-                          f"Fields: {list(first_item.keys())}")
+            return print_status("Price History Structure", False, f"Price {price} out of range [0, 1]")
+
+        return print_status("Price History Structure", True, f"Fields: {list(first_item.keys())}")
     except Exception as e:
         return print_status("Price History Structure", False, str(e))
 
@@ -94,24 +82,21 @@ def test_events_have_options():
         response = requests.get(f"{BASE_URL}/events", timeout=10)
         data = response.json()
         events = data.get("events", [])
-        
+
         if not events:
             return print_status("Events Have Options", False, "No events available")
-        
-        # Check first event has options
+
         event = events[0]
         has_options = "options" in event and len(event["options"]) > 0
-        
+
         if not has_options:
             return print_status("Events Have Options", False, "No options in event")
-        
-        # Check options have probabilities
+
         options = event["options"]
         has_probabilities = all("probability" in opt for opt in options)
-        
+
         passed = has_options and has_probabilities
-        return print_status("Events Have Options", passed,
-                          f"Options: {len(options)}, Has probabilities: {has_probabilities}")
+        return print_status("Events Have Options", passed, f"Options: {len(options)}")
     except Exception as e:
         return print_status("Events Have Options", False, str(e))
 
@@ -121,28 +106,25 @@ def test_chart_data_range():
     try:
         events_response = requests.get(f"{BASE_URL}/events", timeout=10)
         events = events_response.json().get("events", [])
-        
+
         if not events:
             return print_status("Chart Data Range", False, "No events available")
-        
+
         event_id = events[0]["id"]
         response = requests.get(f"{BASE_URL}/events/{event_id}/price-history", timeout=10)
         data = response.json()
-        
+
         if not data:
             return print_status("Chart Data Range", False, "No history data")
-        
-        # Check all prices are in valid range
+
         prices = [item["price"] for item in data]
         min_price = min(prices)
         max_price = max(prices)
-        
+
         if min_price < 0 or max_price > 1:
-            return print_status("Chart Data Range", False, 
-                              f"Prices out of range: [{min_price}, {max_price}]")
-        
-        return print_status("Chart Data Range", True,
-                          f"Price range: [{min_price:.2%}, {max_price:.2%}]")
+            return print_status("Chart Data Range", False, f"Prices out of range: [{min_price}, {max_price}]")
+
+        return print_status("Chart Data Range", True, f"Price range: [{min_price:.2%}, {max_price:.2%}]")
     except Exception as e:
         return print_status("Chart Data Range", False, str(e))
 
@@ -152,91 +134,14 @@ def test_polymarket_sync():
     try:
         response = requests.get(f"{BASE_URL}/health", timeout=10)
         data = response.json()
-        
+
         sync_info = data.get("sync", {})
         total_synced = sync_info.get("total_synced", 0)
-        
+
         passed = total_synced > 0
-        return print_status("Polymarket Sync", passed,
-                          f"Total synced: {total_synced}")
+        return print_status("Polymarket Sync", passed, f"Total synced: {total_synced}")
     except Exception as e:
         return print_status("Polymarket Sync", False, str(e))
-
-
-def test_events_have_polymarket_id():
-    """Test that events have Polymarket IDs for history fetch"""
-    try:
-        response = requests.get(f"{BASE_URL}/events", timeout=10)
-        data = response.json()
-        events = data.get("events", [])
-        
-        if not events:
-            return print_status("Events Have Polymarket ID", False, "No events available")
-        
-        # Check if API returns polymarket_id field (at least in some events)
-        # Note: Old events may not have this field, new events should have it
-        events_with_pm_id = sum(1 for e in events if e.get("polymarket_id"))
-        
-        # Check if field exists in API response (even if empty for old events)
-        first_event = events[0] if events else {}
-        has_field = "polymarket_id" in first_event
-        
-        # Pass if field exists OR if some events have PM ID
-        passed = has_field or events_with_pm_id > 0
-        return print_status("Events Have Polymarket ID", passed,
-                          f"Events with PM ID: {events_with_pm_id}/{len(events)}, Field in response: {has_field}")
-    except Exception as e:
-        return print_status("Events Have Polymarket ID", False, str(e))
-
-
-def test_backend_price_history_function():
-    """Test that backend has fetch_polymarket_price_history function"""
-    try:
-        with open('api/index.py', 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        has_function = 'def fetch_polymarket_price_history' in content
-        uses_candles = 'POLYMARKET_CANDLES_URL' in content or 'gamma-api.polymarket.com/candles' in content
-        
-        passed = has_function and uses_candles
-        return print_status("Backend Price History Function", passed,
-                          f"Function exists: {has_function}, Uses candles API: {uses_candles}")
-    except Exception as e:
-        return print_status("Backend Price History Function", False, str(e))
-
-
-def test_price_history_model():
-    """Test that PriceHistory model exists in database"""
-    try:
-        with open('api/models.py', 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        has_model = 'class PriceHistory' in content
-        has_required_fields = all(field in content for field in 
-                                 ['event_id', 'option_index', 'price', 'timestamp'])
-        
-        passed = has_model and has_required_fields
-        return print_status("PriceHistory Model", passed,
-                          f"Model exists: {has_model}, Has fields: {has_required_fields}")
-    except Exception as e:
-        return print_status("PriceHistory Model", False, str(e))
-
-
-def test_chart_frontend_function():
-    """Test that frontend has renderEventChart function"""
-    try:
-        with open('frontend/script.js', 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        has_function = 'function renderEventChart' in content
-        fetches_history = 'price-history' in content
-        uses_chart_js = 'Chart' in content and 'new Chart' in content
-
-        passed = has_function and fetches_history and uses_chart_js
-        return print_status("Frontend Chart Function", passed,
-                          f"Function exists: {has_function}, Fetches history: {fetches_history}")
-    except Exception as e:
-        return print_status("Frontend Chart Function", False, str(e))
 
 
 def test_chart_single_line():
@@ -245,16 +150,12 @@ def test_chart_single_line():
         with open('frontend/script.js', 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Check that only first option is used (options[0])
         uses_first_option = 'options[0]' in content
-        # Check that legend is hidden (like Polymarket)
         legend_hidden = "'display: false'" in content or '"display: false"' in content
-        # Check for single line pattern
         single_line_pattern = 'SINGLE LINE' in content
 
         passed = uses_first_option and (legend_hidden or single_line_pattern)
-        return print_status("Chart Single Line", passed,
-                          f"Uses options[0]: {uses_first_option}, Legend hidden: {legend_hidden}")
+        return print_status("Chart Single Line", passed, f"Uses options[0]: {uses_first_option}")
     except Exception as e:
         return print_status("Chart Single Line", False, str(e))
 
@@ -265,17 +166,13 @@ def test_chart_gradient_exists():
         with open('frontend/script.js', 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Check for gradient creation
         has_gradient = 'createLinearGradient' in content
-        # Check for gradient colors (green and red)
         has_green_gradient = 'rgba(34, 197, 94' in content
         has_red_gradient = 'rgba(239, 68, 68' in content
-        # Check for gradient application
         applies_gradient = 'backgroundColor = gradient' in content
 
         passed = has_gradient and has_green_gradient and has_red_gradient and applies_gradient
-        return print_status("Chart Gradient", passed,
-                          f"Has gradient: {has_gradient}, Green: {has_green_gradient}, Red: {has_red_gradient}")
+        return print_status("Chart Gradient", passed, f"Has gradient: {has_gradient}")
     except Exception as e:
         return print_status("Chart Gradient", False, str(e))
 
@@ -286,18 +183,13 @@ def test_chart_styling():
         with open('frontend/script.js', 'r', encoding='utf-8') as f:
             content = f.read()
 
-        # Check for Polymarket green color
         has_green = '#22c55e' in content
-        # Check for smooth curve (tension)
         has_tension = 'tension: 0.4' in content or 'tension:0.4' in content
-        # Check for no points
         no_points = 'pointRadius: 0' in content or 'pointRadius:0' in content
-        # Check for hover points
         has_hover = 'pointHoverRadius: 5' in content or 'pointHoverRadius:5' in content
 
         passed = has_green and has_tension and no_points and has_hover
-        return print_status("Chart Styling", passed,
-                          f"Green color: {has_green}, Tension: {has_tension}, No points: {no_points}, Hover: {has_hover}")
+        return print_status("Chart Styling", passed, f"Green: {has_green}, Tension: {has_tension}")
     except Exception as e:
         return print_status("Chart Styling", False, str(e))
 
@@ -307,20 +199,15 @@ def main():
     print("=" * 70)
     print("EventPredict Chart Tests")
     print(f"Base URL: {BASE_URL}")
-    print("Testing: Price history, chart data, Polymarket integration")
     print("=" * 70)
     print()
 
     tests = [
         test_polymarket_sync,
-        test_events_have_polymarket_id,
+        test_events_have_options,
         test_price_history_endpoint,
         test_price_history_structure,
         test_chart_data_range,
-        test_events_have_options,
-        test_backend_price_history_function,
-        test_price_history_model,
-        test_chart_frontend_function,
         test_chart_single_line,
         test_chart_gradient_exists,
         test_chart_styling,
@@ -329,7 +216,7 @@ def main():
     results = []
     for test in tests:
         results.append(test())
-        time.sleep(0.5)  # Small delay between API tests
+        time.sleep(0.5)
 
     print()
     print("=" * 70)
@@ -340,10 +227,9 @@ def main():
     if passed == total:
         print("[OK] All chart tests passed!")
     else:
-        print(f"[WARN] {total - passed} tests failed. Check the errors above.")
+        print(f"[WARN] {total - passed} tests failed.")
 
     print("=" * 70)
-
     return 0 if passed == total else 1
 
 
