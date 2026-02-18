@@ -61,17 +61,41 @@ export async function loadHistoricalCandles(symbol, interval) {
     const binanceInterval = BINANCE_INTERVALS[interval] || '15m';
     const limit = CANDLE_LIMITS[interval] || 96;
 
+    // Нормализация символа: ВЕРХНИЙ регистр для REST API
+    const normalizedSymbol = symbol.toUpperCase();
+
+    console.log('📊 [Chart] Загрузка исторических данных...');
+    console.log('📊 [Chart] Символ:', symbol, '→', normalizedSymbol);
+    console.log('📊 [Chart] Таймфрейм:', interval, '(', binanceInterval, ')');
+    console.log('📊 [Chart] Лимит свечей:', limit);
+
     try {
-        const response = await fetch(
-            `${BINANCE_API_BASE}/klines?symbol=${symbol}&interval=${binanceInterval}&limit=${limit}`
-        );
-        
+        const url = `${BINANCE_API_BASE}/klines?symbol=${normalizedSymbol}&interval=${binanceInterval}&limit=${limit}`;
+        console.log('📊 [Chart] REST запрос URL:', url);
+
+        const response = await fetch(url);
+        console.log('📊 [Chart] Статус ответа:', response.status, response.ok ? '✅' : '❌');
+
         if (!response.ok) {
             throw new Error(`Binance API error: ${response.status}`);
         }
-        
+
         const data = await response.json();
-        
+        console.log('📊 [Chart] Получено свечей:', data.length);
+
+        if (data.length > 0) {
+            console.log('📊 [Chart] Первая свеча:', {
+                timestamp: new Date(data[0][0]).toISOString(),
+                open: parseFloat(data[0][1]),
+                close: parseFloat(data[0][4])
+            });
+            console.log('📊 [Chart] Последняя свеча:', {
+                timestamp: new Date(data[data.length - 1][0]).toISOString(),
+                open: parseFloat(data[data.length - 1][1]),
+                close: parseFloat(data[data.length - 1][4])
+            });
+        }
+
         const labels = [];
         const prices = [];
         let firstPrice = 0;
@@ -82,7 +106,7 @@ export async function loadHistoricalCandles(symbol, interval) {
             const timestamp = candle[0];
             const close = parseFloat(candle[4]);
             const time = new Date(timestamp);
-            
+
             labels.push(time.toISOString());
             prices.push(close);
         });
@@ -92,9 +116,12 @@ export async function loadHistoricalCandles(symbol, interval) {
             lastPrice = prices[prices.length - 1];
         }
 
+        console.log('📊 [Chart] Обработано данных - labels:', labels.length, 'prices:', prices.length);
+        console.log('📊 [Chart] Диапазон цен:', firstPrice.toFixed(2), '-', lastPrice.toFixed(2));
+
         return { labels, prices, firstPrice, lastPrice };
     } catch (error) {
-        console.error('Error loading historical candles:', error);
+        console.error('❌ [Chart] Error loading historical candles:', error);
         throw error;
     }
 }
@@ -108,19 +135,37 @@ export function connectWebSocket(symbol, onTrade) {
     // Закрываем предыдущее соединение если есть
     disconnectWebSocket();
 
-    const streamName = `${symbol.toLowerCase()}@trade`;
-    binanceWebSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
-    
+    // Нормализация символа: НИЖНИЙ регистр для WebSocket
+    const wsSymbol = symbol.toLowerCase();
+
+    const streamName = `${wsSymbol}@trade`;
+    const wsUrl = `wss://stream.binance.com:9443/ws/${streamName}`;
+
+    console.log('🔌 [WebSocket] Подключение к Binance WebSocket...');
+    console.log('🔌 [WebSocket] URL:', wsUrl);
+    console.log('🔌 [WebSocket] Символ:', symbol, '→', wsSymbol);
+
+    binanceWebSocket = new WebSocket(wsUrl);
     webSocketBuffer = [];
+
+    console.log('🔌 [WebSocket] Статус после создания:', binanceWebSocket.readyState, 
+        binanceWebSocket.readyState === WebSocket.CONNECTING ? 'CONNECTING' :
+        binanceWebSocket.readyState === WebSocket.OPEN ? 'OPEN' :
+        binanceWebSocket.readyState === WebSocket.CLOSING ? 'CLOSING' : 'CLOSED');
 
     // Функция обновления графика из буфера
     function updateChartFromBuffer() {
-        if (webSocketBuffer.length === 0 || !chartInstance) return;
+        if (webSocketBuffer.length === 0 || !chartInstance) {
+            console.log('🔌 [WebSocket] Пропуск обновления: буфер пуст или нет chartInstance');
+            return;
+        }
 
         // Получаем последнюю цену из буфера
         const lastTrade = webSocketBuffer[webSocketBuffer.length - 1];
         const lastPrice = lastTrade.price;
         const lastTimestamp = lastTrade.timestamp;
+
+        console.log('🔌 [WebSocket] Обновление графика: цена =', lastPrice.toFixed(2));
 
         // Добавляем новую точку на график
         currentChartLabels.push(lastTimestamp.toISOString());
@@ -137,12 +182,14 @@ export function connectWebSocket(symbol, onTrade) {
         if (chartYMin !== null && chartYMax !== null) {
             const threshold = 0.1; // 10% от границ
             if (lastPrice > chartYMax * (1 - threshold) || lastPrice < chartYMin * (1 + threshold)) {
+                console.log('🔌 [WebSocket] Пересчёт масштаба Y: цена вышла за границы');
                 recalculateYScale();
             }
         }
 
         // Обновляем график БЕЗ полной перерисовки
         updateChart();
+        console.log('🔌 [WebSocket] График обновлён, точек на графике:', currentChartPrices.length);
 
         // Вызываем callback для обновления UI
         if (priceCallback) {
@@ -164,6 +211,8 @@ export function connectWebSocket(symbol, onTrade) {
         const price = parseFloat(data.p);
         const timestamp = new Date(data.T);
 
+        console.log('🔌 [WebSocket] Получено сообщение: price =', price.toFixed(2));
+
         // Добавляем в буфер
         webSocketBuffer.push({ price, timestamp });
 
@@ -179,12 +228,17 @@ export function connectWebSocket(symbol, onTrade) {
 
     // Обработчик ошибок
     binanceWebSocket.onerror = function(err) {
-        console.error('Binance WebSocket error:', err);
+        console.error('❌ [WebSocket] Binance WebSocket error:', err);
+    };
+
+    // Обработчик открытия соединения
+    binanceWebSocket.onopen = function() {
+        console.log('✅ [WebSocket] WebSocket соединение открыто!');
     };
 
     // Обработчик закрытия - авто-реконнект
     binanceWebSocket.onclose = function() {
-        console.log('Binance WebSocket closed, reconnecting in 5s...');
+        console.log('🔌 [WebSocket] Binance WebSocket закрыт, переподключение через 5с...');
         if (webSocketUpdateTimeout) {
             clearTimeout(webSocketUpdateTimeout);
         }
