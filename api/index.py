@@ -68,6 +68,9 @@ last_polymarket_sync = datetime.min
 sync_stats = {"total_synced": 0, "last_sync": None, "last_error": None}
 POLYMARKET_VERBOSE_LOGS = os.getenv("POLYMARKET_VERBOSE_LOGS", "0") == "1"
 
+# Исторические данные: используем candles API для реальных данных
+POLYMARKET_CANDLES_URL = "https://gamma-api.polymarket.com/candles"
+
 # Инициализация планировщика
 scheduler = AsyncIOScheduler()
 
@@ -100,6 +103,69 @@ def detect_category(title: str, description: str = '') -> str:
     if category_scores:
         return max(category_scores, key=category_scores.get)
     return 'other'
+
+def fetch_polymarket_price_history(condition_id: str, outcome: str, resolution: str = 'hour', limit: int = 168):
+    """
+    Получает исторические данные о ценах из Polymarket candles API
+    
+    Args:
+        condition_id: ID условия (рынка) из Polymarket
+        outcome: Название исхода (например, "Yes", "No")
+        resolution: Разрешение ('minute', 'hour', 'day', 'week')
+        limit: Количество точек данных (максимум 168 для часов)
+    
+    Returns:
+        Список кортежей (timestamp, price, volume)
+    """
+    try:
+        # Polymarket candles API endpoint
+        url = f"{POLYMARKET_CANDLES_URL}"
+        
+        params = {
+            "market": condition_id,
+            "outcome": outcome,
+            "resolution": resolution,
+            "limit": limit
+        }
+        
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        
+        response = requests.get(url, params=params, headers=headers, timeout=30)
+        
+        if response.status_code != 200:
+            if POLYMARKET_VERBOSE_LOGS:
+                print(f"   Price history API error: {response.status_code}")
+            return []
+        
+        data = response.json()
+        
+        # Polymarket возвращает массив свечей: [timestamp, open, high, low, close, volume]
+        if not isinstance(data, list) or len(data) == 0:
+            if POLYMARKET_VERBOSE_LOGS:
+                print(f"   No price history data for {condition_id} / {outcome}")
+            return []
+        
+        history = []
+        for candle in data:
+            if len(candle) >= 6:
+                timestamp = datetime.utcfromtimestamp(candle[0] / 1000)  # ms → seconds
+                close_price = candle[4] / 100  # Polymarket использует 0-100, нам нужно 0-1
+                volume = candle[5]
+                history.append((timestamp, close_price, volume))
+        
+        if POLYMARKET_VERBOSE_LOGS:
+            print(f"   Fetched {len(history)} price history points for {condition_id} / {outcome}")
+        
+        return history
+        
+    except Exception as e:
+        if POLYMARKET_VERBOSE_LOGS:
+            print(f"   Error fetching price history: {e}")
+        return []
 
 def fetch_polymarket_events(limit: int = 50, category: str = None):
     """Получает активные события из Polymarket API"""
@@ -358,26 +424,49 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
                 # Сохраняем историю цен
                 price = volume / (sum(volumes) or 1)
                 option.current_price = price
-                # Создаем несколько точек истории для графика (симуляция)
-                for h in range(24):
-                    hist_time = datetime.utcnow() - timedelta(hours=h)
-                    # Проверяем есть ли уже запись
-                    existing_hist = db.query(PriceHistory).filter(
-                        PriceHistory.event_id == existing.id,
-                        PriceHistory.option_index == idx,
-                        PriceHistory.timestamp == hist_time
-                    ).first()
-                    if not existing_hist:
-                        # Симуляция исторической цены с небольшим разбросом
-                        hist_price = price + (0.5 - h/48) * 0.1  # Плавное изменение
-                        hist_price = max(0.01, min(0.99, hist_price))
-                        new_history = PriceHistory(
-                            event_id=existing.id,
-                            option_index=idx,
-                            price=hist_price,
-                            volume=volume
-                        )
-                        db.add(new_history)
+                
+                # Пытаемся получить реальные исторические данные из Polymarket
+                condition_id = pm_event.get('polymarket_id', '')
+                history_data = fetch_polymarket_price_history(condition_id, option_text, 'hour', 168)
+                
+                if history_data:
+                    # Сохраняем реальные исторические данные
+                    for hist_timestamp, hist_price, hist_volume in history_data:
+                        existing_hist = db.query(PriceHistory).filter(
+                            PriceHistory.event_id == existing.id,
+                            PriceHistory.option_index == idx,
+                            PriceHistory.timestamp == hist_timestamp
+                        ).first()
+                        if not existing_hist:
+                            new_history = PriceHistory(
+                                event_id=existing.id,
+                                option_index=idx,
+                                price=hist_price,
+                                volume=hist_volume,
+                                timestamp=hist_timestamp
+                            )
+                            db.add(new_history)
+                    print(f"   Added {len(history_data)} real price history points for option {idx}")
+                else:
+                    # Fallback: создаем симулированную историю если API не вернул данные
+                    for h in range(24):
+                        hist_time = datetime.utcnow() - timedelta(hours=h)
+                        existing_hist = db.query(PriceHistory).filter(
+                            PriceHistory.event_id == existing.id,
+                            PriceHistory.option_index == idx,
+                            PriceHistory.timestamp == hist_time
+                        ).first()
+                        if not existing_hist:
+                            hist_price = price + (0.5 - h/48) * 0.1
+                            hist_price = max(0.01, min(0.99, hist_price))
+                            new_history = PriceHistory(
+                                event_id=existing.id,
+                                option_index=idx,
+                                price=hist_price,
+                                volume=volume
+                            )
+                            db.add(new_history)
+                
                 print(f"   Updated option {idx}: {option_text}, price: {price:.2%}")
             else:
                 new_option = EventOption(
@@ -427,21 +516,38 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
             current_price=volume / (sum(volumes) or 1)
         )
         db.add(new_option)
+
+        # Пытаемся получить реальные исторические данные из Polymarket
+        condition_id = pm_event.get('polymarket_id', '')
+        history_data = fetch_polymarket_price_history(condition_id, option_text, 'hour', 168)
         
-        # Создаем историю цен для графика (24 часа)
-        price = volume / (sum(volumes) or 1)
-        for h in range(24):
-            hist_time = datetime.utcnow() - timedelta(hours=h)
-            hist_price = price + (0.5 - h/48) * 0.1
-            hist_price = max(0.01, min(0.99, hist_price))
-            new_history = PriceHistory(
-                event_id=new_event.id,
-                option_index=idx,
-                price=hist_price,
-                volume=volume
-            )
-            db.add(new_history)
-        
+        if history_data:
+            # Сохраняем реальные исторические данные
+            for hist_timestamp, hist_price, hist_volume in history_data:
+                new_history = PriceHistory(
+                    event_id=new_event.id,
+                    option_index=idx,
+                    price=hist_price,
+                    volume=hist_volume,
+                    timestamp=hist_timestamp
+                )
+                db.add(new_history)
+            print(f"   Added {len(history_data)} real price history points for option {idx}")
+        else:
+            # Fallback: создаем симулированную историю если API не вернул данные
+            price = volume / (sum(volumes) or 1)
+            for h in range(24):
+                hist_time = datetime.utcnow() - timedelta(hours=h)
+                hist_price = price + (0.5 - h/48) * 0.1
+                hist_price = max(0.01, min(0.99, hist_price))
+                new_history = PriceHistory(
+                    event_id=new_event.id,
+                    option_index=idx,
+                    price=hist_price,
+                    volume=volume
+                )
+                db.add(new_history)
+
         print(f"   Added option {idx}: {option_text}")
 
     print(f"   New event created successfully")
@@ -661,6 +767,7 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
             
             event_data = {
                 "id": event.id,
+                "polymarket_id": event.polymarket_id,
                 "title": event.title,
                 "description": event.description,
                 "category": event.category or "other",

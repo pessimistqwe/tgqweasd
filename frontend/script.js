@@ -70,6 +70,21 @@ const PRESERVE_TERMS = [
     'Bull Market', 'Bear Market', 'HODL', 'FOMO', 'FUD', 'DYOR', 'WAGMI', 'NGMI'
 ];
 
+// Регулярные выражения для сохранения паттернов (деньги, даты, числа)
+const PRESERVE_PATTERNS = [
+    // Денежные суммы: $100,000, $1M, $1.5B, 1000 USDT
+    /\$[\d,]+(?:\.\d+)?(?:[MBK])?/gi,
+    /\d+(?:\.\d+)?\s*(?:USDT|BTC|ETH|TON|USD|EUR)/gi,
+    // Даты: December 2024, Jan 15, 2025, Q4 2024
+    /(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}/gi,
+    /(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}/gi,
+    /Q[1-4]\s+\d{4}/gi,
+    // Процентные значения: 50%, 75.5%
+    /\d+(?:\.\d+)?%/g,
+    // Числа с разделителями: 1,000,000
+    /\b\d{1,3}(?:,\d{3})+\b/g
+];
+
 // Расширенный словарь для перевода
 const TRANSLATION_DICT = {
     // Месяцы
@@ -451,17 +466,33 @@ const TRANSLATION_DICT = {
     'education': 'образование', 'Education': 'Образование'
 };
 
-// Перевод названий и описаний событий
+// Перевод названий и описаний событий с умным сохранением контекста
 function translateEventText(text) {
     if (!isRussian || !text) return text;
 
     let translated = text;
 
-    // Сначала сохраняем термины из PRESERVE_TERMS
+    // Шаг 1: Сохраняем паттерны (деньги, даты, числа, проценты)
+    const patternsMap = new Map();
+    let patternIndex = 0;
+
+    PRESERVE_PATTERNS.forEach(pattern => {
+        translated = translated.replace(pattern, (match) => {
+            const placeholder = `__PATTERN_${patternIndex}__`;
+            patternsMap.set(placeholder, match);
+            patternIndex++;
+            return placeholder;
+        });
+    });
+
+    // Шаг 2: Сохраняем термины из PRESERVE_TERMS (имена, бренды, команды)
     const preservedMap = new Map();
     let preserveIndex = 0;
 
-    PRESERVE_TERMS.forEach(term => {
+    // Сортируем термины по длине (длинные primero) для корректной замены
+    const sortedTerms = [...PRESERVE_TERMS].sort((a, b) => b.length - a.length);
+
+    sortedTerms.forEach(term => {
         const regex = new RegExp(`\\b${escapeRegExp(term)}\\b`, 'gi');
         translated = translated.replace(regex, (match) => {
             const placeholder = `__PRESERVE_${preserveIndex}__`;
@@ -471,19 +502,134 @@ function translateEventText(text) {
         });
     });
 
-    // Переводим по словарю
+    // Шаг 3: Обрабатываем вопросительные конструкции ПЕРЕД переводом по словарю
+    // Will X reach Y? → Достигнет ли X Y?
+    translated = translateQuestionPatterns(translated);
+
+    // Шаг 4: Переводим по словарю (только оставшиеся слова)
     for (const [en, ru] of Object.entries(TRANSLATION_DICT)) {
         const regex = new RegExp(`\\b${escapeRegExp(en)}\\b`, 'gi');
         translated = translated.replace(regex, ru);
     }
 
-    // Восстанавливаем сохранённые термины
+    // Шаг 5: Восстанавливаем сохранённые термины
     preservedMap.forEach((original, placeholder) => {
         translated = translated.replace(placeholder, original);
     });
 
-    // Убираем лишние пробелы
+    // Шаг 6: Восстанавливаем сохранённые паттерны
+    patternsMap.forEach((original, placeholder) => {
+        translated = translated.replace(placeholder, original);
+    });
+
+    // Шаг 7: Убираем лишние пробелы
     return translated.replace(/\s+/g, ' ').trim();
+}
+
+// Обработка специальных вопросительных паттернов
+function translateQuestionPatterns(text) {
+    let result = text;
+
+    // Паттерн: "Will [Something] reach [Target]?" → "Достигнет ли [Something] [Target]?"
+    result = result.replace(/\bWill\s+(.+?)\s+reach\s+(.+?)\?/gi, (match, subject, target) => {
+        return `Достигнет ли ${subject} ${target}?`;
+    });
+
+    // Паттерн: "Will [Something] happen?" → "Произойдет ли [Something]?"
+    result = result.replace(/\bWill\s+(.+?)\s+happen\b/gi, (match, subject) => {
+        return `Произойдет ли ${subject}`;
+    });
+
+    // Паттерн: "Will [Someone] win?" → "Победит ли [Someone]?"
+    result = result.replace(/\bWill\s+(.+?)\s+win\b/gi, (match, person) => {
+        return `Победит ли ${person}`;
+    });
+
+    // Паттерн: "Will [Someone] announce?" → "Объявит ли [Someone]?"
+    result = result.replace(/\bWill\s+(.+?)\s+announce\b/gi, (match, person) => {
+        return `Объявит ли ${person}`;
+    });
+
+    // Паттерн: "Will [Something] be approved?" → "Будет ли одобрено [Something]?"
+    result = result.replace(/\bWill\s+(.+?)\s+be\s+approved\b/gi, (match, thing) => {
+        return `Будет ли одобрено ${thing}`;
+    });
+
+    // Паттерн: "Will [Something] launch?" → "Запустится ли [Something]?"
+    result = result.replace(/\bWill\s+(.+?)\s+launch\b/gi, (match, thing) => {
+        return `Запустится ли ${thing}`;
+    });
+
+    // Паттерн: "Will [Someone] join?" → "Присоединится ли [Someone]?"
+    result = result.replace(/\bWill\s+(.+?)\s+join\b/gi, (match, person) => {
+        return `Присоединится ли ${person}`;
+    });
+
+    // Паттерн: "Will [Something] exceed [Target]?" → "Превысит ли [Something] [Target]?"
+    result = result.replace(/\bWill\s+(.+?)\s+exceed\s+(.+?)\?/gi, (match, subject, target) => {
+        return `Превысит ли ${subject} ${target}?`;
+    });
+
+    // Паттерн: "Will [Something] fall below [Target]?" → "Упадет ли [Something] ниже [Target]?"
+    result = result.replace(/\bWill\s+(.+?)\s+fall\s+below\s+(.+?)\?/gi, (match, subject, target) => {
+        return `Упадет ли ${subject} ниже ${target}?`;
+    });
+
+    // Паттерн: "Will [Something] rise above [Target]?" → "Поднимется ли [Something] выше [Target]?"
+    result = result.replace(/\bWill\s+(.+?)\s+rise\s+above\s+(.+?)\?/gi, (match, subject, target) => {
+        return `Поднимется ли ${subject} выше ${target}?`;
+    });
+
+    // Паттерн: "Will [Someone] resign?" → "Уйдет ли [Someone] в отставку?"
+    result = result.replace(/\bWill\s+(.+?)\s+resign\b/gi, (match, person) => {
+        return `Уйдет ли ${person} в отставку?`;
+    });
+
+    // Паттерн: "Will [Someone] be impeached?" → "Будет ли импичмент [Someone]?"
+    result = result.replace(/\bWill\s+(.+?)\s+be\s+impeached\b/gi, (match, person) => {
+        return `Будет ли импичмент ${person}?`;
+    });
+
+    // Паттерн: "Will [Something] end?" → "Завершится ли [Something]?"
+    result = result.replace(/\bWill\s+(.+?)\s+end\b/gi, (match, thing) => {
+        return `Завершится ли ${thing}?`;
+    });
+
+    // Паттерн: "Will [Something] start?" → "Начнется ли [Something]?"
+    result = result.replace(/\bWill\s+(.+?)\s+start\b/gi, (match, thing) => {
+        return `Начнется ли ${thing}?`;
+    });
+
+    // Паттерн: "Will [Someone] fight?" → "Будет ли бой с участием [Someone]?"
+    result = result.replace(/\bWill\s+(.+?)\s+fight\b/gi, (match, person) => {
+        return `Будет ли бой с участием ${person}?`;
+    });
+
+    // Паттерн: "Will [Team] win the [Championship]?" → "Выиграет ли [Team] [Championship]?"
+    result = result.replace(/\bWill\s+(.+?)\s+win\s+the\s+(.+?)\?/gi, (match, team, championship) => {
+        return `Выиграет ли ${team} ${championship}?`;
+    });
+
+    // Паттерн: "Will [Someone] perform at [Event]?" → "Выступит ли [Someone] на [Event]?"
+    result = result.replace(/\bWill\s+(.+?)\s+perform\s+at\s+(.+?)\?/gi, (match, artist, event) => {
+        return `Выступит ли ${artist} на ${event}?`;
+    });
+
+    // Паттерн: "Will [Movie] win [Award]?" → "Выиграет ли [Movie] [Award]?"
+    result = result.replace(/\bWill\s+(.+?)\s+win\s+(.+?)\?/gi, (match, subject, award) => {
+        return `Выиграет ли ${subject} ${award}?`;
+    });
+
+    // Общий паттерн: "Will [Something]?" → "Будет ли [Something]?" (fallback)
+    result = result.replace(/\bWill\s+(.+?)\?/gi, (match, content) => {
+        // Избегаем двойной замены уже обработанных паттернов
+        if (content.includes('ли')) {
+            return match; // Уже обработано
+        }
+        return `Будет ли ${content}?`;
+    });
+
+    return result;
 }
 
 // Экранирование специальных символов для regex
@@ -1415,19 +1561,29 @@ async function renderEventChart(eventId, options) {
 
     const labels = [];
     const datasets = [];
+    // Polymarket colors: green for Yes/Up, red for No/Down, then blue, orange, purple, pink
     const colors = ['#22c55e', '#ef4444', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899'];
 
     if (priceHistory && priceHistory.length > 0) {
         // Use real price history from database
-        const timestamps = [...new Set(priceHistory.map(p => p.timestamp))];
+        // Group by timestamp to get all data points
+        const timestampsSet = new Set(priceHistory.map(p => p.timestamp));
+        const timestamps = Array.from(timestampsSet);
         timestamps.sort();
 
-        // Show last 24 data points
-        const displayData = timestamps.slice(-24);
+        // Show last 48-168 data points depending on data density
+        const maxPoints = priceHistory.length > 100 ? 168 : 48;
+        const displayData = timestamps.slice(-maxPoints);
 
         displayData.forEach(ts => {
             const date = new Date(ts);
-            labels.push(date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+            // Format: "HH:MM" for same day, "MMM DD" for older
+            const now = new Date();
+            if (date.toDateString() === now.toDateString()) {
+                labels.push(date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+            } else {
+                labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            }
         });
 
         // Group by option
@@ -1437,18 +1593,20 @@ async function renderEventChart(eventId, options) {
                     p.option_index === opt.index &&
                     new Date(p.timestamp).getTime() === new Date(ts).getTime()
                 );
+                // Use real price if available, otherwise use current probability
                 return point ? point.price : opt.probability / 100;
             });
 
             datasets.push({
-                label: opt.text,
+                label: translateEventText(opt.text),
                 data: data,
                 borderColor: colors[idx % colors.length],
-                backgroundColor: colors[idx % colors.length] + '20',
+                backgroundColor: colors[idx % colors.length] + '15',  // More transparent fill
                 borderWidth: 2,
                 fill: true,
-                tension: 0.4,
-                pointRadius: 0
+                tension: 0.3,  // Slightly less curve for more realistic look
+                pointRadius: 0,
+                pointHoverRadius: 4
             });
         });
     } else {
@@ -1466,27 +1624,28 @@ async function renderEventChart(eventId, options) {
             let basePrice = opt.probability / 100;
 
             for (let i = 0; i <= historyPoints; i++) {
-                // Simulate realistic price movement
-                const randomChange = (Math.random() - 0.5) * 0.05;
+                // Simulate realistic price movement with smooth transitions
+                const randomChange = (Math.random() - 0.5) * 0.03;  // Smaller changes
                 let price = basePrice + randomChange;
                 price = Math.max(0.01, Math.min(0.99, price));
                 prices.push(price);
             }
 
             datasets.push({
-                label: opt.text,
+                label: translateEventText(opt.text),
                 data: prices,
                 borderColor: colors[idx % colors.length],
-                backgroundColor: colors[idx % colors.length] + '20',
+                backgroundColor: colors[idx % colors.length] + '15',
                 borderWidth: 2,
                 fill: true,
-                tension: 0.4,
-                pointRadius: 0
+                tension: 0.3,
+                pointRadius: 0,
+                pointHoverRadius: 4
             });
         });
     }
 
-    // Create chart
+    // Create chart with Polymarket-like styling
     const ctx = canvas.getContext('2d');
     eventChart = new Chart(ctx, {
         type: 'line',
@@ -1499,7 +1658,8 @@ async function renderEventChart(eventId, options) {
             maintainAspectRatio: false,
             interaction: {
                 intersect: false,
-                mode: 'index'
+                mode: 'index',
+                intersect: false
             },
             plugins: {
                 legend: {
@@ -1507,17 +1667,25 @@ async function renderEventChart(eventId, options) {
                     position: 'top',
                     labels: {
                         color: '#fafafa',
-                        font: { size: 11 },
-                        usePointStyle: true
+                        font: { size: 11, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
+                        usePointStyle: true,
+                        padding: 15
                     }
                 },
                 tooltip: {
-                    backgroundColor: 'rgba(15, 15, 18, 0.9)',
+                    backgroundColor: 'rgba(15, 15, 18, 0.95)',
                     titleColor: '#fafafa',
                     bodyColor: '#a1a1aa',
                     borderColor: 'rgba(255,255,255,0.1)',
                     borderWidth: 1,
+                    padding: 12,
+                    displayColors: true,
+                    bodyFont: { size: 12 },
+                    titleFont: { size: 13 },
                     callbacks: {
+                        title: function(context) {
+                            return context[0].label;
+                        },
                         label: function(context) {
                             return context.dataset.label + ': ' + (context.parsed.y * 100).toFixed(1) + '%';
                         }
@@ -1528,12 +1696,15 @@ async function renderEventChart(eventId, options) {
                 x: {
                     display: true,
                     grid: {
-                        color: 'rgba(255,255,255,0.05)'
+                        color: 'rgba(255,255,255,0.03)',  // Very subtle grid
+                        drawBorder: false
                     },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 10 },
-                        maxTicksLimit: 6
+                        font: { size: 10, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
+                        maxTicksLimit: 6,
+                        maxRotation: 0,
+                        autoSkip: true
                     }
                 },
                 y: {
@@ -1541,14 +1712,16 @@ async function renderEventChart(eventId, options) {
                     min: 0,
                     max: 1,
                     grid: {
-                        color: 'rgba(255,255,255,0.05)'
+                        color: 'rgba(255,255,255,0.03)',
+                        drawBorder: false
                     },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 10 },
+                        font: { size: 10, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
                         callback: function(value) {
                             return (value * 100) + '%';
-                        }
+                        },
+                        maxTicksLimit: 5
                     }
                 }
             }
