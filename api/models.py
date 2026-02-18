@@ -36,8 +36,8 @@ class User(Base):
     withdrawal_address = Column(String(255))
 
     # Profile customization
-    custom_username = Column(String(255), nullable=True)  # Пользовательское имя
-    avatar_url = Column(String(500), nullable=True)  # URL аватара
+    custom_username = Column(String(255), nullable=True)
+    avatar_url = Column(String(500), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     is_blocked = Column(Boolean, default=False)
@@ -80,7 +80,7 @@ class Event(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     total_pool = Column(Float, default=0.0)
-    has_chart = Column(Boolean, default=False)  # Flag for events with price history chart
+    has_chart = Column(Boolean, default=False)
 
     # Relationships
     creator = relationship("User", back_populates="created_events")
@@ -98,7 +98,7 @@ class EventOption(Base):
     option_text = Column(String(255), nullable=False)
     total_stake = Column(Float, default=0.0)
     market_stake = Column(Float, default=0.0)
-    current_price = Column(Float, default=0.5)  # Current probability as price
+    current_price = Column(Float, default=0.5)
 
     event = relationship("Event", back_populates="event_options")
 
@@ -108,7 +108,7 @@ class PriceHistory(Base):
     id = Column(Integer, primary_key=True)
     event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
     option_index = Column(Integer, nullable=False)
-    price = Column(Float, nullable=False)  # Probability as price (0.0 - 1.0)
+    price = Column(Float, nullable=False)
     volume = Column(Float, default=0.0)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
 
@@ -137,11 +137,11 @@ class UserPrediction(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
     option_index = Column(Integer, nullable=False)
-    
+
     # Polymarket-style: shares and average price
-    shares = Column(Float, default=0.0)  # Number of shares owned
-    average_price = Column(Float, default=0.0)  # Average purchase price per share
-    
+    shares = Column(Float, default=0.0)
+    average_price = Column(Float, default=0.0)
+
     # Legacy support
     amount = Column(Float, nullable=False)
     asset = Column(String(10), default="USDT")
@@ -178,7 +178,7 @@ class Transaction(Base):
 class EventComment(Base):
     """Комментарии пользователей к событиям"""
     __tablename__ = "event_comments"
-    
+
     id = Column(Integer, primary_key=True)
     event_id = Column(Integer, ForeignKey("events.id"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -187,186 +187,198 @@ class EventComment(Base):
     comment_text = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     is_deleted = Column(Boolean, default=False)
-    is_hidden = Column(Boolean, default=False)  # Скрыто модерацией
-    
+    is_hidden = Column(Boolean, default=False)
+
     # Relationships
     user = relationship("User", backref="comments")
     event = relationship("Event", backref="comments")
 
-# Database setup - Vercel compatible
-# Используем /tmp для временной БД на Vercel, или тестовую БД если задана
-db_path = os.getenv("TEST_DB_PATH", "/tmp/events.db")
-engine = create_engine(f"sqlite:///{db_path}", echo=False, connect_args={"check_same_thread": False})
-Base.metadata.create_all(engine)
-with engine.connect() as connection:
-    # Миграция: добавление market_stake
-    columns = [row[1] for row in connection.execute(text("PRAGMA table_info(event_options)")).fetchall()]
-    if "market_stake" not in columns:
-        connection.execute(text("ALTER TABLE event_options ADD COLUMN market_stake FLOAT DEFAULT 0.0"))
-        connection.commit()
+# ===========================================
+# Database setup
+# ===========================================
+# В тестовом режиме (TEST_MODE=1) не создаем БД автоматически - это делает conftest.py
+TEST_MODE = os.getenv("TEST_MODE", "0") == "1"
+
+if not TEST_MODE:
+    db_path = os.getenv("TEST_DB_PATH", "/tmp/events.db")
+    engine = create_engine(f"sqlite:///{db_path}", echo=False, connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
     
-    # Миграция: добавление current_price
-    columns = [row[1] for row in connection.execute(text("PRAGMA table_info(event_options)")).fetchall()]
-    if "current_price" not in columns:
-        connection.execute(text("ALTER TABLE event_options ADD COLUMN current_price FLOAT DEFAULT 0.5"))
-        connection.commit()
-    
-    # Миграция: создание таблицы price_history
-    tables = [row[0] for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
-    if "price_history" not in tables:
-        connection.execute(text("""
-            CREATE TABLE price_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_id INTEGER NOT NULL,
-                option_index INTEGER NOT NULL,
-                price REAL NOT NULL,
-                volume REAL DEFAULT 0.0,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (event_id) REFERENCES events(id)
-            )
-        """))
-        connection.execute(text("CREATE INDEX idx_price_history_event ON price_history(event_id)"))
-        connection.execute(text("CREATE INDEX idx_price_history_timestamp ON price_history(timestamp)"))
-        connection.commit()
-    
-    # Миграция: создание таблицы event_comments
-    tables = [row[0] for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
-    if "event_comments" not in tables:
-        connection.execute(text("""
-            CREATE TABLE event_comments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_id INTEGER NOT NULL,
-                user_id INTEGER,
-                telegram_id INTEGER NOT NULL,
-                username VARCHAR(255),
-                comment_text TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                is_deleted BOOLEAN DEFAULT 0,
-                is_hidden BOOLEAN DEFAULT 0,
-                FOREIGN KEY (event_id) REFERENCES events(id),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        """))
-        connection.execute(text("CREATE INDEX idx_event_comments_event ON event_comments(event_id)"))
-        connection.execute(text("CREATE INDEX idx_event_comments_telegram ON event_comments(telegram_id)"))
-        connection.execute(text("CREATE INDEX idx_event_comments_created ON event_comments(created_at)"))
-        connection.commit()
-    
-    # Миграция: добавление custom_username и avatar_url
-    columns = [row[1] for row in connection.execute(text("PRAGMA table_info(users)")).fetchall()]
-    if "custom_username" not in columns:
-        connection.execute(text("ALTER TABLE users ADD COLUMN custom_username VARCHAR(255)"))
-        connection.commit()
-    if "avatar_url" not in columns:
-        connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)"))
-        connection.commit()
+    with engine.connect() as connection:
+        # Миграция: добавление market_stake
+        columns = [row[1] for row in connection.execute(text("PRAGMA table_info(event_options)")).fetchall()]
+        if "market_stake" not in columns:
+            connection.execute(text("ALTER TABLE event_options ADD COLUMN market_stake FLOAT DEFAULT 0.0"))
+            connection.commit()
 
-    # Миграция: добавление has_chart в events
-    columns = [row[1] for row in connection.execute(text("PRAGMA table_info(events)")).fetchall()]
-    if "has_chart" not in columns:
-        connection.execute(text("ALTER TABLE events ADD COLUMN has_chart BOOLEAN DEFAULT 0"))
-        connection.commit()
+        # Миграция: добавление current_price
+        columns = [row[1] for row in connection.execute(text("PRAGMA table_info(event_options)")).fetchall()]
+        if "current_price" not in columns:
+            connection.execute(text("ALTER TABLE event_options ADD COLUMN current_price FLOAT DEFAULT 0.5"))
+            connection.commit()
 
-    # Миграция: добавление shares и average_price в user_predictions
-    columns = [row[1] for row in connection.execute(text("PRAGMA table_info(user_predictions)")).fetchall()]
-    if "shares" not in columns:
-        connection.execute(text("ALTER TABLE user_predictions ADD COLUMN shares FLOAT DEFAULT 0.0"))
-        connection.commit()
-    if "average_price" not in columns:
-        connection.execute(text("ALTER TABLE user_predictions ADD COLUMN average_price FLOAT DEFAULT 0.0"))
-        connection.commit()
+        # Миграция: создание таблицы price_history
+        tables = [row[0] for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
+        if "price_history" not in tables:
+            connection.execute(text("""
+                CREATE TABLE price_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INTEGER NOT NULL,
+                    option_index INTEGER NOT NULL,
+                    price REAL NOT NULL,
+                    volume REAL DEFAULT 0.0,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (event_id) REFERENCES events(id)
+                )
+            """))
+            connection.execute(text("CREATE INDEX idx_price_history_event ON price_history(event_id)"))
+            connection.execute(text("CREATE INDEX idx_price_history_timestamp ON price_history(timestamp)"))
+            connection.commit()
 
-    # Миграция: создание таблицы bet_history
-    tables = [row[0] for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
-    if "bet_history" not in tables:
-        connection.execute(text("""
-            CREATE TABLE bet_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_id INTEGER NOT NULL,
-                user_id INTEGER,
-                telegram_id INTEGER NOT NULL,
-                username VARCHAR(255),
-                option_index INTEGER NOT NULL,
-                amount REAL NOT NULL,
-                shares REAL DEFAULT 0.0,
-                price REAL NOT NULL,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (event_id) REFERENCES events(id),
-                FOREIGN KEY (user_id) REFERENCES users(id)
-            )
-        """))
-        connection.execute(text("CREATE INDEX idx_bet_history_event ON bet_history(event_id)"))
-        connection.execute(text("CREATE INDEX idx_bet_history_telegram ON bet_history(telegram_id)"))
-        connection.execute(text("CREATE INDEX idx_bet_history_timestamp ON bet_history(timestamp)"))
-        connection.commit()
+        # Миграция: создание таблицы event_comments
+        tables = [row[0] for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
+        if "event_comments" not in tables:
+            connection.execute(text("""
+                CREATE TABLE event_comments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INTEGER NOT NULL,
+                    user_id INTEGER,
+                    telegram_id INTEGER NOT NULL,
+                    username VARCHAR(255),
+                    comment_text TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    is_deleted BOOLEAN DEFAULT 0,
+                    is_hidden BOOLEAN DEFAULT 0,
+                    FOREIGN KEY (event_id) REFERENCES events(id),
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """))
+            connection.execute(text("CREATE INDEX idx_event_comments_event ON event_comments(event_id)"))
+            connection.execute(text("CREATE INDEX idx_event_comments_telegram ON event_comments(telegram_id)"))
+            connection.execute(text("CREATE INDEX idx_event_comments_created ON event_comments(created_at)"))
+            connection.commit()
 
-    # Миграция: создание таблицы bets
-    if "bets" not in tables:
-        connection.execute(text("""
-            CREATE TABLE bets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                market_id INTEGER NOT NULL,
-                bet_type VARCHAR(20) NOT NULL,
-                direction VARCHAR(20) NOT NULL,
-                amount DECIMAL(20, 8) NOT NULL,
-                shares DECIMAL(20, 8) DEFAULT 0,
-                entry_price DECIMAL(20, 8) NOT NULL,
-                leverage DECIMAL(10, 2) DEFAULT 1,
-                liquidation_price DECIMAL(20, 8),
-                exit_price DECIMAL(20, 8),
-                potential_payout DECIMAL(20, 8) DEFAULT 0,
-                actual_payout DECIMAL(20, 8) DEFAULT 0,
-                status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                resolved_at DATETIME,
-                symbol VARCHAR(50),
-                take_profit_price DECIMAL(20, 8),
-                stop_loss_price DECIMAL(20, 8),
-                comment TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (market_id) REFERENCES events(id)
-            )
-        """))
-        connection.execute(text("CREATE INDEX idx_bets_user_id ON bets(user_id)"))
-        connection.execute(text("CREATE INDEX idx_bets_market_id ON bets(market_id)"))
-        connection.execute(text("CREATE INDEX idx_bets_status ON bets(status)"))
-        connection.execute(text("CREATE INDEX idx_bets_created_at ON bets(created_at)"))
-        connection.execute(text("CREATE INDEX idx_bets_user_status ON bets(user_id, status)"))
-        connection.commit()
+        # Миграция: добавление custom_username и avatar_url
+        columns = [row[1] for row in connection.execute(text("PRAGMA table_info(users)")).fetchall()]
+        if "custom_username" not in columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN custom_username VARCHAR(255)"))
+            connection.commit()
+        if "avatar_url" not in columns:
+            connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)"))
+            connection.commit()
 
-    # Миграция: создание таблицы price_predictions
-    if "price_predictions" not in tables:
-        connection.execute(text("""
-            CREATE TABLE price_predictions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                market_id INTEGER NOT NULL,
-                direction VARCHAR(20) NOT NULL,
-                symbol VARCHAR(50) NOT NULL,
-                amount DECIMAL(20, 8) NOT NULL,
-                odds DECIMAL(10, 4) NOT NULL,
-                entry_price DECIMAL(20, 8) NOT NULL,
-                exit_price DECIMAL(20, 8),
-                potential_payout DECIMAL(20, 8) NOT NULL,
-                actual_payout DECIMAL(20, 8) DEFAULT 0,
-                status VARCHAR(20) NOT NULL DEFAULT 'pending',
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                resolved_at DATETIME,
-                duration_seconds INTEGER DEFAULT 300,
-                FOREIGN KEY (user_id) REFERENCES users(id),
-                FOREIGN KEY (market_id) REFERENCES events(id)
-            )
-        """))
-        connection.execute(text("CREATE INDEX idx_price_predictions_user_id ON price_predictions(user_id)"))
-        connection.execute(text("CREATE INDEX idx_price_predictions_market_id ON price_predictions(market_id)"))
-        connection.execute(text("CREATE INDEX idx_price_predictions_status ON price_predictions(status)"))
-        connection.execute(text("CREATE INDEX idx_price_predictions_created_at ON price_predictions(created_at)"))
-        connection.commit()
+        # Миграция: добавление has_chart в events
+        columns = [row[1] for row in connection.execute(text("PRAGMA table_info(events)")).fetchall()]
+        if "has_chart" not in columns:
+            connection.execute(text("ALTER TABLE events ADD COLUMN has_chart BOOLEAN DEFAULT 0"))
+            connection.commit()
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        # Миграция: добавление shares и average_price в user_predictions
+        columns = [row[1] for row in connection.execute(text("PRAGMA table_info(user_predictions)")).fetchall()]
+        if "shares" not in columns:
+            connection.execute(text("ALTER TABLE user_predictions ADD COLUMN shares FLOAT DEFAULT 0.0"))
+            connection.commit()
+        if "average_price" not in columns:
+            connection.execute(text("ALTER TABLE user_predictions ADD COLUMN average_price FLOAT DEFAULT 0.0"))
+            connection.commit()
+
+        # Миграция: создание таблицы bet_history
+        tables = [row[0] for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
+        if "bet_history" not in tables:
+            connection.execute(text("""
+                CREATE TABLE bet_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id INTEGER NOT NULL,
+                    user_id INTEGER,
+                    telegram_id INTEGER NOT NULL,
+                    username VARCHAR(255),
+                    option_index INTEGER NOT NULL,
+                    amount REAL NOT NULL,
+                    shares REAL DEFAULT 0.0,
+                    price REAL NOT NULL,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (event_id) REFERENCES events(id),
+                    FOREIGN KEY (user_id) REFERENCES users(id)
+                )
+            """))
+            connection.execute(text("CREATE INDEX idx_bet_history_event ON bet_history(event_id)"))
+            connection.execute(text("CREATE INDEX idx_bet_history_telegram ON bet_history(telegram_id)"))
+            connection.execute(text("CREATE INDEX idx_bet_history_timestamp ON bet_history(timestamp)"))
+            connection.commit()
+
+        # Миграция: создание таблицы bets
+        if "bets" not in tables:
+            connection.execute(text("""
+                CREATE TABLE bets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    market_id INTEGER NOT NULL,
+                    bet_type VARCHAR(20) NOT NULL,
+                    direction VARCHAR(20) NOT NULL,
+                    amount DECIMAL(20, 8) NOT NULL,
+                    shares DECIMAL(20, 8) DEFAULT 0,
+                    entry_price DECIMAL(20, 8) NOT NULL,
+                    leverage DECIMAL(10, 2) DEFAULT 1,
+                    liquidation_price DECIMAL(20, 8),
+                    exit_price DECIMAL(20, 8),
+                    potential_payout DECIMAL(20, 8) DEFAULT 0,
+                    actual_payout DECIMAL(20, 8) DEFAULT 0,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at DATETIME,
+                    symbol VARCHAR(50),
+                    take_profit_price DECIMAL(20, 8),
+                    stop_loss_price DECIMAL(20, 8),
+                    comment TEXT,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    FOREIGN KEY (market_id) REFERENCES events(id)
+                )
+            """))
+            connection.execute(text("CREATE INDEX idx_bets_user_id ON bets(user_id)"))
+            connection.execute(text("CREATE INDEX idx_bets_market_id ON bets(market_id)"))
+            connection.execute(text("CREATE INDEX idx_bets_status ON bets(status)"))
+            connection.execute(text("CREATE INDEX idx_bets_created_at ON bets(created_at)"))
+            connection.execute(text("CREATE INDEX idx_bets_user_status ON bets(user_id, status)"))
+            connection.commit()
+
+        # Миграция: создание таблицы price_predictions
+        if "price_predictions" not in tables:
+            connection.execute(text("""
+                CREATE TABLE price_predictions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    market_id INTEGER NOT NULL,
+                    direction VARCHAR(20) NOT NULL,
+                    symbol VARCHAR(50) NOT NULL,
+                    amount DECIMAL(20, 8) NOT NULL,
+                    odds DECIMAL(10, 4) NOT NULL,
+                    entry_price DECIMAL(20, 8) NOT NULL,
+                    exit_price DECIMAL(20, 8),
+                    potential_payout DECIMAL(20, 8) NOT NULL,
+                    actual_payout DECIMAL(20, 8) DEFAULT 0,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    resolved_at DATETIME,
+                    duration_seconds INTEGER DEFAULT 300,
+                    FOREIGN KEY (user_id) REFERENCES users(id),
+                    FOREIGN KEY (market_id) REFERENCES events(id)
+                )
+            """))
+            connection.execute(text("CREATE INDEX idx_price_predictions_user_id ON price_predictions(user_id)"))
+            connection.execute(text("CREATE INDEX idx_price_predictions_market_id ON price_predictions(market_id)"))
+            connection.execute(text("CREATE INDEX idx_price_predictions_status ON price_predictions(status)"))
+            connection.execute(text("CREATE INDEX idx_price_predictions_created_at ON price_predictions(created_at)"))
+            connection.commit()
+
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+else:
+    # В тестовом режиме engine и SessionLocal будут созданы в conftest.py
+    engine = None
+    SessionLocal = None
 
 def get_db():
+    if SessionLocal is None:
+        raise RuntimeError("Database not initialized. Set TEST_DB_PATH or run in non-test mode.")
     db = SessionLocal()
     try:
         yield db
