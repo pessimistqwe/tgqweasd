@@ -3,360 +3,484 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#0d1117">
+    <meta name="theme-color" content="#09090b">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/frontend/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <title>TGMarket - Prediction Market</title>
+    <title>Predict - Predictions Market</title>
 </head>
 <body>
     <div class="app-container">
-        <!-- Loading Screen -->
         <div id="loading" class="loading-screen">
-            <div class="loading-spinner">
-                <div class="spinner-ring"></div>
-                <div class="spinner-ring"></div>
-                <div class="spinner-ring"></div>
-            </div>
-            <p class="loading-text">Loading markets...</p>
+            <div class="spinner"></div>
+            <p>Loading markets...</p>
         </div>
 
-        <!-- Header -->
         <header class="header">
             <div class="header-content">
-                <div class="logo">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-                        <circle cx="12" cy="12" r="10" stroke="#2f81f7" stroke-width="2"/>
-                        <path d="M12 6v6l4 2" stroke="#2f81f7" stroke-width="2" stroke-linecap="round"/>
+                <h1 class="logo">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" class="logo-icon">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
+                        <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                     </svg>
-                    <span>TGMARKET</span>
-                </div>
-                <div class="header-actions">
-                    <div class="balance-pill" onclick="showSection('wallet')">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3fb950" stroke-width="2">
-                            <circle cx="12" cy="12" r="9"/>
-                            <path d="M12 7v10M9 10h6"/>
+                    TGMARKET
+                </h1>
+                <div class="balance-card" onclick="showSection('wallet')">
+                    <div class="balance-icon">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+                            <path d="M12 7v10M9 10h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                         </svg>
-                        <span id="header-balance">0</span>
-                        <span class="currency">USDT</span>
                     </div>
+                    <span id="user-balance">0</span>
+                    <span class="balance-currency">USDT</span>
                 </div>
             </div>
         </header>
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Markets Section -->
-            <section id="markets-section" class="section active">
-                <!-- Category Tabs (Horizontal Scroll) -->
-                <div class="category-scroll">
-                    <button class="category-chip active" data-category="all" onclick="selectCategory('all')">
-                        🔥 All
-                    </button>
-                    <button class="category-chip" data-category="trending" onclick="selectCategory('trending')">
-                        📈 Trending
-                    </button>
-                    <button class="category-chip" data-category="crypto" onclick="selectCategory('crypto')">
-                        ₿ Crypto
-                    </button>
-                    <button class="category-chip" data-category="politics" onclick="selectCategory('politics')">
-                        🏛 Politics
-                    </button>
-                    <button class="category-chip" data-category="sports" onclick="selectCategory('sports')">
-                        ⚽ Sports
-                    </button>
-                    <button class="category-chip" data-category="pop_culture" onclick="selectCategory('pop_culture')">
-                        🎬 Culture
-                    </button>
-                    <button class="category-chip" data-category="business" onclick="selectCategory('business')">
-                        💼 Business
-                    </button>
-                    <button class="category-chip" data-category="science" onclick="selectCategory('science')">
-                        🔬 Science
-                    </button>
-                </div>
-
-                <!-- Markets List -->
-                <div id="markets-list" class="markets-list">
-                    <!-- Market cards will be inserted here -->
-                </div>
-            </section>
-
-            <!-- Search Section -->
-            <section id="search-section" class="section">
-                <div class="search-container">
-                    <div class="search-box">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="11" cy="11" r="8"/>
-                            <path d="M21 21l-4.35-4.35"/>
-                        </svg>
-                        <input type="text" id="search-input" placeholder="Search markets...">
+        <main class="main-content" id="main-content">
+            <!-- Events Section -->
+            <section id="events-section" class="section">
+                <div class="section-header">
+                    <h2>Рынки</h2>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="refresh-btn" onclick="openCreateEventModal()" title="Создать событие">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                        </button>
+                        <button class="refresh-btn" onclick="loadEvents()">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
+                                <path d="M21 3v5h-5"/>
+                            </svg>
+                        </button>
                     </div>
-                    <div class="search-results" id="search-results"></div>
                 </div>
+                
+                <div class="categories-container" id="categories-container">
+                    <button class="category-btn active" data-category="all" onclick="selectCategory('all')">
+                        <span class="category-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                <path d="M12 2v20M2 12h20"/>
+                            </svg>
+                        </span>
+                        <span class="category-name" data-i18n="all">Все</span>
+                    </button>
+                    <button class="category-btn" data-category="politics" onclick="selectCategory('politics')">
+                        <span class="category-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                <path d="M2 17l10 5 10-5"/>
+                                <path d="M2 12l10 5 10-5"/>
+                            </svg>
+                        </span>
+                        <span class="category-name" data-i18n="politics">Политика</span>
+                    </button>
+                    <button class="category-btn" data-category="sports" onclick="selectCategory('sports')">
+                        <span class="category-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+                                <path d="M2 12h20"/>
+                            </svg>
+                        </span>
+                        <span class="category-name" data-i18n="sports">Спорт</span>
+                    </button>
+                    <button class="category-btn" data-category="crypto" onclick="selectCategory('crypto')">
+                        <span class="category-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2v20M8 6l4-4 4 4M8 18l4 4 4-4"/>
+                                <circle cx="12" cy="12" r="8"/>
+                            </svg>
+                        </span>
+                        <span class="category-name" data-i18n="crypto">Крипто</span>
+                    </button>
+                    <button class="category-btn" data-category="pop_culture" onclick="selectCategory('pop_culture')">
+                        <span class="category-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                            </svg>
+                        </span>
+                        <span class="category-name" data-i18n="culture">Культура</span>
+                    </button>
+                    <button class="category-btn" data-category="business" onclick="selectCategory('business')">
+                        <span class="category-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                            </svg>
+                        </span>
+                        <span class="category-name" data-i18n="business">Бизнес</span>
+                    </button>
+                    <button class="category-btn" data-category="science" onclick="selectCategory('science')">
+                        <span class="category-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                <path d="M2 17l10 5 10-5"/>
+                                <path d="M2 12l10 5 10-5"/>
+                            </svg>
+                        </span>
+                        <span class="category-name" data-i18n="science">Наука</span>
+                    </button>
+                </div>
+                
+                <div id="events-container"></div>
             </section>
 
-            <!-- Portfolio Section -->
-            <section id="portfolio-section" class="section">
-                <div class="portfolio-header">
-                    <div class="portfolio-balance">
-                        <div class="balance-label">Total Balance</div>
-                        <div class="balance-value">
-                            <span id="portfolio-balance">0.00</span>
-                            <span class="currency">USDT</span>
+            <!-- Wallet Section -->
+            <section id="wallet-section" class="section hidden">
+                <div class="section-header">
+                    <h2>Кошелёк</h2>
+                </div>
+
+                <div class="wallet-balance-card">
+                    <div class="wallet-balance-label">Доступный баланс</div>
+                    <div class="wallet-balance-amount">
+                        <span id="wallet-balance-value">0.00</span>
+                        <span class="wallet-balance-currency">USDT</span>
+                    </div>
+                </div>
+
+                <div class="wallet-actions">
+                    <button class="wallet-action-btn deposit" onclick="openDepositModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 5v14M5 12l7-7 7 7"/>
+                        </svg>
+                        <span>Депозит</span>
+                    </button>
+                    <button class="wallet-action-btn withdraw" onclick="openWithdrawModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 19V5M5 12l7 7 7-7"/>
+                        </svg>
+                        <span>Вывод</span>
+                    </button>
+                </div>
+
+                <div class="transactions-section">
+                    <h3>История транзакций</h3>
+                    <div id="transactions-container">
+                        <div class="empty-transactions">
+                            <p>Транзакций пока нет</p>
                         </div>
                     </div>
-                    <div class="portfolio-actions">
-                        <button class="action-btn deposit" onclick="openDepositModal()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 5v14M5 12l7-7 7 7"/>
-                            </svg>
-                            Deposit
-                        </button>
-                        <button class="action-btn withdraw" onclick="openWithdrawModal()">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M12 19V5M5 12l7 7 7-7"/>
-                            </svg>
-                            Withdraw
-                        </button>
-                    </div>
-                </div>
-
-                <div class="portfolio-stats">
-                    <div class="stat-card">
-                        <div class="stat-label">Active Bets</div>
-                        <div class="stat-value" id="active-bets">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Total Won</div>
-                        <div class="stat-value" id="total-won">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Win Rate</div>
-                        <div class="stat-value" id="win-rate">0%</div>
-                    </div>
-                </div>
-
-                <div class="positions-section">
-                    <h3 class="section-title">Your Positions</h3>
-                    <div id="positions-list" class="positions-list">
-                        <div class="empty-state">No active positions</div>
-                    </div>
                 </div>
             </section>
 
-            <!-- More Section -->
-            <section id="more-section" class="section">
+            <!-- Profile Section -->
+            <section id="profile-section" class="section hidden">
                 <div class="profile-card">
                     <div class="profile-header">
                         <div class="profile-avatar" id="profile-avatar">U</div>
                         <div class="profile-info">
-                            <h2 id="profile-name">User</h2>
-                            <span class="profile-id" id="profile-id">ID: ---</span>
+                            <h2 id="profile-name">Пользователь</h2>
+                            <span class="profile-id" id="profile-telegram-id">ID: ---</span>
                         </div>
                     </div>
-                </div>
 
-                <div class="menu-list">
-                    <button class="menu-item" onclick="showSection('portfolio')">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <rect x="2" y="4" width="20" height="16" rx="2"/>
-                            <path d="M22 10H18a2 2 0 000 4h4"/>
-                        </svg>
-                        <span>Portfolio</span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 18l6-6-6-6"/>
-                        </svg>
-                    </button>
-                    <button class="menu-item" onclick="showMyPredictions()">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-                            <path d="M14 2v6h6M16 13H8M16 17H8"/>
-                        </svg>
-                        <span>My Bets</span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 18l6-6-6-6"/>
-                        </svg>
-                    </button>
-                    <button class="menu-item" id="admin-menu-item" style="display: none;" onclick="showSection('admin')">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="3"/>
-                            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-                        </svg>
-                        <span>Admin Panel</span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 18l6-6-6-6"/>
-                        </svg>
-                    </button>
-                    <button class="menu-item" onclick="toggleTheme()">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="5"/>
-                            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
-                        </svg>
-                        <span>Theme</span>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 18l6-6-6-6"/>
-                        </svg>
-                    </button>
+                    <div class="profile-stats">
+                        <div class="stat-card">
+                            <span class="stat-value" id="profile-balance">0</span>
+                            <span class="stat-label">Баланс USDT</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="active-predictions">0</span>
+                            <span class="stat-label">Ставки</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="total-won">0</span>
+                            <span class="stat-label">Выигрыш</span>
+                        </div>
+                    </div>
+
+                    <div class="profile-menu">
+                        <button class="menu-item" onclick="showSection('wallet')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                                <path d="M22 10H18a2 2 0 000 4h4"/>
+                            </svg>
+                            <span>Кошелёк</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
+                        </button>
+                        <button class="menu-item" onclick="showMyPredictions()">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                                <path d="M14 2v6h6M16 13H8M16 17H8"/>
+                            </svg>
+                            <span>Мои прогнозы</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
+                        </button>
+                        <button class="menu-item" id="admin-menu-item" style="display: none;" onclick="showSection('admin')">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                            </svg>
+                            <span>Админ-панель</span>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </section>
 
             <!-- Admin Section -->
-            <section id="admin-section" class="section">
-                <div class="admin-header">
-                    <h2>Admin Panel</h2>
-                    <button class="icon-btn" onclick="loadAdminData()">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <section id="admin-section" class="section hidden">
+                <div class="section-header">
+                    <h2>Админ-панель</h2>
+                    <button class="refresh-btn" onclick="loadAdminData()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
                             <path d="M21 3v5h-5"/>
                         </svg>
                     </button>
                 </div>
 
-                <div class="admin-stats">
+                <div class="admin-stats" id="admin-stats">
                     <div class="admin-stat-card">
-                        <div class="admin-stat-value" id="admin-users">0</div>
-                        <div class="admin-stat-label">Users</div>
+                        <span class="admin-stat-value" id="stat-users">0</span>
+                        <span class="admin-stat-label">Пользователи</span>
                     </div>
                     <div class="admin-stat-card">
-                        <div class="admin-stat-value" id="admin-events">0</div>
-                        <div class="admin-stat-label">Events</div>
+                        <span class="admin-stat-value" id="stat-events">0</span>
+                        <span class="admin-stat-label">События</span>
                     </div>
                     <div class="admin-stat-card">
-                        <div class="admin-stat-value" id="admin-pending">0</div>
-                        <div class="admin-stat-label">Pending</div>
+                        <span class="admin-stat-value" id="stat-pending">0</span>
+                        <span class="admin-stat-label">Ожидают</span>
                     </div>
                 </div>
 
                 <div class="admin-actions">
-                    <button class="admin-btn" onclick="syncPolymarket()">
+                    <button class="admin-action-btn" onclick="syncPolymarket()">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 12a9 9 0 11-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/>
                             <path d="M21 3v5h-5"/>
                         </svg>
-                        Sync Markets
+                        Синхронизация
                     </button>
-                    <button class="admin-btn" onclick="showUsersList()">
+                    <button class="admin-action-btn" onclick="showUsersList()">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
                             <circle cx="9" cy="7" r="4"/>
                             <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
                             <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                         </svg>
-                        Users
+                        Пользователи
                     </button>
                 </div>
 
-                <div class="admin-section">
-                    <h3 class="section-title">Pending Withdrawals</h3>
-                    <div id="admin-withdrawals" class="withdrawals-list"></div>
+                <div class="admin-section-title">
+                    <h3>Ожидающие выводы</h3>
+                </div>
+                <div id="pending-withdrawals-container">
+                    <div class="empty-state-small">Нет ожидающих выводов</div>
                 </div>
             </section>
         </main>
 
-        <!-- Bottom Navigation -->
-        <nav class="bottom-nav">
-            <button class="nav-item active" data-section="markets" onclick="showSection('markets')">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                    <polyline points="9 22 9 12 15 12 15 22"/>
-                </svg>
-                <span>Markets</span>
-            </button>
-            <button class="nav-item" data-section="search" onclick="showSection('search')">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="11" cy="11" r="8"/>
-                    <path d="M21 21l-4.35-4.35"/>
-                </svg>
-                <span>Search</span>
-            </button>
-            <button class="nav-item" data-section="portfolio" onclick="showSection('portfolio')">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="2" y="4" width="20" height="16" rx="2"/>
-                    <path d="M22 10H18a2 2 0 000 4h4"/>
-                </svg>
-                <span>Portfolio</span>
-            </button>
-            <button class="nav-item" data-section="more" onclick="showSection('more')">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="1"/>
-                    <circle cx="12" cy="5" r="1"/>
-                    <circle cx="12" cy="19" r="1"/>
-                </svg>
-                <span>More</span>
-            </button>
-        </nav>
-
-        <!-- Market Detail Modal -->
-        <div id="market-modal" class="modal hidden">
-            <div class="modal-overlay" onclick="closeMarketModal()"></div>
-            <div class="modal-content market-modal-content">
+        <!-- Event Detail Modal -->
+        <div id="event-modal" class="modal hidden">
+            <div class="modal-content event-modal-content">
                 <div class="modal-header">
-                    <button class="modal-back" onclick="closeMarketModal()">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M19 12H5M12 19l-7-7 7-7"/>
-                        </svg>
-                    </button>
-                    <h3 id="market-modal-title">Market Details</h3>
-                    <button class="modal-close" onclick="closeMarketModal()">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <h3 id="event-modal-title">Детали события</h3>
+                    <button class="modal-close" onclick="closeEventModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M18 6L6 18M6 6l12 12"/>
                         </svg>
                     </button>
                 </div>
+                <div class="event-modal-body">
+                    <div class="event-chart" id="event-chart">
+                        <div class="event-chart-info" id="event-chart-info" style="display: none;">
+                            <div class="event-chart-price" id="chart-price">$0.00</div>
+                            <div class="event-chart-change" id="chart-change">
+                                <span>0.00%</span>
+                            </div>
+                        </div>
+                        <canvas id="event-chart-canvas"></canvas>
+                        <div class="event-chart-timeframe" id="event-chart-timeframe" style="display: none;">
+                            <button class="timeframe-btn" data-interval="1m">1м</button>
+                            <button class="timeframe-btn" data-interval="5m">5м</button>
+                            <button class="timeframe-btn active" data-interval="15m">15м</button>
+                            <button class="timeframe-btn" data-interval="1h">1ч</button>
+                            <button class="timeframe-btn" data-interval="4h">4ч</button>
+                            <button class="timeframe-btn" data-interval="1d">1д</button>
+                        </div>
+                    </div>
+                    <div class="event-options" id="event-options"></div>
 
-                <div class="modal-body">
-                    <!-- Market Title -->
-                    <div class="market-title" id="market-title"></div>
-
-                    <!-- Market End Date -->
-                    <div class="market-end-date" id="market-end-date"></div>
-
-                    <!-- Chart -->
-                    <div class="market-chart" id="market-chart">
-                        <canvas id="market-chart-canvas"></canvas>
+                    <!-- Price Prediction Betting -->
+                    <div class="price-prediction-section" style="margin-top: 20px;">
+                        <div class="prediction-header" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f2b03d" stroke-width="2">
+                                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                            </svg>
+                            <h4 style="font-size: 14px; font-weight: 600; color: var(--text-primary);">Прогноз на 5 минут</h4>
+                        </div>
+                        <div class="prediction-buttons" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <button class="prediction-btn up" onclick="openPredictionBet('up')">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <path d="M12 19V5M5 12l7-7 7 7"/>
+                                </svg>
+                                <span>ВВЕРХ</span>
+                                <span class="prediction-odds" id="up-odds">--x</span>
+                            </button>
+                            <button class="prediction-btn down" onclick="openPredictionBet('down')">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <path d="M12 5v14M5 12l7 7 7-7"/>
+                                </svg>
+                                <span>ВНИЗ</span>
+                                <span class="prediction-odds" id="down-odds">--x</span>
+                            </button>
+                        </div>
+                        <div class="prediction-info" style="margin-top: 10px; font-size: 11px; color: var(--text-muted); text-align: center;">
+                            Угадайте направление цены за 5 минут. Коэффициент зависит от волатильности рынка
+                        </div>
                     </div>
 
-                    <!-- Outcomes -->
-                    <div class="outcomes-container" id="outcomes-container"></div>
-
-                    <!-- Tabs -->
-                    <div class="tabs-container">
-                        <div class="tabs">
-                            <button class="tab active" data-tab="activity" onclick="switchTab('activity')">
-                                Activity
+                    <!-- Tabs Section (Polymarket Style) -->
+                    <div class="event-tabs-container" style="margin-top: 24px;">
+                        <div class="event-tabs">
+                            <button class="event-tab active" data-tab="comments" onclick="switchEventTab('comments')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                </svg>
+                                Комментарии
                             </button>
-                            <button class="tab" data-tab="comments" onclick="switchTab('comments')">
-                                Comments
+                            <button class="event-tab" data-tab="activity" onclick="switchEventTab('activity')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                                Активность
                             </button>
-                            <button class="tab" data-tab="orderbook" onclick="switchTab('orderbook')">
-                                Order Book
+                            <button class="event-tab" data-tab="positions" onclick="switchEventTab('positions')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                                </svg>
+                                Позиции
+                            </button>
+                            <button class="event-tab" data-tab="holdings" onclick="switchEventTab('holdings')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                    <path d="M2 17l10 5 10-5"/>
+                                    <path d="M2 12l10 5 10-5"/>
+                                </svg>
+                                Держатели
                             </button>
                         </div>
 
-                        <div class="tab-content">
-                            <div id="activity-tab" class="tab-panel active">
-                                <div id="activity-list"></div>
-                            </div>
-                            <div id="comments-tab" class="tab-panel">
-                                <div class="comment-input-container">
-                                    <textarea id="comment-input" placeholder="Add a comment..."></textarea>
-                                    <button class="send-btn" onclick="addComment()">
+                        <!-- Tab Content -->
+                        <div class="event-tab-content">
+                            <!-- Comments Tab -->
+                            <div id="comments-tab" class="tab-panel active">
+                                <div class="add-comment-box" style="margin-bottom: 16px;">
+                                    <textarea id="comment-input" placeholder="Добавить комментарий..." rows="2"></textarea>
+                                    <button class="add-comment-btn" onclick="addComment()">
                                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
                                         </svg>
+                                        Отправить
                                     </button>
                                 </div>
-                                <div id="comments-list"></div>
+                                <div class="comments-list" id="comments-list">
+                                    <div class="empty-comments">Нет комментариев. Будьте первыми!</div>
+                                </div>
                             </div>
-                            <div id="orderbook-tab" class="tab-panel">
-                                <div id="orderbook-list"></div>
+
+                            <!-- Activity Tab -->
+                            <div id="activity-tab" class="tab-panel">
+                                <div class="activity-list" id="activity-list">
+                                    <div class="loading-container">
+                                        <div class="spinner"></div>
+                                        <p>Загрузка активности...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Positions Tab -->
+                            <div id="positions-tab" class="tab-panel">
+                                <div class="positions-stats" id="positions-stats">
+                                    <div class="loading-container">
+                                        <div class="spinner"></div>
+                                        <p>Загрузка позиций...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Holdings Tab -->
+                            <div id="holdings-tab" class="tab-panel">
+                                <div class="holdings-list" id="holdings-list">
+                                    <div class="loading-container">
+                                        <div class="spinner"></div>
+                                        <p>Загрузка держателей...</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Create Event Modal -->
+        <div id="create-event-modal" class="modal hidden">
+            <div class="modal-content event-modal-content">
+                <div class="modal-header">
+                    <h3>Создать событие</h3>
+                    <button class="modal-close" onclick="closeCreateEventModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="event-modal-body">
+                    <div class="input-group">
+                        <label>Название</label>
+                        <input type="text" id="create-title" placeholder="Название события" maxlength="500">
+                    </div>
+                    <div class="input-group">
+                        <label>Описание</label>
+                        <textarea id="create-description" placeholder="Описание события" rows="3" maxlength="1000"></textarea>
+                    </div>
+                    <div class="input-group">
+                        <label>Категория</label>
+                        <select id="create-category" style="width: 100%; padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); color: var(--text-primary);">
+                            <option value="crypto">Крипто</option>
+                            <option value="politics">Политика</option>
+                            <option value="sports">Спорт</option>
+                            <option value="business">Бизнес</option>
+                            <option value="pop_culture">Культура</option>
+                            <option value="science">Наука</option>
+                            <option value="other">Другое</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>URL изображения</label>
+                        <input type="text" id="create-image" placeholder="https://...">
+                    </div>
+                    <div class="input-group">
+                        <label>Время окончания</label>
+                        <input type="datetime-local" id="create-end-time">
+                    </div>
+                    <div class="input-group">
+                        <label>Варианты (через запятую)</label>
+                        <input type="text" id="create-options" placeholder="Да, Нет">
+                    </div>
+                    <div class="balance-info" style="margin: 16px 0; padding: 12px; background: var(--accent-muted); border-radius: var(--radius-md); font-size: 13px;">
+                        <strong>Требование:</strong> Минимальный баланс $10 для создания события
+                    </div>
+                    <div class="modal-buttons">
+                        <button class="modal-btn cancel" onclick="closeCreateEventModal()">Отмена</button>
+                        <button class="modal-btn confirm" onclick="submitCreateEvent()">Создать</button>
                     </div>
                 </div>
             </div>
@@ -364,51 +488,225 @@
 
         <!-- Bet Modal -->
         <div id="bet-modal" class="modal hidden">
-            <div class="modal-overlay" onclick="closeBetModal()"></div>
-            <div class="modal-content bet-modal-content">
+            <div class="modal-content">
                 <div class="modal-header">
-                    <h3>Place Your Bet</h3>
-                    <button class="modal-close" onclick="closeBetModal()">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <h3 id="modal-title"></h3>
+                    <button class="modal-close" onclick="closeModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M18 6L6 18M6 6l12 12"/>
                         </svg>
                     </button>
                 </div>
-
-                <div class="modal-body">
-                    <div class="bet-outcome-info" id="bet-outcome-info"></div>
-
-                    <div class="bet-input-group">
-                        <label>Amount (USDT)</label>
-                        <div class="bet-input-wrapper">
-                            <input type="number" id="bet-amount" placeholder="0" min="1" step="0.1">
-                            <button class="max-btn" onclick="setMaxBet()">MAX</button>
-                        </div>
-                    </div>
-
-                    <div class="bet-details">
-                        <div class="bet-detail-row">
-                            <span>Shares</span>
-                            <span id="bet-shares">0</span>
-                        </div>
-                        <div class="bet-detail-row">
-                            <span>Price per share</span>
-                            <span id="bet-price">$0.00</span>
-                        </div>
-                        <div class="bet-detail-row total">
-                            <span>Potential Return</span>
-                            <span id="bet-return">$0.00</span>
-                        </div>
-                    </div>
-
-                    <button class="bet-submit" id="bet-submit-btn" onclick="placeBet()">
-                        Place Bet
-                    </button>
+                <p id="modal-option" class="modal-option"></p>
+                <div class="input-group">
+                    <label>Сумма (USDT)</label>
+                    <input type="number" id="points-input" placeholder="Введите сумму" min="1">
+                </div>
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel" onclick="closeModal()">Отмена</button>
+                    <button class="modal-btn confirm" onclick="confirmPrediction()">Сделать ставку</button>
                 </div>
             </div>
         </div>
+
+        <!-- Sell Modal -->
+        <div id="sell-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Продать позицию</h3>
+                    <button class="modal-close" onclick="closeSellModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="sell-details" style="margin-bottom: 20px;">
+                    <p class="modal-option" id="sell-option-text"></p>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 16px;">
+                        <div style="text-align: center; padding: 12px; background: var(--bg-elevated); border-radius: var(--radius-md);">
+                            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Акции</div>
+                            <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);" id="sell-shares-value">0</div>
+                        </div>
+                        <div style="text-align: center; padding: 12px; background: var(--bg-elevated); border-radius: var(--radius-md);">
+                            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Price</div>
+                            <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);" id="sell-price-value">0</div>
+                        </div>
+                        <div style="text-align: center; padding: 12px; background: var(--bg-elevated); border-radius: var(--radius-md);">
+                            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Стоимость</div>
+                            <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);" id="sell-current-value">0</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>Акции для продажи</label>
+                    <input type="number" id="sell-shares-input" placeholder="Введите акции" min="0.01" step="0.01" oninput="updateSellProceeds()">
+                </div>
+                <div class="balance-info" style="display: flex; justify-content: space-between; align-items: center;">
+                    <span>Вы получите:</span>
+                    <span style="font-size: 18px; font-weight: 700; color: var(--accent);" id="sell-proceeds-value">0.00 USDT</span>
+                </div>
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel" onclick="closeSellModal()">Отмена</button>
+                    <button class="modal-btn confirm" onclick="confirmSell()" style="background: linear-gradient(135deg, #ef4444, #b91c1c);">Продать</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Deposit Modal -->
+        <div id="deposit-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Пополнить USDT</h3>
+                    <button class="modal-close" onclick="closeDepositModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <p class="modal-description">Пополните счёт через CryptoBot. Платёж обрабатывается мгновенно.</p>
+                <div class="input-group">
+                    <label>Сумма (USDT)</label>
+                    <input type="number" id="deposit-amount" placeholder="Мин. 1 USDT" min="1" step="0.01">
+                </div>
+                <div class="quick-amounts">
+                    <button class="quick-amount-btn" onclick="setDepositAmount(10)">$10</button>
+                    <button class="quick-amount-btn" onclick="setDepositAmount(25)">$25</button>
+                    <button class="quick-amount-btn" onclick="setDepositAmount(50)">$50</button>
+                    <button class="quick-amount-btn" onclick="setDepositAmount(100)">$100</button>
+                </div>
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel" onclick="closeDepositModal()">Отмена</button>
+                    <button class="modal-btn confirm" onclick="processDeposit()">Продолжить</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Withdraw Modal -->
+        <div id="withdraw-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Вывод USDT</h3>
+                    <button class="modal-close" onclick="closeWithdrawModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <p class="modal-description">Выведите средства на свой криптокошелёк. Требуется подтверждение админа (обычно в течение 24ч).</p>
+                <div class="input-group">
+                    <label>Сумма (USDT)</label>
+                    <input type="number" id="withdraw-amount" placeholder="Мин. 5 USDT" min="5" step="0.01">
+                </div>
+                <div class="balance-info">
+                    Доступно: <span id="available-balance">0.00</span> USDT
+                </div>
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel" onclick="closeWithdrawModal()">Отмена</button>
+                    <button class="modal-btn confirm" onclick="processWithdraw()">Запросить вывод</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Action Modal -->
+        <div id="admin-action-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Обработка вывода</h3>
+                    <button class="modal-close" onclick="closeAdminActionModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="withdrawal-details" id="withdrawal-details"></div>
+                <div class="input-group">
+                    <label>Комментарий (необязательно)</label>
+                    <input type="text" id="admin-comment" placeholder="Добавить комментарий...">
+                </div>
+                <div class="modal-buttons">
+                    <button class="modal-btn reject" onclick="rejectWithdrawal()">Отклонить</button>
+                    <button class="modal-btn approve" onclick="approveWithdrawal()">Одобрить</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Users List Modal -->
+        <div id="users-list-modal" class="modal hidden">
+            <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-header">
+                    <h3>Пользователи платформы</h3>
+                    <button class="modal-close" onclick="closeUsersListModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div style="padding: 16px 0;">
+                    <div class="users-list" id="users-list-container">
+                        <div class="loading-container">
+                            <div class="spinner"></div>
+                            <p>Загрузка пользователей...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Balance Modal -->
+        <div id="add-balance-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Пополнение баланса пользователя</h3>
+                    <button class="modal-close" onclick="closeAddBalanceModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="input-group">
+                    <label>Пользователь</label>
+                    <input type="text" id="add-balance-username" readonly style="background: var(--bg-elevated);">
+                    <input type="hidden" id="add-balance-userid">
+                </div>
+                <div class="input-group">
+                    <label>Сумма пополнения (USDT)</label>
+                    <input type="number" id="add-balance-amount" placeholder="Мин. 1 USDT" min="1" step="0.01">
+                </div>
+                <div class="input-group">
+                    <label>Комментарий (необязательно)</label>
+                    <input type="text" id="add-balance-comment" placeholder="Например: Бонус за участие">
+                </div>
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel" onclick="closeAddBalanceModal()">Отмена</button>
+                    <button class="modal-btn confirm" onclick="processAddBalance()">Пополнить</button>
+                </div>
+            </div>
+        </div>
+
+        <nav class="bottom-nav">
+            <button class="nav-btn active" data-section="events" onclick="showSection('events')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                </svg>
+                <span>Рынки</span>
+            </button>
+            <button class="nav-btn" data-section="wallet" onclick="showSection('wallet')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="4" width="20" height="16" rx="2"/>
+                    <path d="M22 10H18a2 2 0 000 4h4"/>
+                </svg>
+                <span>Кошелёк</span>
+            </button>
+            <button class="nav-btn" data-section="profile" onclick="showSection('profile')">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                </svg>
+                <span>Профиль</span>
+            </button>
+        </nav>
     </div>
 
-    <script src="/frontend/script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>
