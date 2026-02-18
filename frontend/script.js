@@ -1923,10 +1923,6 @@ async function openEventModal(eventId) {
         loadCommentsForEvent(eventId);
 
         document.getElementById('event-modal-title').textContent = translateEventText(event.title);
-        document.getElementById('event-description').innerHTML = `
-            <strong>${tr('description')}:</strong><br>
-            ${translateEventText(event.description) || tr('no_description')}
-        `;
 
         // Render options
         const optionsContainer = document.getElementById('event-options');
@@ -1945,6 +1941,9 @@ async function openEventModal(eventId) {
 
         // Show modal
         document.getElementById('event-modal').classList.remove('hidden');
+
+        // Reset to comments tab
+        switchEventTab('comments');
 
         // Render chart only if has_chart is true
         if (event.has_chart) {
