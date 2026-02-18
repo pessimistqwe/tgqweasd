@@ -749,6 +749,14 @@ class UserResponse(BaseModel):
     stats: dict
 
 
+class AddBalanceRequest(BaseModel):
+    admin_telegram_id: int
+    user_telegram_id: int
+    amount: float
+    asset: str = "USDT"
+    comment: Optional[str] = None
+
+
 # ==================== API ENDPOINTS ====================
 @app.get("/", include_in_schema=False)
 async def root():
@@ -1919,6 +1927,67 @@ async def update_user_balance(
 
     db.commit()
     return {"success": True, "new_balance": user.balance_usdt}
+
+
+@app.get("/admin/users")
+async def get_all_users(admin_telegram_id: int, db: Session = Depends(get_db)):
+    """Get all users with their balances (admin only)"""
+    if admin_telegram_id != ADMIN_TELEGRAM_ID:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    users = db.query(User).order_by(User.balance_usdt.desc()).all()
+    
+    return {
+        "users": [
+            {
+                "telegram_id": u.telegram_id,
+                "username": u.username,
+                "balance_usdt": u.balance_usdt,
+                "balance_ton": u.balance_ton,
+                "created_at": u.created_at.isoformat() if u.created_at else None
+            }
+            for u in users
+        ]
+    }
+
+
+@app.post("/admin/add-balance")
+async def admin_add_balance(request: AddBalanceRequest, db: Session = Depends(get_db)):
+    """Add balance to user account (admin only)"""
+    if request.admin_telegram_id != ADMIN_TELEGRAM_ID:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    user = db.query(User).filter(User.telegram_id == request.user_telegram_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Add balance
+    old_balance = user.balance_usdt
+    user.balance_usdt += request.amount
+
+    # Create transaction record
+    transaction = Transaction(
+        user_id=user.id,
+        transaction_type="deposit",
+        amount=request.amount,
+        asset=request.asset,
+        status="completed",
+        description=f"Admin deposit: {request.comment}" if request.comment else "Admin deposit"
+    )
+    db.add(transaction)
+
+    # Log the action
+    print(f"Admin {request.admin_telegram_id} added {request.amount} {request.asset} to user {request.user_telegram_id}")
+    print(f"  Old balance: {old_balance}, New balance: {user.balance_usdt}")
+
+    db.commit()
+    
+    return {
+        "success": True,
+        "new_balance": user.balance_usdt,
+        "added_amount": request.amount
+    }
+
 
 @app.post("/events/create")
 async def create_event(request: CreateEventRequest, db: Session = Depends(get_db)):

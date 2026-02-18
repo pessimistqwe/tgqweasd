@@ -1683,9 +1683,114 @@ async function processWithdrawalAction(action) {
         showNotification(`Withdrawal ${action}ed successfully`, 'success');
         closeAdminActionModal();
         loadAdminData();
-        
+
     } catch (error) {
         showNotification(error.message || 'Error processing withdrawal', 'error');
+    }
+}
+
+// ==================== USERS MANAGEMENT ====================
+
+async function showUsersList() {
+    try {
+        const userId = getUserId();
+        const data = await apiRequest(`/admin/users?admin_telegram_id=${userId}`);
+        renderUsersList(data.users || []);
+        document.getElementById('users-list-modal').classList.remove('hidden');
+    } catch (error) {
+        console.error('Users list error:', error);
+        showNotification('Error loading users: ' + error.message, 'error');
+    }
+}
+
+function renderUsersList(users) {
+    const container = document.getElementById('users-list-container');
+
+    if (!users || users.length === 0) {
+        container.innerHTML = `<div class="empty-state-small">No users found</div>`;
+        return;
+    }
+
+    const html = users.map(user => {
+        const avatarLetter = (user.username || 'U').charAt(0).toUpperCase();
+        const balance = user.balance_usdt || 0;
+        
+        return `
+            <div class="user-card">
+                <div class="user-info">
+                    <div class="user-avatar-small">${avatarLetter}</div>
+                    <div class="user-details">
+                        <div class="user-name">${escapeHtml(user.username || 'User')}</div>
+                        <div class="user-id">ID: ${user.telegram_id}</div>
+                    </div>
+                </div>
+                <div class="user-balance">
+                    <div class="user-balance-value">$${balance.toFixed(2)}</div>
+                    <div class="user-balance-label">USDT</div>
+                </div>
+                <div class="user-actions">
+                    <button class="user-action-btn" onclick="openAddBalanceModal(${user.telegram_id}, '${escapeHtml(user.username || 'User')}', ${balance})">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 5v14M5 12h14"/>
+                        </svg>
+                        Add
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    container.innerHTML = html;
+}
+
+function closeUsersListModal() {
+    document.getElementById('users-list-modal').classList.add('hidden');
+}
+
+function openAddBalanceModal(telegramId, username, currentBalance) {
+    document.getElementById('add-balance-userid').value = telegramId;
+    document.getElementById('add-balance-username').value = `${username} (Balance: $${currentBalance.toFixed(2)})`;
+    document.getElementById('add-balance-amount').value = '';
+    document.getElementById('add-balance-comment').value = '';
+    document.getElementById('add-balance-modal').classList.remove('hidden');
+}
+
+function closeAddBalanceModal() {
+    document.getElementById('add-balance-modal').classList.add('hidden');
+    document.getElementById('add-balance-userid').value = '';
+    document.getElementById('add-balance-username').value = '';
+}
+
+async function processAddBalance() {
+    const telegramId = document.getElementById('add-balance-userid').value;
+    const amount = parseFloat(document.getElementById('add-balance-amount').value);
+    const comment = document.getElementById('add-balance-comment').value;
+
+    if (!telegramId || !amount || amount <= 0) {
+        showNotification('Please enter a valid amount', 'error');
+        return;
+    }
+
+    try {
+        await apiRequest('/admin/add-balance', {
+            method: 'POST',
+            body: JSON.stringify({
+                admin_telegram_id: getUserId(),
+                user_telegram_id: parseInt(telegramId),
+                amount: amount,
+                asset: 'USDT',
+                comment: comment || null
+            })
+        });
+
+        showNotification(`Successfully added $${amount.toFixed(2)} to user balance`, 'success');
+        closeAddBalanceModal();
+        
+        // Refresh users list if modal is still open
+        showUsersList();
+        
+    } catch (error) {
+        showNotification(error.message || 'Error adding balance', 'error');
     }
 }
 
@@ -2231,24 +2336,19 @@ function connectBinanceWebSocket(symbol, labels, prices) {
     const streamName = `${symbol.toLowerCase()}@trade`;
     binanceWebSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
 
-    // FIXED scaling - calculate once from historical data
-    const historicalMin = prices.length > 0 ? Math.min(...prices) : Infinity;
-    const historicalMax = prices.length > 0 ? Math.max(...prices) : -Infinity;
-    const range = historicalMax - historicalMin;
-    const pricePadding = 0.15; // 15% padding for stability
+    // FIXED scaling - center the price in the middle of the chart
+    const currentPrice = prices.length > 0 ? prices[prices.length - 1] : 0;
     
-    // Set fixed min/max with padding - will NOT change during chart lifetime
-    let fixedMinPrice = historicalMin - (range * pricePadding);
-    let fixedMaxPrice = historicalMax + (range * pricePadding);
+    // Set fixed percentage range around current price (±10% for stability)
+    const priceRange = 0.10; // 10% range on each side
+    let fixedMinPrice = currentPrice * (1 - priceRange);
+    let fixedMaxPrice = currentPrice * (1 + priceRange);
 
-    // Ensure reasonable bounds (minimum 5% range for very stable prices)
-    const minRange = historicalMin * 0.05;
-    if (range < minRange) {
-        fixedMinPrice = historicalMin * 0.975;
-        fixedMaxPrice = historicalMax * 1.025;
+    // Ensure min price is positive
+    if (fixedMinPrice <= 0) {
+        fixedMinPrice = currentPrice * 0.5;
+        fixedMaxPrice = currentPrice * 1.5;
     }
-    if (fixedMinPrice <= 0) fixedMinPrice = historicalMin * 0.9;
-    if (fixedMaxPrice <= fixedMinPrice) fixedMaxPrice = fixedMinPrice * 1.1;
 
     // Apply fixed scale immediately
     if (eventChart) {

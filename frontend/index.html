@@ -266,6 +266,15 @@
                         </svg>
                         Синхронизация
                     </button>
+                    <button class="admin-action-btn" onclick="showUsersList()">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                        Пользователи
+                    </button>
                 </div>
 
                 <div class="admin-section-title">
@@ -523,6 +532,59 @@
                 <div class="modal-buttons">
                     <button class="modal-btn reject" onclick="rejectWithdrawal()">Отклонить</button>
                     <button class="modal-btn approve" onclick="approveWithdrawal()">Одобрить</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Users List Modal -->
+        <div id="users-list-modal" class="modal hidden">
+            <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-header">
+                    <h3>Пользователи платформы</h3>
+                    <button class="modal-close" onclick="closeUsersListModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div style="padding: 16px 0;">
+                    <div class="users-list" id="users-list-container">
+                        <div class="loading-container">
+                            <div class="spinner"></div>
+                            <p>Загрузка пользователей...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Balance Modal -->
+        <div id="add-balance-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Пополнение баланса пользователя</h3>
+                    <button class="modal-close" onclick="closeAddBalanceModal()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <div class="input-group">
+                    <label>Пользователь</label>
+                    <input type="text" id="add-balance-username" readonly style="background: var(--bg-elevated);">
+                    <input type="hidden" id="add-balance-userid">
+                </div>
+                <div class="input-group">
+                    <label>Сумма пополнения (USDT)</label>
+                    <input type="number" id="add-balance-amount" placeholder="Мин. 1 USDT" min="1" step="0.01">
+                </div>
+                <div class="input-group">
+                    <label>Комментарий (необязательно)</label>
+                    <input type="text" id="add-balance-comment" placeholder="Например: Бонус за участие">
+                </div>
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel" onclick="closeAddBalanceModal()">Отмена</button>
+                    <button class="modal-btn confirm" onclick="processAddBalance()">Пополнить</button>
                 </div>
             </div>
         </div>
