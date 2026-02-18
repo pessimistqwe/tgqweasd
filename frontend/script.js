@@ -758,7 +758,27 @@ let backendUrl = configuredBackendUrl
     || (window.location.hostname === 'localhost'
         ? 'http://localhost:8000'
         : `${window.location.origin}/api`);
-    
+
+// Crypto symbols mapping for Binance
+const CRYPTO_SYMBOLS = {
+    'bitcoin': 'BTCUSDT',
+    'btc': 'BTCUSDT',
+    'ethereum': 'ETHUSDT',
+    'eth': 'ETHUSDT',
+    'solana': 'SOLUSDT',
+    'sol': 'SOLUSDT',
+    'ton': 'TONUSDT',
+    'bnb': 'BNBUSDT',
+    'xrp': 'XRPUSDT',
+    'cardano': 'ADAUSDT',
+    'dogecoin': 'DOGEUSDT',
+    'doge': 'DOGEUSDT',
+    'polkadot': 'DOTUSDT',
+    'dot': 'DOTUSDT',
+    'avalanche': 'AVAXUSDT',
+    'avax': 'AVAXUSDT',
+};
+
 let currentEventId = null;
 let currentOptionIndex = null;
 let currentCategory = 'all';
@@ -1772,6 +1792,12 @@ function closeEventModal() {
         clearInterval(chartUpdateInterval);
         chartUpdateInterval = null;
     }
+    
+    // Close Binance WebSocket
+    if (binanceWebSocket) {
+        binanceWebSocket.close();
+        binanceWebSocket = null;
+    }
 }
 
 // Toggle description visibility
@@ -2021,112 +2047,66 @@ async function renderBetHistory(eventId) {
     }
 }
 
-// Render price chart for crypto/business/science events
+// Render price chart for crypto/business/science events with REAL Binance data
+let binanceWebSocket = null; // WebSocket для реальных данных
+
 async function renderPriceChart(eventId, options) {
     const canvas = document.getElementById('event-chart-canvas');
     if (!canvas) return;
 
-    // Try to fetch real price history from backend
-    let priceHistory = null;
-    try {
-        const response = await fetch(`${backendUrl}/events/${eventId}/price-history`);
-        if (response.ok) {
-            priceHistory = await response.json();
-            console.log(`Price history loaded: ${priceHistory.length} points for event ${eventId}`);
-        }
-    } catch (e) {
-        console.log('Price history not available, using current probabilities');
+    // Close existing WebSocket
+    if (binanceWebSocket) {
+        binanceWebSocket.close();
+        binanceWebSocket = null;
     }
 
-    const labels = [];
-    const datasets = [];
+    // Get event to determine crypto symbol
+    let event = null;
+    try {
+        event = await apiRequest(`/events/${eventId}`);
+    } catch (e) {
+        console.error('Error loading event:', e);
+        return;
+    }
 
-    // Polymarket colors: green for Yes/Up
+    // Try to find crypto symbol in event title/description
+    let binanceSymbol = null;
+    const eventText = (event.title + ' ' + (event.description || '')).toLowerCase();
+    
+    for (const [key, symbol] of Object.entries(CRYPTO_SYMBOLS)) {
+        if (eventText.includes(key)) {
+            binanceSymbol = symbol;
+            break;
+        }
+    }
+
+    if (!binanceSymbol) {
+        // No crypto found - use simulated data
+        renderSimulatedChart(canvas, options);
+        return;
+    }
+
+    // Load real-time data from Binance via WebSocket
+    renderRealtimeChart(canvas, binanceSymbol, options, eventId);
+}
+
+// Render chart with REAL Binance WebSocket data
+function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
+    const ctx = canvas.getContext('2d');
     const primaryColor = '#22c55e';
+    
+    // Initialize chart with empty data
+    const labels = [];
+    const prices = [];
+    const maxPoints = 50;
 
-    if (priceHistory && priceHistory.length > 0) {
-        // Use real price history from database
-        const timestampsSet = new Set(priceHistory.map(p => p.timestamp));
-        const timestamps = Array.from(timestampsSet);
-        timestamps.sort();
-
-        // Show last 48-168 data points depending on data density
-        const maxPoints = priceHistory.length > 100 ? 168 : 48;
-        const displayData = timestamps.slice(-maxPoints);
-
-        displayData.forEach(ts => {
-            const date = new Date(ts);
-            const now = new Date();
-            if (date.toDateString() === now.toDateString()) {
-                // Russian 24-hour format or English 12-hour
-                labels.push(date.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: !isRussian
-                }));
-            } else {
-                labels.push(date.toLocaleDateString(isRussian ? 'ru-RU' : 'en-US', {
-                    month: 'short',
-                    day: 'numeric'
-                }));
-            }
-        });
-
-        // SINGLE LINE: Use only the first (primary) option - Yes/Up
-        if (options.length > 0) {
-            const opt = options[0];
-            const data = displayData.map(ts => {
-                const point = priceHistory.find(p =>
-                    p.option_index === opt.index &&
-                    new Date(p.timestamp).getTime() === new Date(ts).getTime()
-                );
-                return point ? point.price : opt.probability / 100;
-            });
-
-            datasets.push({
-                label: translateEventText(opt.text),
-                data: data,
-                borderColor: primaryColor,
-                borderWidth: 3,
-                fill: true,
-                tension: 0.4,
-                pointRadius: 0,
-                pointHoverRadius: 6,
-                pointHoverBackgroundColor: primaryColor,
-                pointHoverBorderColor: '#fff',
-                pointHoverBorderWidth: 2,
-            });
-        }
-    } else {
-        // Fallback: generate simulated history based on current probabilities
-        const now = Date.now();
-        const historyPoints = 24;
-
-        for (let i = historyPoints; i >= 0; i--) {
-            const time = new Date(now - i * 3600000);
-            // Russian 24-hour format or English 12-hour
-            labels.push(time.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: !isRussian
-            }));
-        }
-
-        // SINGLE LINE: Use only the first (primary) option - Yes/Up
-        if (options.length > 0) {
-            const opt = options[0];
-            const prices = [];
-            let basePrice = opt.probability / 100;
-
-            for (let i = 0; i <= historyPoints; i++) {
-                const randomChange = (Math.random() - 0.5) * 0.03;
-                let price = basePrice + randomChange;
-                price = Math.max(0.01, Math.min(0.99, price));
-                prices.push(price);
-            }
-
-            datasets.push({
-                label: translateEventText(opt.text),
+    // Create initial chart
+    eventChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: binanceSymbol,
                 data: prices,
                 borderColor: primaryColor,
                 borderWidth: 3,
@@ -2137,30 +2117,17 @@ async function renderPriceChart(eventId, options) {
                 pointHoverBackgroundColor: primaryColor,
                 pointHoverBorderColor: '#fff',
                 pointHoverBorderWidth: 2
-            });
-        }
-    }
-
-    // Create chart with Polymarket-like styling
-    const ctx = canvas.getContext('2d');
-    eventChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: datasets
+            }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             interaction: {
                 intersect: false,
-                mode: 'index',
-                intersect: false
+                mode: 'index'
             },
             plugins: {
-                legend: {
-                    display: false
-                },
+                legend: { display: false },
                 tooltip: {
                     backgroundColor: 'rgba(15, 15, 18, 0.98)',
                     titleColor: '#fff',
@@ -2169,131 +2136,187 @@ async function renderPriceChart(eventId, options) {
                     borderWidth: 1,
                     padding: 14,
                     displayColors: false,
-                    bodyFont: { size: 13, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
-                    titleFont: { size: 14, weight: '600', family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
-                    cornerRadius: 12,
-                    titleSpacing: 8,
-                    bodySpacing: 8,
                     callbacks: {
-                        title: function(context) {
-                            return context[0].label;
-                        },
-                        label: function(context) {
-                            return 'Цена: ' + (context.parsed.y * 100).toFixed(1) + '%';
-                        }
+                        title: (ctx) => new Date(ctx[0].label).toLocaleTimeString(),
+                        label: (ctx) => `$${ctx.parsed.y.toFixed(2)}`
                     }
                 }
             },
             scales: {
                 x: {
                     display: true,
-                    grid: {
-                        display: false
-                    },
+                    grid: { display: false },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 11, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
                         maxTicksLimit: 6,
                         maxRotation: 0,
-                        autoSkip: true,
-                        padding: 8
+                        autoSkip: true
                     }
                 },
                 y: {
                     display: true,
-                    min: 0,
-                    max: 1,
-                    grid: {
-                        color: 'rgba(255,255,255,0.03)',
-                        drawBorder: false,
-                        drawTicks: true,
-                        tickLength: 8
-                    },
+                    grid: { color: 'rgba(255,255,255,0.03)' },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 11, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
-                        callback: function(value) {
-                            return (value * 100) + '%';
-                        },
-                        maxTicksLimit: 5,
-                        padding: 8
+                        callback: (value) => `$${value.toFixed(2)}`
                     }
                 }
             }
         }
     });
 
-    // Apply gradient fill after chart creation
+    // Apply gradient
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, 'rgba(34, 197, 94, 0.5)');   // Green top (60% opacity)
-    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.2)'); // Middle transition
-    gradient.addColorStop(1, 'rgba(239, 68, 68, 0.3)');   // Red bottom (50% opacity)
+    gradient.addColorStop(0, 'rgba(34, 197, 94, 0.5)');
+    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.2)');
+    gradient.addColorStop(1, 'rgba(239, 68, 68, 0.3)');
+    eventChart.data.datasets[0].backgroundColor = gradient;
 
-    if (eventChart.data.datasets.length > 0) {
-        eventChart.data.datasets[0].backgroundColor = gradient;
-    }
+    // Fetch historical data first (REST API)
+    fetch(`https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=1m&limit=${maxPoints}`)
+        .then(res => res.json())
+        .then(data => {
+            data.forEach(candle => {
+                const timestamp = candle[0];
+                const close = parseFloat(candle[4]);
+                const time = new Date(timestamp);
+                labels.push(time.toISOString());
+                prices.push(close);
+            });
+            eventChart.update();
 
-    // Auto-update chart every 10 seconds when modal is open
-    const currentEventId = eventId;
-    chartUpdateInterval = setInterval(async () => {
-        try {
-            const response = await fetch(`${backendUrl}/events/${currentEventId}/price-history`);
-            if (response.ok) {
-                const newPriceHistory = await response.json();
-                if (newPriceHistory && newPriceHistory.length > 0) {
-                    updateChartData(newPriceHistory, options);
-                }
-            }
-        } catch (e) {
-            console.log('Chart update failed, continuing with existing data');
-        }
-    }, 10000); // Update every 10 seconds
+            // Now connect WebSocket for real-time updates
+            connectBinanceWebSocket(binanceSymbol, labels, prices);
+        })
+        .catch(err => {
+            console.error('Error fetching historical data:', err);
+            // Fallback to WebSocket only
+            connectBinanceWebSocket(binanceSymbol, labels, prices);
+        });
 }
 
-// Update chart data with new price history
-function updateChartData(priceHistory, options) {
-    if (!eventChart || !priceHistory || priceHistory.length === 0) return;
+// Connect to Binance WebSocket for real-time price updates
+function connectBinanceWebSocket(symbol, labels, prices) {
+    const streamName = `${symbol.toLowerCase()}@trade`;
+    binanceWebSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
 
-    const timestampsSet = new Set(priceHistory.map(p => p.timestamp));
-    const timestamps = Array.from(timestampsSet);
-    timestamps.sort();
+    binanceWebSocket.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        const price = parseFloat(data.p);
+        const timestamp = new Date(data.T);
 
-    const maxPoints = 48;
-    const displayData = timestamps.slice(-maxPoints);
+        // Add new data point
+        labels.push(timestamp.toISOString());
+        prices.push(price);
+
+        // Keep only last N points
+        if (labels.length > 50) {
+            labels.shift();
+            prices.shift();
+        }
+
+        // Update chart
+        if (eventChart) {
+            eventChart.data.labels = labels;
+            eventChart.data.datasets[0].data = prices;
+            eventChart.update('none'); // Smooth update
+        }
+    };
+
+    binanceWebSocket.onerror = function(err) {
+        console.error('WebSocket error:', err);
+    };
+
+    binanceWebSocket.onclose = function() {
+        console.log('WebSocket closed');
+        // Reconnect after 5 seconds
+        setTimeout(() => {
+            if (binanceWebSocket && binanceWebSocket.readyState === WebSocket.CLOSED) {
+                connectBinanceWebSocket(symbol, labels, prices);
+            }
+        }, 5000);
+    };
+}
+
+// Fallback: simulated chart for non-crypto events
+function renderSimulatedChart(canvas, options) {
+    const ctx = canvas.getContext('2d');
+    const primaryColor = '#22c55e';
     const labels = [];
+    const prices = [];
+    const historyPoints = 50;
+    const now = Date.now();
 
-    displayData.forEach(ts => {
-        const date = new Date(ts);
-        const now = new Date();
-        if (date.toDateString() === now.toDateString()) {
-            labels.push(date.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: !isRussian
-            }));
-        } else {
-            labels.push(date.toLocaleDateString(isRussian ? 'ru-RU' : 'en-US', {
-                month: 'short',
-                day: 'numeric'
-            }));
+    // Generate time labels
+    for (let i = historyPoints; i >= 0; i--) {
+        const time = new Date(now - i * 60000); // 1 minute intervals
+        labels.push(time.toISOString());
+    }
+
+    // Generate simulated prices based on option probability
+    if (options.length > 0) {
+        const opt = options[0];
+        let basePrice = opt.probability / 100;
+        
+        for (let i = 0; i <= historyPoints; i++) {
+            const randomChange = (Math.random() - 0.5) * 0.02;
+            let price = basePrice + randomChange;
+            price = Math.max(0.01, Math.min(0.99, price));
+            prices.push(price);
+        }
+    }
+
+    // Create chart
+    eventChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: options.length > 0 ? translateEventText(options[0].text) : 'Price',
+                data: prices,
+                borderColor: primaryColor,
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0,
+                pointHoverRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: 'rgba(15, 15, 18, 0.98)',
+                    titleColor: '#fff',
+                    bodyColor: '#a1a1aa',
+                    callbacks: {
+                        label: (ctx) => (ctx.parsed.y * 100).toFixed(1) + '%'
+                    }
+                }
+            },
+            scales: {
+                x: { display: false },
+                y: {
+                    min: 0,
+                    max: 1,
+                    grid: { color: 'rgba(255,255,255,0.03)' },
+                    ticks: {
+                        color: '#71717a',
+                        callback: (value) => (value * 100) + '%'
+                    }
+                }
+            }
         }
     });
 
-    // Update first dataset with new data
-    if (options.length > 0 && eventChart.data.datasets.length > 0) {
-        const opt = options[0];
-        const data = displayData.map(ts => {
-            const point = priceHistory.find(p =>
-                p.option_index === opt.index &&
-                new Date(p.timestamp).getTime() === new Date(ts).getTime()
-            );
-            return point ? point.price : opt.probability / 100;
-        });
-
-        eventChart.data.labels = labels;
-        eventChart.data.datasets[0].data = data;
-        eventChart.update('none'); // Smooth update without full re-render
-    }
+    // Apply gradient
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, 'rgba(34, 197, 94, 0.5)');
+    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.2)');
+    gradient.addColorStop(1, 'rgba(239, 68, 68, 0.3)');
+    eventChart.data.datasets[0].backgroundColor = gradient;
 }
 
 // ==================== UTILITY FUNCTIONS ====================

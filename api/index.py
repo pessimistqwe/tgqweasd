@@ -35,6 +35,30 @@ app = FastAPI(title="EventPredict API")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 
+# Binance API для реальных цен криптовалют
+BINANCE_WS_URL = "wss://stream.binance.com:9443/ws"
+BINANCE_API_URL = "https://api.binance.com/api/v3"
+
+# Mapping событий на Binance символы
+CRYPTO_SYMBOLS = {
+    'bitcoin': 'BTCUSDT',
+    'btc': 'BTCUSDT',
+    'ethereum': 'ETHUSDT',
+    'eth': 'ETHUSDT',
+    'solana': 'SOLUSDT',
+    'sol': 'SOLUSDT',
+    'ton': 'TONUSDT',
+    'bnb': 'BNBUSDT',
+    'xrp': 'XRPUSDT',
+    'cardano': 'ADAUSDT',
+    'dogecoin': 'DOGEUSDT',
+    'doge': 'DOGEUSDT',
+    'polkadot': 'DOTUSDT',
+    'dot': 'DOTUSDT',
+    'avalanche': 'AVAXUSDT',
+    'avax': 'AVAXUSDT',
+}
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -947,6 +971,77 @@ async def get_bet_history(event_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"Error loading bet history: {e}")
         return []
+
+@app.get("/market/price/{symbol}")
+async def get_crypto_price(symbol: str):
+    """Get real-time crypto price from Binance"""
+    try:
+        symbol_upper = symbol.upper()
+        if not symbol_upper.endswith('USDT'):
+            symbol_upper = symbol_upper + 'USDT'
+        
+        response = requests.get(
+            f"{BINANCE_API_URL}/ticker/price",
+            params={"symbol": symbol_upper},
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            price = float(data.get('price', 0))
+            return {
+                "symbol": symbol_upper,
+                "price": price,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        else:
+            # Fallback: try alternative endpoint
+            response = requests.get(
+                f"{BINANCE_API_URL}/ticker/24hr",
+                params={"symbol": symbol_upper},
+                timeout=5
+            )
+            if response.status_code == 200:
+                data = response.json()
+                price = float(data.get('lastPrice', 0))
+                return {
+                    "symbol": symbol_upper,
+                    "price": price,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+        
+        return {"symbol": symbol_upper, "price": 0, "error": "Not found"}
+    except Exception as e:
+        print(f"Error fetching price: {e}")
+        return {"symbol": symbol, "price": 0, "error": str(e)}
+
+@app.get("/market/prices")
+async def get_crypto_prices():
+    """Get real-time prices for multiple cryptocurrencies"""
+    try:
+        symbols = list(set(CRYPTO_SYMBOLS.values()))
+        prices = {}
+        
+        for symbol in symbols:
+            try:
+                response = requests.get(
+                    f"{BINANCE_API_URL}/ticker/price",
+                    params={"symbol": symbol},
+                    timeout=3
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    prices[symbol] = float(data.get('price', 0))
+            except:
+                pass
+        
+        return {
+            "prices": prices,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        print(f"Error fetching prices: {e}")
+        return {"prices": {}, "error": str(e)}
 
 
 # ==================== COMMENTS API ====================
