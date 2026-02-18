@@ -1,34 +1,29 @@
-# Multi-stage build для минимального размера образа
-FROM python:3.12-alpine AS builder
-
-WORKDIR /build
-
-# Устанавливаем только build-зависимости
-RUN apk add --no-cache gcc musl-dev libffi-dev
-
-# Копируем и устанавливаем зависимости
-COPY api/requirements-minimal.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir --user -r /tmp/requirements.txt
-
-# Финальный образ - только runtime
+# Simple Dockerfile for Zeabur deployment
 FROM python:3.12-alpine
 
 WORKDIR /app
 
-# Копируем установленные пакеты из builder
-COPY --from=builder /root/.local /root/.local
+# Install system dependencies
+RUN apk add --no-cache gcc musl-dev libffi-dev
 
-# Убеждаемся что локальные пакеты в PATH
-ENV PATH=/root/.local/bin:$PATH \
-    PYTHONDONTWRITEBYTECODE=1 \
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONIOENCODING=utf-8 \
     PORT=8000
 
-# Копируем только нужные файлы
+# Copy requirements and install dependencies
+COPY api/requirements-minimal.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Copy application code
 COPY api /app/api
 COPY frontend /app/frontend
 
 EXPOSE 8000
 
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
+
+# Start the application
 CMD ["sh", "-c", "uvicorn index:app --host 0.0.0.0 --port ${PORT:-8000} --app-dir api"]
