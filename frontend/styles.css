@@ -1232,10 +1232,13 @@ body::before {
 .event-modal-content {
     max-height: 90vh;
     overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
 }
 
 .event-modal-body {
     margin-top: 20px;
+    overflow-x: hidden;
 }
 
 .event-chart {
@@ -1292,15 +1295,17 @@ body::before {
 }
 
 .timeframe-btn {
-    padding: 6px 12px;
+    padding: 5px 8px;
     background: rgba(242, 176, 61, 0.15);
     border: 1px solid rgba(242, 176, 61, 0.3);
     border-radius: 6px;
     color: #f2b03d;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .timeframe-btn:hover {
@@ -1471,30 +1476,40 @@ body::before {
 /* Event Tabs (Polymarket Style) */
 .event-tabs-container {
     margin-top: 24px;
+    overflow: hidden;
 }
 
 .event-tabs {
     display: flex;
-    gap: 8px;
+    gap: 4px;
     border-bottom: 1px solid var(--border);
     padding-bottom: 0;
     margin-bottom: 16px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.event-tabs::-webkit-scrollbar {
+    display: none;
 }
 
 .event-tab {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 10px 12px;
+    gap: 4px;
+    padding: 8px 10px;
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .event-tab:hover {
@@ -1509,8 +1524,9 @@ body::before {
 }
 
 .event-tab svg {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
 }
 
 .tab-panel {
