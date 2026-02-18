@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -20,12 +20,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 try:
     from .models import (
         get_db, User, Event, EventOption, UserPrediction,
-        Transaction, TransactionType, TransactionStatus, PriceHistory
+        Transaction, TransactionType, TransactionStatus, PriceHistory,
+        EventComment
     )
 except ImportError:
     from models import (
         get_db, User, Event, EventOption, UserPrediction,
-        Transaction, TransactionType, TransactionStatus, PriceHistory
+        Transaction, TransactionType, TransactionStatus, PriceHistory,
+        EventComment
     )
 
 app = FastAPI(title="EventPredict API")
@@ -910,44 +912,276 @@ async def get_price_history(event_id: int, db: Session = Depends(get_db)):
         print(f"Error loading price history: {e}")
         return []
 
+
+# ==================== COMMENTS API ====================
+
+# Pydantic модели для комментариев
+class CommentCreate(BaseModel):
+    comment_text: str
+    telegram_id: int
+    username: Optional[str] = None
+
+
+class CommentResponse(BaseModel):
+    id: int
+    event_id: int
+    telegram_id: int
+    username: Optional[str]
+    comment_text: str
+    created_at: str
+    is_deleted: bool
+    is_hidden: bool
+
+
+# Стоп-слова для модерации (оскорбления)
+PROFANITY_LIST = [
+    "идиот", "дурак", "дебил", "кретин", "придурок", "тупой", "глупый",
+    "сука", "блядь", "нахуй", "пиздец", "хуй", "пизда", "ебать", "мудак",
+    "scum", "bitch", "fuck", "shit", "asshole", "damn", "bastard",
+    "stupid", "idiot", "retard", "moron"
+]
+
+# URL паттерны для блокировки ссылок
+import re
+URL_PATTERN = re.compile(r'https?://\S+|www\.\S+', re.IGNORECASE)
+
+
+def check_comment_content(text: str) -> dict:
+    """
+    Проверка комментария на запрещённый контент
+    
+    Returns:
+        dict: {"valid": bool, "reason": str}
+    """
+    # Проверка длины
+    if len(text) > 1000:
+        return {"valid": False, "reason": "Comment too long (max 1000 characters)"}
+    
+    # Проверка на ссылки
+    if URL_PATTERN.search(text):
+        return {"valid": False, "reason": "Links are not allowed"}
+    
+    # Проверка на оскорбления
+    text_lower = text.lower()
+    for word in PROFANITY_LIST:
+        if word.lower() in text_lower:
+            return {"valid": False, "reason": "Inappropriate language detected"}
+    
+    return {"valid": True, "reason": ""}
+
+
+# Rate limiting для комментариев (простая реализация в памяти)
+comment_rate_limit = {}  # telegram_id -> list of timestamps
+
+
+def check_rate_limit(telegram_id: int, max_per_minute: int = 3) -> bool:
+    """Проверка rate limiting для комментариев"""
+    import time
+    current_time = time.time()
+    
+    if telegram_id not in comment_rate_limit:
+        comment_rate_limit[telegram_id] = []
+    
+    # Удаляем старые записи (старше 1 минуты)
+    comment_rate_limit[telegram_id] = [
+        ts for ts in comment_rate_limit[telegram_id]
+        if current_time - ts < 60
+    ]
+    
+    # Проверяем лимит
+    if len(comment_rate_limit[telegram_id]) >= max_per_minute:
+        return False
+    
+    # Добавляем текущую запись
+    comment_rate_limit[telegram_id].append(current_time)
+    return True
+
+
+@app.get("/events/{event_id}/comments")
+async def get_event_comments(
+    event_id: int,
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """Получить комментарии к событию"""
+    try:
+        # Проверяем существование события
+        event = db.query(Event).filter(Event.id == event_id).first()
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        
+        # Получаем комментарии (только не скрытые и не удалённые)
+        comments = db.query(EventComment).filter(
+            EventComment.event_id == event_id,
+            EventComment.is_deleted == False,
+            EventComment.is_hidden == False
+        ).order_by(EventComment.created_at.desc()).limit(limit).all()
+        
+        return [
+            {
+                "id": c.id,
+                "event_id": c.event_id,
+                "telegram_id": c.telegram_id,
+                "username": c.username,
+                "comment_text": c.comment_text,
+                "created_at": c.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "is_deleted": c.is_deleted,
+                "is_hidden": c.is_hidden
+            }
+            for c in comments
+        ]
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting comments: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/events/{event_id}/comments")
+async def create_event_comment(
+    event_id: int,
+    comment_data: CommentCreate,
+    db: Session = Depends(get_db)
+):
+    """Добавить комментарий к событию"""
+    try:
+        # Проверяем существование события
+        event = db.query(Event).filter(Event.id == event_id).first()
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        
+        # Проверка rate limiting
+        if not check_rate_limit(comment_data.telegram_id):
+            raise HTTPException(
+                status_code=429,
+                detail="Too many comments. Please wait a minute."
+            )
+        
+        # Проверка контента
+        content_check = check_comment_content(comment_data.comment_text)
+        if not content_check["valid"]:
+            raise HTTPException(
+                status_code=400,
+                detail=content_check["reason"]
+            )
+        
+        # Создаём комментарий
+        new_comment = EventComment(
+            event_id=event_id,
+            telegram_id=comment_data.telegram_id,
+            username=comment_data.username,
+            comment_text=comment_data.comment_text,
+            is_hidden=False  # Публикуется автоматически если контент чистый
+        )
+        
+        db.add(new_comment)
+        db.commit()
+        db.refresh(new_comment)
+        
+        return {
+            "success": True,
+            "comment": {
+                "id": new_comment.id,
+                "event_id": new_comment.event_id,
+                "telegram_id": new_comment.telegram_id,
+                "username": new_comment.username,
+                "comment_text": new_comment.comment_text,
+                "created_at": new_comment.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                "is_deleted": new_comment.is_deleted,
+                "is_hidden": new_comment.is_hidden
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating comment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/admin/comments/{comment_id}")
+async def delete_comment(
+    comment_id: int,
+    telegram_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    """Удалить комментарий (только для администраторов)"""
+    try:
+        # Проверяем права администратора
+        if telegram_id != ADMIN_TELEGRAM_ID:
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Находим комментарий
+        comment = db.query(EventComment).filter(EventComment.id == comment_id).first()
+        if not comment:
+            raise HTTPException(status_code=404, detail="Comment not found")
+        
+        # Мягкое удаление
+        comment.is_deleted = True
+        db.commit()
+        
+        return {"success": True, "message": "Comment deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting comment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/proxy/image")
-async def proxy_image(url: str):
-    """Проксирует изображение для обхода CORS"""
+async def proxy_image(url: str, telegram_webapp: Optional[str] = Query(None, alias="telegram_webapp")):
+    """
+    Проксирует изображение для обхода CORS
+    Специальный режим для Telegram WebApp с правильными заголовками
+    """
     try:
         if not url:
             raise HTTPException(status_code=400, detail="URL required")
-        
+
         # Проверяем что URL с Polymarket
         if not url.startswith('https://gamma-api.polymarket.com'):
             # Разрешаем только Polymarket images
             if not any(domain in url for domain in ['polymarket.com', 'polygon.com']):
                 raise HTTPException(status_code=400, detail="Only Polymarket images allowed")
-        
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
-            "Accept-Encoding": "gzip, deflate",
-            "Connection": "keep-alive",
-        }
-        
+
+        # User-Agent для Telegram WebApp - используем TelegramBot для лучшей совместимости
+        if telegram_webapp == "1":
+            headers = {
+                "User-Agent": "TelegramBot/1.0",
+                "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+            }
+        else:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+            }
+
         response = requests.get(url, headers=headers, timeout=30)
-        
+
         if response.status_code != 200:
             raise HTTPException(status_code=404, detail="Image not found")
-        
+
         # Определяем content-type
         content_type = response.headers.get('content-type', 'image/jpeg')
         if not content_type.startswith('image/'):
             content_type = 'image/jpeg'
-        
+
         from fastapi.responses import Response
+        
+        # Формируем заголовки для ответа
+        response_headers = {
+            "Cache-Control": "public, max-age=86400",  # Кэш на 24 часа
+            "Access-Control-Allow-Origin": "*",
+            "Cross-Origin-Resource-Policy": "cross-origin",
+            "Access-Control-Allow-Headers": "Content-Type",
+        }
+        
         return Response(
             content=response.content,
             media_type=content_type,
-            headers={
-                "Cache-Control": "public, max-age=86400",  # Кэш на 24 часа
-                "Access-Control-Allow-Origin": "*"
-            }
+            headers=response_headers
         )
     except HTTPException:
         raise
@@ -986,6 +1220,161 @@ async def get_user(telegram_id: int, db: Session = Depends(get_db)):
             "total_lost": 0
         }
     }
+
+
+# ==================== PROFILE API ====================
+
+class ProfileUpdateRequest(BaseModel):
+    custom_username: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+class ProfileResponse(BaseModel):
+    telegram_id: int
+    username: Optional[str]
+    custom_username: Optional[str]
+    avatar_url: Optional[str]
+    balance_usdt: float
+    balance_ton: float
+
+
+@app.get("/user/{telegram_id}/profile")
+async def get_user_profile(telegram_id: int, db: Session = Depends(get_db)):
+    """Получить профиль пользователя"""
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
+
+    if not user:
+        # Создаём нового пользователя
+        user = User(
+            telegram_id=telegram_id,
+            balance_usdt=1000.0,
+            balance_ton=0.0
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    return {
+        "telegram_id": user.telegram_id,
+        "username": user.username,
+        "custom_username": user.custom_username,
+        "avatar_url": user.avatar_url,
+        "balance_usdt": user.balance_usdt,
+        "balance_ton": user.balance_ton
+    }
+
+
+@app.post("/user/profile/update")
+async def update_user_profile(
+    request: ProfileUpdateRequest,
+    telegram_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    """Обновить профиль пользователя"""
+    user = db.query(User).filter(User.telegram_id == telegram_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Обновляем custom_username если предоставлен
+    if request.custom_username is not None:
+        if len(request.custom_username) > 50:
+            raise HTTPException(
+                status_code=400,
+                detail="Username too long (max 50 characters)"
+            )
+        user.custom_username = request.custom_username
+
+    # Обновляем avatar_url если предоставлен
+    if request.avatar_url is not None:
+        if len(request.avatar_url) > 500:
+            raise HTTPException(
+                status_code=400,
+                detail="Avatar URL too long (max 500 characters)"
+            )
+        user.avatar_url = request.avatar_url
+
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "success": True,
+        "profile": {
+            "telegram_id": user.telegram_id,
+            "username": user.username,
+            "custom_username": user.custom_username,
+            "avatar_url": user.avatar_url
+        }
+    }
+
+
+# Папка для загрузки аватаров
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads")
+AVATARS_DIR = os.path.join(UPLOAD_DIR, "avatars")
+
+# Создаём директорию если не существует
+os.makedirs(AVATARS_DIR, exist_ok=True)
+
+
+@app.post("/user/profile/upload-avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    telegram_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    """Загрузить аватар пользователя"""
+    try:
+        # Проверяем пользователя
+        user = db.query(User).filter(User.telegram_id == telegram_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Валидация типа файла
+        allowed_types = ["image/jpeg", "image/jpg", "image/png", "image/webp"]
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid file type. Allowed: {', '.join(allowed_types)}"
+            )
+
+        # Читаем файл
+        file_content = await file.read()
+        file_size = len(file_content)
+
+        # Проверка размера (максимум 5MB)
+        max_size = 5 * 1024 * 1024  # 5MB
+        if file_size > max_size:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large (max {max_size / 1024 / 1024}MB)"
+            )
+
+        # Генерируем уникальное имя файла
+        import time
+        filename = f"{telegram_id}_{int(time.time())}_{file.filename}"
+        filepath = os.path.join(AVATARS_DIR, filename)
+
+        # Сохраняем файл
+        with open(filepath, "wb") as f:
+            f.write(file_content)
+
+        # Формируем URL
+        # В production замените на реальный URL вашего сервера
+        base_url = os.getenv("BASE_URL", "http://localhost:8000")
+        avatar_url = f"{base_url}/uploads/avatars/{filename}"
+
+        # Сохраняем URL в базу
+        user.avatar_url = avatar_url
+        db.commit()
+
+        return {
+            "success": True,
+            "avatar_url": avatar_url
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error uploading avatar: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/predict")
 async def make_prediction(request: PredictionRequest, db: Session = Depends(get_db)):
@@ -1310,6 +1699,10 @@ async def health_check():
 
 if os.path.isdir(FRONTEND_DIR):
     app.mount("/frontend", StaticFiles(directory=FRONTEND_DIR), name="frontend")
+
+# Mount для загруженных аватаров
+if os.path.isdir(UPLOAD_DIR):
+    app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.get("/{file_path:path}", include_in_schema=False)

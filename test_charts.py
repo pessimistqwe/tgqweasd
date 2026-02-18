@@ -227,16 +227,79 @@ def test_chart_frontend_function():
     try:
         with open('frontend/script.js', 'r', encoding='utf-8') as f:
             content = f.read()
-        
+
         has_function = 'function renderEventChart' in content
         fetches_history = 'price-history' in content
         uses_chart_js = 'Chart' in content and 'new Chart' in content
-        
+
         passed = has_function and fetches_history and uses_chart_js
         return print_status("Frontend Chart Function", passed,
                           f"Function exists: {has_function}, Fetches history: {fetches_history}")
     except Exception as e:
         return print_status("Frontend Chart Function", False, str(e))
+
+
+def test_chart_single_line():
+    """Test that chart uses single line for primary option"""
+    try:
+        with open('frontend/script.js', 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Check that only first option is used (options[0])
+        uses_first_option = 'options[0]' in content
+        # Check that legend is hidden (like Polymarket)
+        legend_hidden = "'display: false'" in content or '"display: false"' in content
+        # Check for single line pattern
+        single_line_pattern = 'SINGLE LINE' in content
+
+        passed = uses_first_option and (legend_hidden or single_line_pattern)
+        return print_status("Chart Single Line", passed,
+                          f"Uses options[0]: {uses_first_option}, Legend hidden: {legend_hidden}")
+    except Exception as e:
+        return print_status("Chart Single Line", False, str(e))
+
+
+def test_chart_gradient_exists():
+    """Test that chart has gradient fill"""
+    try:
+        with open('frontend/script.js', 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Check for gradient creation
+        has_gradient = 'createLinearGradient' in content
+        # Check for gradient colors (green and red)
+        has_green_gradient = 'rgba(34, 197, 94' in content
+        has_red_gradient = 'rgba(239, 68, 68' in content
+        # Check for gradient application
+        applies_gradient = 'backgroundColor = gradient' in content
+
+        passed = has_gradient and has_green_gradient and has_red_gradient and applies_gradient
+        return print_status("Chart Gradient", passed,
+                          f"Has gradient: {has_gradient}, Green: {has_green_gradient}, Red: {has_red_gradient}")
+    except Exception as e:
+        return print_status("Chart Gradient", False, str(e))
+
+
+def test_chart_styling():
+    """Test that chart has Polymarket-like styling"""
+    try:
+        with open('frontend/script.js', 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Check for Polymarket green color
+        has_green = '#22c55e' in content
+        # Check for smooth curve (tension)
+        has_tension = 'tension: 0.4' in content or 'tension:0.4' in content
+        # Check for no points
+        no_points = 'pointRadius: 0' in content or 'pointRadius:0' in content
+        # Check for hover points
+        has_hover = 'pointHoverRadius: 5' in content or 'pointHoverRadius:5' in content
+
+        passed = has_green and has_tension and no_points and has_hover
+        return print_status("Chart Styling", passed,
+                          f"Green color: {has_green}, Tension: {has_tension}, No points: {no_points}, Hover: {has_hover}")
+    except Exception as e:
+        return print_status("Chart Styling", False, str(e))
 
 
 def main():
@@ -247,7 +310,7 @@ def main():
     print("Testing: Price history, chart data, Polymarket integration")
     print("=" * 70)
     print()
-    
+
     tests = [
         test_polymarket_sync,
         test_events_have_polymarket_id,
@@ -258,26 +321,29 @@ def main():
         test_backend_price_history_function,
         test_price_history_model,
         test_chart_frontend_function,
+        test_chart_single_line,
+        test_chart_gradient_exists,
+        test_chart_styling,
     ]
-    
+
     results = []
     for test in tests:
         results.append(test())
         time.sleep(0.5)  # Small delay between API tests
-    
+
     print()
     print("=" * 70)
     passed = sum(results)
     total = len(results)
     print(f"Results: {passed}/{total} tests passed")
-    
+
     if passed == total:
         print("[OK] All chart tests passed!")
     else:
         print(f"[WARN] {total - passed} tests failed. Check the errors above.")
-    
+
     print("=" * 70)
-    
+
     return 0 if passed == total else 1
 
 

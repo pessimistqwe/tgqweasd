@@ -27,18 +27,22 @@ class User(Base):
     telegram_id = Column(Integer, unique=True, index=True, nullable=False)
     username = Column(String(255))
     display_name = Column(String(255))
-    
+
     # Crypto balances
     balance_usdt = Column(Float, default=0.0)
     balance_ton = Column(Float, default=0.0)
-    
+
     # For withdrawals
     withdrawal_address = Column(String(255))
-    
+
+    # Profile customization
+    custom_username = Column(String(255), nullable=True)  # Пользовательское имя
+    avatar_url = Column(String(500), nullable=True)  # URL аватара
+
     created_at = Column(DateTime, default=datetime.utcnow)
     is_blocked = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)
-    
+
     # Relationships
     predictions = relationship("UserPrediction", back_populates="user")
     created_events = relationship("Event", back_populates="creator")
@@ -127,18 +131,37 @@ class Transaction(Base):
     amount = Column(Float, nullable=False)
     asset = Column(String(10), default="USDT")
     status = Column(Enum(TransactionStatus), default=TransactionStatus.PENDING)
-    
+
     invoice_id = Column(String(255))
     invoice_url = Column(String(500))
     withdrawal_address = Column(String(255))
-    
+
     # Additional fields for tracking
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     admin_comment = Column(Text)
     cryptobot_invoice_id = Column(String(255))
-    
+
     user = relationship("User", back_populates="transactions")
+
+
+class EventComment(Base):
+    """Комментарии пользователей к событиям"""
+    __tablename__ = "event_comments"
+    
+    id = Column(Integer, primary_key=True)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    telegram_id = Column(Integer, nullable=False, index=True)
+    username = Column(String(255), nullable=True)
+    comment_text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    is_deleted = Column(Boolean, default=False)
+    is_hidden = Column(Boolean, default=False)  # Скрыто модерацией
+    
+    # Relationships
+    user = relationship("User", backref="comments")
+    event = relationship("Event", backref="comments")
 
 # Database setup - Vercel compatible
 # Используем /tmp для временной БД на Vercel, или тестовую БД если задана
@@ -174,6 +197,38 @@ with engine.connect() as connection:
         """))
         connection.execute(text("CREATE INDEX idx_price_history_event ON price_history(event_id)"))
         connection.execute(text("CREATE INDEX idx_price_history_timestamp ON price_history(timestamp)"))
+        connection.commit()
+    
+    # Миграция: создание таблицы event_comments
+    tables = [row[0] for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
+    if "event_comments" not in tables:
+        connection.execute(text("""
+            CREATE TABLE event_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                user_id INTEGER,
+                telegram_id INTEGER NOT NULL,
+                username VARCHAR(255),
+                comment_text TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                is_deleted BOOLEAN DEFAULT 0,
+                is_hidden BOOLEAN DEFAULT 0,
+                FOREIGN KEY (event_id) REFERENCES events(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """))
+        connection.execute(text("CREATE INDEX idx_event_comments_event ON event_comments(event_id)"))
+        connection.execute(text("CREATE INDEX idx_event_comments_telegram ON event_comments(telegram_id)"))
+        connection.execute(text("CREATE INDEX idx_event_comments_created ON event_comments(created_at)"))
+        connection.commit()
+    
+    # Миграция: добавление custom_username и avatar_url
+    columns = [row[1] for row in connection.execute(text("PRAGMA table_info(users)")).fetchall()]
+    if "custom_username" not in columns:
+        connection.execute(text("ALTER TABLE users ADD COLUMN custom_username VARCHAR(255)"))
+        connection.commit()
+    if "avatar_url" not in columns:
+        connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)"))
         connection.commit()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

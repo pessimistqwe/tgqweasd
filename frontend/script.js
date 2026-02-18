@@ -770,6 +770,17 @@ let userBalance = 0;
 let autoRefreshInterval = null;
 const AUTO_REFRESH_DELAY = 30000;
 
+// Обработка ошибки загрузки изображения
+function handleImageError(imgElement) {
+    console.log('Image failed to load:', imgElement.src);
+    // Скрываем изображение и показываем placeholder
+    imgElement.style.display = 'none';
+    const placeholder = imgElement.nextElementSibling;
+    if (placeholder && placeholder.classList.contains('event-image-placeholder')) {
+        placeholder.style.display = 'flex';
+    }
+}
+
 const categoryNames = {
     'all': 'All',
     'politics': 'Politics',
@@ -976,22 +987,27 @@ function createEventCard(event) {
     const categoryName = categoryNames[event.category] || 'Other';
     const categoryInitial = categoryName.charAt(0).toUpperCase();
 
+    // Определяем, запущено ли приложение в Telegram
+    const isTelegramWebApp = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
+
     // CORS proxy для картинок + улучшенный fallback
     const imageUrl = event.image_url;
     let imageHtml;
-    
+
     if (imageUrl) {
         // Используем backend proxy для обхода CORS
-        const proxiedUrl = `${backendUrl}/proxy/image?url=${encodeURIComponent(imageUrl)}`;
-        
+        // Для Telegram WebApp добавляем специальный параметр
+        const telegramParam = isTelegramWebApp ? '&telegram_webapp=1' : '';
+        const proxiedUrl = `${backendUrl}/proxy/image?url=${encodeURIComponent(imageUrl)}${telegramParam}`;
+
         imageHtml = `
             <div style="position: relative;">
-                <img src="${proxiedUrl}" 
-                     alt="" 
-                     class="event-image" 
-                     loading="lazy" 
+                <img src="${proxiedUrl}"
+                     alt=""
+                     class="event-image"
+                     loading="lazy"
                      referrerpolicy="no-referrer"
-                     onerror="this.onerror=null; this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                     onerror="handleImageError(this)">
                 <div class="event-image-placeholder" style="display:none">${categoryInitial}</div>
             </div>
         `;
@@ -1535,7 +1551,7 @@ function openBetModal(title, option, probability) {
     document.getElementById('bet-modal').classList.remove('hidden');
 }
 
-// Chart rendering using Chart.js (Polymarket style) with real data
+// Chart rendering using Chart.js (Polymarket style) with gradient
 let eventChart = null;
 
 async function renderEventChart(eventId, options) {
@@ -1561,8 +1577,9 @@ async function renderEventChart(eventId, options) {
 
     const labels = [];
     const datasets = [];
-    // Polymarket colors: green for Yes/Up, red for No/Down, then blue, orange, purple, pink
-    const colors = ['#22c55e', '#ef4444', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899'];
+    
+    // Polymarket colors: green for Yes/Up
+    const primaryColor = '#22c55e';
 
     if (priceHistory && priceHistory.length > 0) {
         // Use real price history from database
@@ -1586,8 +1603,9 @@ async function renderEventChart(eventId, options) {
             }
         });
 
-        // Group by option
-        options.forEach((opt, idx) => {
+        // SINGLE LINE: Use only the first (primary) option - Yes/Up
+        if (options.length > 0) {
+            const opt = options[0];
             const data = displayData.map(ts => {
                 const point = priceHistory.find(p =>
                     p.option_index === opt.index &&
@@ -1600,15 +1618,15 @@ async function renderEventChart(eventId, options) {
             datasets.push({
                 label: translateEventText(opt.text),
                 data: data,
-                borderColor: colors[idx % colors.length],
-                backgroundColor: colors[idx % colors.length] + '15',  // More transparent fill
+                borderColor: primaryColor,
                 borderWidth: 2,
                 fill: true,
-                tension: 0.3,  // Slightly less curve for more realistic look
+                tension: 0.4,  // Smooth curve
                 pointRadius: 0,
-                pointHoverRadius: 4
+                pointHoverRadius: 5,
+                // Gradient will be applied after chart creation
             });
-        });
+        }
     } else {
         // Fallback: generate simulated history based on current probabilities
         const now = Date.now();
@@ -1619,7 +1637,9 @@ async function renderEventChart(eventId, options) {
             labels.push(time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
         }
 
-        options.forEach((opt, idx) => {
+        // SINGLE LINE: Use only the first (primary) option - Yes/Up
+        if (options.length > 0) {
+            const opt = options[0];
             const prices = [];
             let basePrice = opt.probability / 100;
 
@@ -1634,15 +1654,14 @@ async function renderEventChart(eventId, options) {
             datasets.push({
                 label: translateEventText(opt.text),
                 data: prices,
-                borderColor: colors[idx % colors.length],
-                backgroundColor: colors[idx % colors.length] + '15',
+                borderColor: primaryColor,
                 borderWidth: 2,
                 fill: true,
-                tension: 0.3,
+                tension: 0.4,
                 pointRadius: 0,
-                pointHoverRadius: 4
+                pointHoverRadius: 5
             });
-        });
+        }
     }
 
     // Create chart with Polymarket-like styling
@@ -1663,23 +1682,16 @@ async function renderEventChart(eventId, options) {
             },
             plugins: {
                 legend: {
-                    display: true,
-                    position: 'top',
-                    labels: {
-                        color: '#fafafa',
-                        font: { size: 11, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
-                        usePointStyle: true,
-                        padding: 15
-                    }
+                    display: false  // Hide legend like Polymarket
                 },
                 tooltip: {
                     backgroundColor: 'rgba(15, 15, 18, 0.95)',
-                    titleColor: '#fafafa',
+                    titleColor: '#fff',
                     bodyColor: '#a1a1aa',
                     borderColor: 'rgba(255,255,255,0.1)',
                     borderWidth: 1,
                     padding: 12,
-                    displayColors: true,
+                    displayColors: false,
                     bodyFont: { size: 12 },
                     titleFont: { size: 13 },
                     callbacks: {
@@ -1687,7 +1699,7 @@ async function renderEventChart(eventId, options) {
                             return context[0].label;
                         },
                         label: function(context) {
-                            return context.dataset.label + ': ' + (context.parsed.y * 100).toFixed(1) + '%';
+                            return 'Price: ' + (context.parsed.y * 100).toFixed(1) + '%';
                         }
                     }
                 }
@@ -1696,8 +1708,7 @@ async function renderEventChart(eventId, options) {
                 x: {
                     display: true,
                     grid: {
-                        color: 'rgba(255,255,255,0.03)',  // Very subtle grid
-                        drawBorder: false
+                        display: false  // No grid on X axis
                     },
                     ticks: {
                         color: '#71717a',
@@ -1712,7 +1723,7 @@ async function renderEventChart(eventId, options) {
                     min: 0,
                     max: 1,
                     grid: {
-                        color: 'rgba(255,255,255,0.03)',
+                        color: 'rgba(255,255,255,0.05)',  // Very subtle grid
                         drawBorder: false
                     },
                     ticks: {
@@ -1727,6 +1738,19 @@ async function renderEventChart(eventId, options) {
             }
         }
     });
+
+    // Apply gradient fill after chart creation
+    // Gradient from green (top, 60%) to red (bottom, 50%)
+    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    gradient.addColorStop(0, 'rgba(34, 197, 94, 0.6)');   // Green at top (100%)
+    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.3)'); // Middle transition
+    gradient.addColorStop(1, 'rgba(239, 68, 68, 0.5)');   // Red at bottom (0%)
+    
+    // Apply gradient to the first dataset
+    if (eventChart.data.datasets.length > 0) {
+        eventChart.data.datasets[0].backgroundColor = gradient;
+        eventChart.update();
+    }
 }
 
 // ==================== UTILITY FUNCTIONS ====================
