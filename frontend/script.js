@@ -2403,15 +2403,25 @@ let webSocketPriceBuffer = []; // Buffer for price updates
 let webSocketUpdateTimeout = null; // Debounce timer
 let currentChartLabels = []; // Global chart labels
 let currentChartPrices = []; // Global chart prices
+let chartYMin = null; // Fixed Y scale min
+let chartYMax = null; // Fixed Y scale max
 
 async function renderPriceChart(eventId, options) {
     const canvas = document.getElementById('event-chart-canvas');
     if (!canvas) return;
 
+    // Закрываем предыдущий WebSocket
     if (binanceWebSocket) {
         binanceWebSocket.close();
         binanceWebSocket = null;
     }
+
+    // Очищаем буферы
+    webSocketPriceBuffer = [];
+    currentChartLabels = [];
+    currentChartPrices = [];
+    chartYMin = null;
+    chartYMax = null;
 
     let event = null;
     try {
@@ -2436,48 +2446,58 @@ async function renderPriceChart(eventId, options) {
         return;
     }
 
-    renderRealtimeChart(canvas, binanceSymbol, options, eventId);
+    renderRealtimeChart(canvas, binanceSymbol, options);
 }
 
-function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
+function renderRealtimeChart(canvas, binanceSymbol, options) {
     const ctx = canvas.getContext('2d');
     const chartColor = '#f2b03d';
 
-    // Очищаем глобальные массивы при создании нового графика
-    currentChartLabels = [];
-    currentChartPrices = [];
+    // Устанавливаем размеры canvas
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width * window.devicePixelRatio;
+    canvas.height = rect.height * window.devicePixelRatio;
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
 
     // Show timeframe buttons and price info
     document.getElementById('event-chart-timeframe').style.display = 'flex';
     document.getElementById('event-chart-info').style.display = 'block';
 
-    // Setup timeframe buttons with debounce to prevent rapid switching
-    let timeframeSwitchDebounce = null;
+    // Destroy existing chart
+    if (eventChart) {
+        eventChart.destroy();
+    }
+
+    // Setup timeframe buttons
     document.querySelectorAll('.timeframe-btn').forEach(btn => {
         btn.onclick = () => {
-            // Предотвращаем быстрое переключение между интервалами
-            if (timeframeSwitchDebounce) return;
-            
             document.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentChartInterval = btn.dataset.interval;
             
-            // Очищаем буфер при переключении интервала
+            // Очищаем буферы
             webSocketPriceBuffer = [];
+            currentChartLabels = [];
+            currentChartPrices = [];
+            chartYMin = null;
+            chartYMax = null;
+            
             if (webSocketUpdateTimeout) {
                 clearTimeout(webSocketUpdateTimeout);
             }
             
-            // Загружаем данные с плавным переходом
-            loadChartData(binanceSymbol, currentChartInterval);
+            // Закрываем старый WebSocket
+            if (binanceWebSocket) {
+                binanceWebSocket.close();
+                binanceWebSocket = null;
+            }
             
-            // Блокируем переключение на 500мс
-            timeframeSwitchDebounce = setTimeout(() => {
-                timeframeSwitchDebounce = null;
-            }, 500);
+            // Загружаем данные для нового интервала
+            loadChartData(binanceSymbol, currentChartInterval);
         };
     });
 
+    // Создаём график с плавной анимацией Polymarket style
     eventChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -2488,7 +2508,7 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                 borderColor: chartColor,
                 borderWidth: 2,
                 fill: true,
-                tension: 0.1,
+                tension: 0.4, // Плавные кривые Безье
                 pointRadius: 0,
                 pointHoverRadius: 4,
                 pointHoverBackgroundColor: '#fff',
@@ -2499,9 +2519,10 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            layout: { padding: 0 },
-            // Полностью отключаем анимацию для производительности
-            animation: false,
+            animation: {
+                duration: 600,
+                easing: 'easeOutQuart'
+            },
             interaction: {
                 intersect: false,
                 mode: 'index',
@@ -2538,10 +2559,7 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                 x: {
                     display: false,
                     grid: { display: false },
-                    ticks: {
-                        display: false
-                    },
-                    offset: false
+                    ticks: { display: false }
                 },
                 y: {
                     display: true,
@@ -2552,9 +2570,9 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                     },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 9 },
+                        font: { size: 10 },
                         padding: 4,
-                        maxTicksLimit: 6,
+                        maxTicksLimit: 5,
                         callback: (value) => {
                             if (value >= 1000) {
                                 return '$' + (value / 1000).toFixed(1) + 'K';
@@ -2562,20 +2580,21 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                             return '$' + value.toFixed(2);
                         }
                     },
-                    min: undefined,
-                    max: undefined
+                    min: chartYMin,
+                    max: chartYMax
                 }
             }
         }
     });
 
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    // Создаём градиент
+    const gradient = ctx.createLinearGradient(0, 0, 0, rect.height);
     gradient.addColorStop(0, 'rgba(242, 176, 61, 0.3)');
     gradient.addColorStop(0.5, 'rgba(242, 176, 61, 0.08)');
     gradient.addColorStop(1, 'rgba(242, 176, 61, 0.02)');
     eventChart.data.datasets[0].backgroundColor = gradient;
 
-    // Load chart data
+    // Загружаем данные
     loadChartData(binanceSymbol, currentChartInterval);
 }
 
@@ -2614,25 +2633,25 @@ async function loadChartData(symbol, interval) {
             chartPriceData.lastPrice = currentChartPrices[currentChartPrices.length - 1];
             updateChartPriceDisplay(currentChartPrices[currentChartPrices.length - 1]);
             updatePredictionOdds(currentChartPrices);
+            
+            // Устанавливаем фиксированный масштаб Y-оси
+            const minPrice = Math.min(...currentChartPrices);
+            const maxPrice = Math.max(...currentChartPrices);
+            const range = maxPrice - minPrice;
+            const padding = range > 0 ? range * 0.15 : minPrice * 0.15;
+            
+            chartYMin = minPrice - padding;
+            chartYMax = maxPrice + padding;
+            
+            if (eventChart) {
+                eventChart.options.scales.y.min = chartYMin;
+                eventChart.options.scales.y.max = chartYMax;
+            }
         }
 
         if (eventChart) {
             eventChart.data.labels = currentChartLabels;
             eventChart.data.datasets[0].data = currentChartPrices;
-
-            // Устанавливаем фиксированный масштаб Y-оси сразу
-            const minPrice = Math.min(...currentChartPrices);
-            const maxPrice = Math.max(...currentChartPrices);
-            const range = maxPrice - minPrice;
-            const padding = range > 0 ? range * 0.1 : minPrice * 0.1;
-
-            eventChart.options.scales.y.min = minPrice - padding;
-            eventChart.options.scales.y.max = maxPrice + padding;
-
-            // Set X-axis max based on data length
-            eventChart.options.scales.x.max = currentChartLabels.length - 1;
-
-            // Мгновенное обновление без анимации
             eventChart.update('none');
         }
 
@@ -2669,40 +2688,24 @@ function connectBinanceWebSocket(symbol) {
         clearTimeout(webSocketUpdateTimeout);
     }
 
-    // Берём начальный масштаб из текущих данных графика
-    let baseMin = currentChartPrices.length > 0 ? Math.min(...currentChartPrices) : 0;
-    let baseMax = currentChartPrices.length > 0 ? Math.max(...currentChartPrices) : 1;
-    let range = baseMax - baseMin;
-    
-    // Фиксированный padding 10% для стабильности
-    const padding = range > 0 ? range * 0.1 : baseMax * 0.1;
-    let currentMin = baseMin - padding;
-    let currentMax = baseMax + padding;
-    
-    // Флаг для первого обновления WebSocket
-    let isFirstUpdate = true;
-
-    // Минимальное сглаживание для последних 3 точек
-    function applyLightSmoothing(pricesArray) {
+    // Функция сглаживания (скользящее среднее для последних 3 точек)
+    function applySmoothing(pricesArray) {
         if (pricesArray.length <= 3) return pricesArray;
-        
         const smoothed = [...pricesArray];
         const len = pricesArray.length;
-        
-        // Сглаживаем только последние 3 точки
         for (let i = len - 3; i < len; i++) {
-            const slice = pricesArray.slice(Math.max(0, i - 2), i + 1);
+            const start = Math.max(0, i - 2);
+            const slice = pricesArray.slice(start, i + 1);
             smoothed[i] = slice.reduce((a, b) => a + b, 0) / slice.length;
         }
-        
         return smoothed;
     }
 
-    // Функция пакетного обновления графика
+    // Функция обновления графика
     function updateChartFromBuffer() {
         if (webSocketPriceBuffer.length === 0 || !eventChart) return;
 
-        // Добавляем все накопленные цены из буфера
+        // Добавляем накопленные цены из буфера
         webSocketPriceBuffer.forEach(({ price, timestamp }) => {
             currentChartLabels.push(timestamp.toISOString());
             currentChartPrices.push(price);
@@ -2719,43 +2722,40 @@ function connectBinanceWebSocket(symbol) {
             currentChartPrices.shift();
         }
 
-        // Применяем минимальное сглаживание только к последним точкам
-        const smoothedPrices = applyLightSmoothing(currentChartPrices);
-
-        // Получаем последнюю цену
+        // Применяем сглаживание
+        const smoothedPrices = applySmoothing(currentChartPrices);
         const lastPrice = smoothedPrices[smoothedPrices.length - 1];
 
-        // Проверяем, выходит ли цена за текущие пределы шкалы
-        const threshold = 0.08; // 8% запас
-        
-        if (lastPrice > currentMax * (1 - threshold) || lastPrice < currentMin * (1 + threshold)) {
-            // Пересчитываем масштаб только если цена вышла за пределы
-            const newMin = Math.min(...smoothedPrices);
-            const newMax = Math.max(...smoothedPrices);
-            const newRange = newMax - newMin;
-            const newPadding = newRange > 0 ? newRange * 0.1 : newMax * 0.1;
-            
-            currentMin = newMin - newPadding;
-            currentMax = newMax + newPadding;
-            
-            eventChart.options.scales.y.min = currentMin;
-            eventChart.options.scales.y.max = currentMax;
+        // Проверяем, нужно ли обновить масштаб Y
+        if (chartYMin !== null && chartYMax !== null) {
+            const threshold = 0.1; // 10% запас
+            if (lastPrice > chartYMax * (1 - threshold) || lastPrice < chartYMin * (1 + threshold)) {
+                const newMin = Math.min(...smoothedPrices);
+                const newMax = Math.max(...smoothedPrices);
+                const range = newMax - newMin;
+                const padding = range > 0 ? range * 0.15 : newMax * 0.15;
+                
+                chartYMin = newMin - padding;
+                chartYMax = newMax + padding;
+                
+                eventChart.options.scales.y.min = chartYMin;
+                eventChart.options.scales.y.max = chartYMax;
+            }
         }
 
         // Обновляем данные графика
         eventChart.data.labels = currentChartLabels;
         eventChart.data.datasets[0].data = smoothedPrices;
 
-        // Мгновенное обновление без анимации
+        // Плавное обновление
         eventChart.update('none');
 
-        // Обновляем отображение цены и коэффициенты
+        // Обновляем отображение цены
         updateChartPriceDisplay(lastPrice);
         updatePredictionOdds(smoothedPrices);
 
         // Очищаем буфер
         webSocketPriceBuffer = [];
-        isFirstUpdate = false;
     }
 
     binanceWebSocket.onmessage = function(event) {
@@ -2763,13 +2763,9 @@ function connectBinanceWebSocket(symbol) {
         const price = parseFloat(data.p);
         const timestamp = new Date(data.T);
 
-        // Добавляем цену в буфер вместо немедленного обновления
         webSocketPriceBuffer.push({ price, timestamp });
-
-        // Обновляем цену в реальном времени (для отображения)
         updateChartPriceDisplay(price);
 
-        // Дебаунс обновлений графика - обновляем каждые 200мс
         if (webSocketUpdateTimeout) {
             clearTimeout(webSocketUpdateTimeout);
         }
