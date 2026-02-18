@@ -2286,17 +2286,14 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
             },
             scales: {
                 x: {
-                    display: true,
+                    display: false,
                     grid: { display: false },
                     ticks: {
-                        color: '#71717a',
-                        font: { size: 10 },
-                        maxTicksLimit: 6,
-                        maxRotation: 0,
-                        autoSkip: true,
-                        padding: 8
+                        display: false
                     },
-                    offset: false
+                    offset: false,
+                    min: 0,
+                    max: prices.length - 1
                 },
                 y: {
                     display: true,
@@ -2307,10 +2304,15 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                     },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 10 },
-                        padding: 8,
-                        maxTicksLimit: 6,
-                        callback: (value) => `$${value.toFixed(2)}`
+                        font: { size: 9 },
+                        padding: 4,
+                        maxTicksLimit: 5,
+                        callback: (value) => {
+                            if (value >= 1000) {
+                                return '$' + (value / 1000).toFixed(1) + 'K';
+                            }
+                            return '$' + value.toFixed(2);
+                        }
                     },
                     min: undefined,
                     max: undefined
@@ -2338,18 +2340,18 @@ async function loadChartData(symbol, interval) {
         '4h': { binanceInterval: '4h', points: 168 },
         '1d': { binanceInterval: '1d', points: 90 }
     };
-    
+
     const config = intervals[interval] || intervals['15m'];
-    
+
     try {
         const response = await fetch(
             `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${config.binanceInterval}&limit=${config.points}`
         );
         const data = await response.json();
-        
+
         const labels = [];
         const prices = [];
-        
+
         data.forEach(candle => {
             const timestamp = candle[0];
             const close = parseFloat(candle[4]);
@@ -2357,27 +2359,32 @@ async function loadChartData(symbol, interval) {
             labels.push(time.toISOString());
             prices.push(close);
         });
-        
+
         if (prices.length > 0) {
             chartPriceData.firstPrice = prices[0];
             chartPriceData.lastPrice = prices[prices.length - 1];
             updateChartPriceDisplay(prices[prices.length - 1]);
         }
-        
+
         if (eventChart) {
             eventChart.data.labels = labels;
             eventChart.data.datasets[0].data = prices;
-            
+
+            // Calculate and set fixed Y-axis scale
             const minPrice = Math.min(...prices);
             const maxPrice = Math.max(...prices);
             const range = maxPrice - minPrice;
-            const padding = range * 0.1;
-            
+            const padding = range > 0 ? range * 0.15 : minPrice * 0.15;
+
             eventChart.options.scales.y.min = minPrice - padding;
             eventChart.options.scales.y.max = maxPrice + padding;
+            
+            // Set X-axis max based on data length
+            eventChart.options.scales.x.max = prices.length - 1;
+            
             eventChart.update('none');
         }
-        
+
         connectBinanceWebSocket(symbol, labels, prices);
     } catch (err) {
         console.error('Error loading chart data:', err);
@@ -2405,17 +2412,9 @@ function connectBinanceWebSocket(symbol, labels, prices) {
     const streamName = `${symbol.toLowerCase()}@trade`;
     binanceWebSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
 
-    // Calculate scale from loaded data
-    const minPrice = Math.min(...prices);
-    const maxPrice = Math.max(...prices);
-    const range = maxPrice - minPrice;
-    const padding = range * 0.1;
-
-    if (eventChart) {
-        eventChart.options.scales.y.min = minPrice - padding;
-        eventChart.options.scales.y.max = maxPrice + padding;
-        eventChart.update('none');
-    }
+    // Store initial scale - DO NOT CHANGE during session
+    const initialMin = eventChart.options.scales.y.min;
+    const initialMax = eventChart.options.scales.y.max;
 
     binanceWebSocket.onmessage = function(event) {
         const data = JSON.parse(event.data);
@@ -2431,13 +2430,13 @@ function connectBinanceWebSocket(symbol, labels, prices) {
                          currentChartInterval === '5m' ? 100 : 
                          currentChartInterval === '15m' ? 96 :
                          currentChartInterval === '1h' ? 168 : 168;
-        
+
         if (labels.length > maxPoints) {
             labels.shift();
             prices.shift();
         }
 
-        // Update chart
+        // Update chart data ONLY - do NOT change scale
         if (eventChart) {
             eventChart.data.labels = labels;
             eventChart.data.datasets[0].data = prices;
