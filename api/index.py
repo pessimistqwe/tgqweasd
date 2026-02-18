@@ -1137,10 +1137,15 @@ async def proxy_image(url: str, telegram_webapp: Optional[str] = Query(None, ali
             raise HTTPException(status_code=400, detail="URL required")
 
         # Проверяем что URL с Polymarket
-        if not url.startswith('https://gamma-api.polymarket.com'):
-            # Разрешаем только Polymarket images
-            if not any(domain in url for domain in ['polymarket.com', 'polygon.com']):
-                raise HTTPException(status_code=400, detail="Only Polymarket images allowed")
+        # Разрешаем gamma-api.polymarket.com, polymarket-upload.s3.*.amazonaws.com, polymarket.com, polygon.com
+        allowed_domains = [
+            'gamma-api.polymarket.com',
+            'polymarket.com',
+            'polygon.com',
+            'polymarket-upload.s3.'
+        ]
+        if not any(domain in url for domain in allowed_domains):
+            raise HTTPException(status_code=400, detail="Only Polymarket images allowed")
 
         # User-Agent для Telegram WebApp - используем TelegramBot для лучшей совместимости
         if telegram_webapp == "1":
