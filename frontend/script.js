@@ -1576,6 +1576,18 @@ function closeEventModal() {
     currentEventIdForComments = null;
 }
 
+// Toggle description visibility
+function toggleDescription() {
+    const descContent = document.getElementById('event-description');
+    const toggleBtn = document.querySelector('.description-toggle');
+    
+    if (!descContent || !toggleBtn) return;
+    
+    const isHidden = descContent.style.display === 'none';
+    descContent.style.display = isHidden ? 'block' : 'none';
+    toggleBtn.classList.toggle('active', isHidden);
+}
+
 // ==================== COMMENTS FUNCTIONS ====================
 
 function loadCommentsForEvent(eventId) {

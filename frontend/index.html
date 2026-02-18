@@ -28,7 +28,7 @@
                         <path d="M7 14l4-4 4 4 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                         <circle cx="20" cy="9" r="2" fill="currentColor"/>
                     </svg>
-                    Predict
+                    TGMARKET
                 </h1>
                 <div class="balance-card" onclick="showSection('wallet')">
                     <div class="balance-icon">
@@ -259,7 +259,17 @@
                         <canvas id="event-chart-canvas"></canvas>
                     </div>
                     <div class="event-options" id="event-options"></div>
-                    <div class="event-description" id="event-description"></div>
+                    
+                    <!-- Collapsible Description -->
+                    <div class="event-description-wrapper" style="margin-top: 16px;">
+                        <button class="description-toggle" onclick="toggleDescription()">
+                            <span>About this market</span>
+                            <svg id="desc-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 0.3s ease;">
+                                <path d="M9 18l6-6-6-6"/>
+                            </svg>
+                        </button>
+                        <div id="event-description" class="event-description-content" style="display: none;"></div>
+                    </div>
                     
                     <!-- Comments Section -->
                     <div class="event-comments-section" style="margin-top: 24px;">
