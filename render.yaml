@@ -2,10 +2,22 @@ services:
   - type: web
     name: eventpredict
     env: python
-    buildCommand: pip install -r api/requirements-minimal.txt
-    startCommand: uvicorn index:app --host 0.0.0.0 --port $PORT --app-dir api
+    region: frankfurt
+    plan: free
+    buildCommand: "pip install -r api/requirements.txt"
+    startCommand: "cd api && uvicorn index:app --host 0.0.0.0 --port $PORT"
     envVars:
-      - key: PYTHONUNBUFFERED
-        value: 1
+      - key: PYTHON_VERSION
+        value: 3.12.0
       - key: PORT
-        value: 8000
+        value: 10000
+      - key: TEST_DB_PATH
+        value: /tmp/events.db
+      - key: DISABLE_SCHEDULER
+        value: 0
+      - key: POLYMARKET_SYNC_INTERVAL
+        value: 7200
+    disk:
+      name: eventpredict-data
+      mountPath: /tmp
+      sizeGB: 1

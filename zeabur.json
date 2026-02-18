@@ -1,0 +1,32 @@
+{
+  "$schema": "https://zeabur.com/schema.json",
+  "name": "eventpredict",
+  "description": "Telegram Mini App Prediction Market",
+  "env": "python",
+  "rootDirectory": ".",
+  "build": {
+    "command": "pip install -r api/requirements.txt",
+    "outputDirectory": "."
+  },
+  "start": {
+    "command": "cd api && uvicorn index:app --host 0.0.0.0 --port $PORT"
+  },
+  "envs": {
+    "PORT": {
+      "value": "8080",
+      "description": "Port for the application"
+    },
+    "TEST_DB_PATH": {
+      "value": "/tmp/events.db",
+      "description": "SQLite database path"
+    },
+    "DISABLE_SCHEDULER": {
+      "value": "0",
+      "description": "Enable background scheduler"
+    },
+    "POLYMARKET_SYNC_INTERVAL": {
+      "value": "7200",
+      "description": "Polymarket sync interval in seconds"
+    }
+  }
+}
