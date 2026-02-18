@@ -2693,52 +2693,29 @@ function connectBinanceWebSocket(symbol) {
         clearTimeout(webSocketUpdateTimeout);
     }
 
-    // Получаем длительность интервала в мс
-    const intervalMs = INTERVAL_MS[currentChartInterval] || 900000; // 15m default
+    // Частота обновления графика в зависимости от интервала
+    const updateIntervals = {
+        '1m': 1000,    // Обновляем каждую секунду для 1m
+        '5m': 5000,    // Каждые 5 секунд для 5m
+        '15m': 15000,  // Каждые 15 секунд для 15m
+        '1h': 30000,   // Каждые 30 секунд для 1h
+        '4h': 60000,   // Каждую минуту для 4h
+        '1d': 120000   // Каждые 2 минуты для 1d
+    };
+    
+    const updateInterval = updateIntervals[currentChartInterval] || 15000;
 
-    // Функция обновления графика с агрегацией свечей
+    // Функция обновления графика
     function updateChartFromBuffer() {
         if (webSocketPriceBuffer.length === 0 || !eventChart) return;
 
-        // Сортируем буфер по времени
-        webSocketPriceBuffer.sort((a, b) => a.timestamp - b.timestamp);
-
-        // Агрегируем тиковые данные в свечи по интервалу
-        const candles = {};
-        webSocketPriceBuffer.forEach(({ price, timestamp }) => {
-            // Вычисляем начало свечи для этого таймстемпа
-            const candleStart = Math.floor(timestamp.getTime() / intervalMs) * intervalMs;
-            const key = candleStart.toString();
-            
-            if (!candles[key]) {
-                candles[key] = {
-                    open: price,
-                    high: price,
-                    low: price,
-                    close: price,
-                    timestamp: new Date(candleStart)
-                };
-            } else {
-                candles[key].high = Math.max(candles[key].high, price);
-                candles[key].low = Math.min(candles[key].low, price);
-                candles[key].close = price;
-            }
-        });
-
-        // Добавляем новые свечи к графику (используем close price)
-        Object.values(candles).forEach(candle => {
-            // Проверяем, не добавили ли мы уже эту свечу
-            const lastLabel = currentChartLabels[currentChartLabels.length - 1];
-            const candleLabel = candle.timestamp.toISOString();
-            
-            if (lastLabel !== candleLabel) {
-                currentChartLabels.push(candleLabel);
-                currentChartPrices.push(candle.close);
-            } else {
-                // Обновляем последнюю свечу (если цена изменилась)
-                currentChartPrices[currentChartPrices.length - 1] = candle.close;
-            }
-        });
+        // Получаем последнюю цену из буфера
+        const lastTrade = webSocketPriceBuffer[webSocketPriceBuffer.length - 1];
+        const lastPrice = lastTrade.price;
+        
+        // Добавляем новую точку на график
+        currentChartLabels.push(lastTrade.timestamp.toISOString());
+        currentChartPrices.push(lastPrice);
 
         // Keep last N points based on interval
         const maxPoints = currentChartInterval === '1m' ? 100 :
@@ -2750,9 +2727,6 @@ function connectBinanceWebSocket(symbol) {
             currentChartLabels.shift();
             currentChartPrices.shift();
         }
-
-        // Получаем последнюю цену
-        const lastPrice = currentChartPrices[currentChartPrices.length - 1];
 
         // Проверяем, нужно ли обновить масштаб Y
         if (chartYMin !== null && chartYMax !== null) {
@@ -2791,14 +2765,14 @@ function connectBinanceWebSocket(symbol) {
         webSocketPriceBuffer.push({ price, timestamp });
         updateChartPriceDisplay(price);
 
-        // Обновляем график каждые 500мс для плавности
+        // Обновляем график с интервалом зависящим от таймфрейма
         if (webSocketUpdateTimeout) {
             clearTimeout(webSocketUpdateTimeout);
         }
 
         webSocketUpdateTimeout = setTimeout(() => {
             updateChartFromBuffer();
-        }, 500);
+        }, updateInterval);
     };
 
     binanceWebSocket.onerror = function(err) {
