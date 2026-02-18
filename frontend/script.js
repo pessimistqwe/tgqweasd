@@ -1068,25 +1068,48 @@ async function loadUserBalance() {
     try {
         const userId = getUserId();
         const data = await apiRequest(`/wallet/balance/${userId}`);
-        
+
         userBalance = data.balance_usdt || 0;
         const formattedBalance = formatNumber(userBalance);
-        
+
         document.getElementById('user-balance').textContent = formattedBalance;
         document.getElementById('wallet-balance-value').textContent = userBalance.toFixed(2);
         document.getElementById('profile-balance').textContent = userBalance.toFixed(2);
         document.getElementById('available-balance').textContent = userBalance.toFixed(2);
+
+        // Update profile info с данными из Telegram
+        const user = tg.initDataUnsafe?.user;
+        let displayName = getUsername();
+        let avatarUrl = user?.photo_url || null;
         
-        // Update profile info
-        document.getElementById('profile-name').textContent = getUsername();
+        // Формируем имя из first_name + last_name если есть
+        if (user) {
+            if (user.first_name && user.last_name) {
+                displayName = `${user.first_name} ${user.last_name}`;
+            } else if (user.first_name) {
+                displayName = user.first_name;
+            } else if (user.last_name) {
+                displayName = user.last_name;
+            }
+            avatarUrl = user.photo_url;
+        }
+        
+        document.getElementById('profile-name').textContent = displayName;
         document.getElementById('profile-telegram-id').textContent = `ID: ${userId}`;
-        document.getElementById('profile-avatar').textContent = getUsername().charAt(0).toUpperCase();
         
+        // Обновляем аватар — если есть URL, показываем картинку, иначе букву
+        const avatarEl = document.getElementById('profile-avatar');
+        if (avatarUrl) {
+            avatarEl.innerHTML = `<img src="${avatarUrl}" alt="Avatar" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;">`;
+        } else {
+            avatarEl.textContent = displayName.charAt(0).toUpperCase();
+        }
+
         // Load transactions
         if (data.transactions) {
             renderTransactions(data.transactions);
         }
-        
+
         // Load user stats
         const userData = await apiRequest(`/user/${userId}`);
         if (userData.stats) {
@@ -1493,6 +1516,8 @@ function showMyPredictions() {
 // ==================== EVENT MODAL ====================
 
 let selectedOptionIndex = null;
+let currentEventIdForComments = null;
+let eventComments = []; // Хранилище комментариев для текущего события
 
 async function openEventModal(eventId) {
     try {
@@ -1500,6 +1525,11 @@ async function openEventModal(eventId) {
         if (!event) return;
 
         selectedOptionIndex = null;
+        currentEventIdForComments = eventId;
+        
+        // Загружаем комментарии для события (из localStorage для демо)
+        loadCommentsForEvent(eventId);
+        
         document.getElementById('event-modal-title').textContent = translateEventText(event.title);
         document.getElementById('event-description').innerHTML = `
             <strong>${tr('description')}:</strong><br>
@@ -1543,6 +1573,135 @@ function selectEventOption(index, probability) {
 function closeEventModal() {
     document.getElementById('event-modal').classList.add('hidden');
     selectedOptionIndex = null;
+    currentEventIdForComments = null;
+}
+
+// ==================== COMMENTS FUNCTIONS ====================
+
+function loadCommentsForEvent(eventId) {
+    // Загружаем комментарии из localStorage
+    const stored = localStorage.getItem(`event_${eventId}_comments`);
+    if (stored) {
+        eventComments = JSON.parse(stored);
+    } else {
+        // Демо комментарии для примера
+        const user = tg.initDataUnsafe?.user;
+        const displayName = user?.first_name || 'User';
+        
+        eventComments = [
+            {
+                id: 1,
+                user_id: 12345,
+                username: 'CryptoTrader',
+                avatar: null,
+                text: 'This looks like a great opportunity! I\'m bullish on this outcome.',
+                timestamp: Date.now() - 7200000,
+                likes: 5
+            },
+            {
+                id: 2,
+                user_id: 67890,
+                username: 'MarketMaker',
+                avatar: null,
+                text: 'Not sure about this one. The odds seem off.',
+                timestamp: Date.now() - 3600000,
+                likes: 2
+            }
+        ];
+    }
+    
+    renderComments();
+}
+
+function renderComments() {
+    const commentsList = document.getElementById('comments-list');
+    const commentsCount = document.getElementById('comments-count');
+    
+    if (!commentsList || !commentsCount) return;
+    
+    commentsCount.textContent = eventComments.length;
+    
+    if (eventComments.length === 0) {
+        commentsList.innerHTML = '<div class="empty-comments">No comments yet. Be the first!</div>';
+        return;
+    }
+    
+    // Сортируем по времени (новые сверху)
+    const sortedComments = [...eventComments].sort((a, b) => b.timestamp - a.timestamp);
+    
+    const html = sortedComments.map(comment => {
+        const timeAgo = formatTimeAgo(comment.timestamp);
+        const avatarInitial = (comment.username || 'U').charAt(0).toUpperCase();
+        const avatarHtml = comment.avatar 
+            ? `<img src="${comment.avatar}" alt="Avatar">`
+            : avatarInitial;
+        
+        return `
+            <div class="comment-item">
+                <div class="comment-avatar">
+                    ${avatarHtml}
+                </div>
+                <div class="comment-content">
+                    <div class="comment-header">
+                        <span class="comment-username">${escapeHtml(comment.username)}</span>
+                        <span class="comment-time">${timeAgo}</span>
+                    </div>
+                    <div class="comment-text">${escapeHtml(comment.text)}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    commentsList.innerHTML = html;
+}
+
+function formatTimeAgo(timestamp) {
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+function addComment() {
+    const commentInput = document.getElementById('comment-input');
+    const text = commentInput.value.trim();
+    
+    if (!text) {
+        showNotification('Please enter a comment', 'error');
+        return;
+    }
+    
+    const user = tg.initDataUnsafe?.user;
+    const displayName = user?.first_name || 'User';
+    const avatarUrl = user?.photo_url || null;
+    
+    const newComment = {
+        id: Date.now(),
+        user_id: user?.id || 12345,
+        username: displayName,
+        avatar: avatarUrl,
+        text: text,
+        timestamp: Date.now(),
+        likes: 0
+    };
+    
+    eventComments.push(newComment);
+    
+    // Сохраняем в localStorage
+    if (currentEventIdForComments) {
+        localStorage.setItem(`event_${currentEventIdForComments}_comments`, JSON.stringify(eventComments));
+    }
+    
+    commentInput.value = '';
+    renderComments();
+    
+    if (tg.HapticFeedback) {
+        tg.HapticFeedback.impactOccurred('light');
+    }
+    
+    showNotification('Comment added!', 'success');
 }
 
 function openBetModal(title, option, probability) {
@@ -1577,13 +1736,12 @@ async function renderEventChart(eventId, options) {
 
     const labels = [];
     const datasets = [];
-    
+
     // Polymarket colors: green for Yes/Up
     const primaryColor = '#22c55e';
 
     if (priceHistory && priceHistory.length > 0) {
         // Use real price history from database
-        // Group by timestamp to get all data points
         const timestampsSet = new Set(priceHistory.map(p => p.timestamp));
         const timestamps = Array.from(timestampsSet);
         timestamps.sort();
@@ -1594,7 +1752,6 @@ async function renderEventChart(eventId, options) {
 
         displayData.forEach(ts => {
             const date = new Date(ts);
-            // Format: "HH:MM" for same day, "MMM DD" for older
             const now = new Date();
             if (date.toDateString() === now.toDateString()) {
                 labels.push(date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
@@ -1611,7 +1768,6 @@ async function renderEventChart(eventId, options) {
                     p.option_index === opt.index &&
                     new Date(p.timestamp).getTime() === new Date(ts).getTime()
                 );
-                // Use real price if available, otherwise use current probability
                 return point ? point.price : opt.probability / 100;
             });
 
@@ -1619,12 +1775,14 @@ async function renderEventChart(eventId, options) {
                 label: translateEventText(opt.text),
                 data: data,
                 borderColor: primaryColor,
-                borderWidth: 2,
+                borderWidth: 3,
                 fill: true,
-                tension: 0.4,  // Smooth curve
+                tension: 0.4,
                 pointRadius: 0,
-                pointHoverRadius: 5,
-                // Gradient will be applied after chart creation
+                pointHoverRadius: 6,
+                pointHoverBackgroundColor: primaryColor,
+                pointHoverBorderColor: '#fff',
+                pointHoverBorderWidth: 2,
             });
         }
     } else {
@@ -1644,8 +1802,7 @@ async function renderEventChart(eventId, options) {
             let basePrice = opt.probability / 100;
 
             for (let i = 0; i <= historyPoints; i++) {
-                // Simulate realistic price movement with smooth transitions
-                const randomChange = (Math.random() - 0.5) * 0.03;  // Smaller changes
+                const randomChange = (Math.random() - 0.5) * 0.03;
                 let price = basePrice + randomChange;
                 price = Math.max(0.01, Math.min(0.99, price));
                 prices.push(price);
@@ -1655,11 +1812,14 @@ async function renderEventChart(eventId, options) {
                 label: translateEventText(opt.text),
                 data: prices,
                 borderColor: primaryColor,
-                borderWidth: 2,
+                borderWidth: 3,
                 fill: true,
                 tension: 0.4,
                 pointRadius: 0,
-                pointHoverRadius: 5
+                pointHoverRadius: 6,
+                pointHoverBackgroundColor: primaryColor,
+                pointHoverBorderColor: '#fff',
+                pointHoverBorderWidth: 2
             });
         }
     }
@@ -1682,18 +1842,21 @@ async function renderEventChart(eventId, options) {
             },
             plugins: {
                 legend: {
-                    display: false  // Hide legend like Polymarket
+                    display: false
                 },
                 tooltip: {
-                    backgroundColor: 'rgba(15, 15, 18, 0.95)',
+                    backgroundColor: 'rgba(15, 15, 18, 0.98)',
                     titleColor: '#fff',
                     bodyColor: '#a1a1aa',
-                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderColor: 'rgba(34, 197, 94, 0.5)',
                     borderWidth: 1,
-                    padding: 12,
+                    padding: 14,
                     displayColors: false,
-                    bodyFont: { size: 12 },
-                    titleFont: { size: 13 },
+                    bodyFont: { size: 13, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
+                    titleFont: { size: 14, weight: '600', family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
+                    cornerRadius: 12,
+                    titleSpacing: 8,
+                    bodySpacing: 8,
                     callbacks: {
                         title: function(context) {
                             return context[0].label;
@@ -1708,14 +1871,15 @@ async function renderEventChart(eventId, options) {
                 x: {
                     display: true,
                     grid: {
-                        display: false  // No grid on X axis
+                        display: false
                     },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 10, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
+                        font: { size: 11, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
                         maxTicksLimit: 6,
                         maxRotation: 0,
-                        autoSkip: true
+                        autoSkip: true,
+                        padding: 8
                     }
                 },
                 y: {
@@ -1723,16 +1887,19 @@ async function renderEventChart(eventId, options) {
                     min: 0,
                     max: 1,
                     grid: {
-                        color: 'rgba(255,255,255,0.05)',  // Very subtle grid
-                        drawBorder: false
+                        color: 'rgba(255,255,255,0.03)',
+                        drawBorder: false,
+                        drawTicks: true,
+                        tickLength: 8
                     },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 10, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
+                        font: { size: 11, family: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
                         callback: function(value) {
                             return (value * 100) + '%';
                         },
-                        maxTicksLimit: 5
+                        maxTicksLimit: 5,
+                        padding: 8
                     }
                 }
             }
@@ -1740,13 +1907,11 @@ async function renderEventChart(eventId, options) {
     });
 
     // Apply gradient fill after chart creation
-    // Gradient from green (top, 60%) to red (bottom, 50%)
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, 'rgba(34, 197, 94, 0.6)');   // Green at top (100%)
-    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.3)'); // Middle transition
-    gradient.addColorStop(1, 'rgba(239, 68, 68, 0.5)');   // Red at bottom (0%)
-    
-    // Apply gradient to the first dataset
+    gradient.addColorStop(0, 'rgba(34, 197, 94, 0.4)');
+    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.15)');
+    gradient.addColorStop(1, 'rgba(34, 197, 94, 0.02)');
+
     if (eventChart.data.datasets.length > 0) {
         eventChart.data.datasets[0].backgroundColor = gradient;
         eventChart.update();

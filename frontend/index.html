@@ -260,6 +260,26 @@
                     </div>
                     <div class="event-options" id="event-options"></div>
                     <div class="event-description" id="event-description"></div>
+                    
+                    <!-- Comments Section -->
+                    <div class="event-comments-section" style="margin-top: 24px;">
+                        <div class="comments-header">
+                            <h4>Comments</h4>
+                            <span class="comments-count" id="comments-count">0</span>
+                        </div>
+                        <div class="add-comment-box">
+                            <textarea id="comment-input" placeholder="Add a comment..." rows="2"></textarea>
+                            <button class="add-comment-btn" onclick="addComment()">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                                </svg>
+                                Post
+                            </button>
+                        </div>
+                        <div class="comments-list" id="comments-list">
+                            <div class="empty-comments">No comments yet. Be the first!</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
