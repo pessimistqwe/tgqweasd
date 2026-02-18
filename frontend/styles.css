@@ -2403,3 +2403,257 @@ body::before {
 * {
     -webkit-tap-highlight-color: transparent;
 }
+
+/* ==================== BETTING MODAL ==================== */
+
+/* Overlay */
+.bet-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 10000;
+    animation: fadeIn 0.2s ease-out;
+}
+
+@supports (backdrop-filter: blur(20px)) {
+    .bet-modal-overlay {
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(20px);
+    }
+}
+
+/* Modal */
+.bet-modal {
+    background: var(--bg-secondary);
+    border-radius: 20px 20px 0 0;
+    width: 100%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
+    animation: slideUp 0.3s ease-out;
+    border: 1px solid var(--border);
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Header */
+.bet-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    background: var(--bg-secondary);
+    z-index: 1;
+}
+
+.bet-modal-header h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.bet-modal-close {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.bet-modal-close:hover {
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+
+/* Body */
+.bet-modal-body {
+    padding: 20px;
+}
+
+/* Bet Form */
+.bet-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* Info Row */
+.bet-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.bet-info-row:last-child {
+    border-bottom: none;
+}
+
+.bet-info-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.bet-info-value.up {
+    color: var(--success-bright);
+}
+
+.bet-info-value.down {
+    color: var(--danger-bright);
+}
+
+.bet-info-value.profit {
+    color: var(--success-bright);
+}
+
+/* Input Group */
+.bet-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.bet-input-group label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.bet-amount-input {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    width: 100%;
+    box-sizing: border-box;
+    transition: all 0.2s;
+}
+
+.bet-amount-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-muted);
+}
+
+.bet-amount-input::placeholder {
+    color: var(--text-muted);
+}
+
+.bet-balance-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: right;
+}
+
+/* Leverage Select */
+.bet-leverage-select {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--text-primary);
+    width: 100%;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b949e' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+}
+
+.bet-leverage-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* Potential Profit */
+.bet-potential-profit {
+    background: var(--bg-card);
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid var(--border);
+}
+
+/* Submit Button */
+.bet-submit-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    padding: 16px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+}
+
+.bet-submit-btn:hover:not(:disabled) {
+    background: var(--accent-hover);
+    transform: translateY(-1px);
+}
+
+.bet-submit-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.bet-submit-btn:disabled {
+    background: var(--bg-card);
+    color: var(--text-muted);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* Error Message */
+.bet-error {
+    background: rgba(218, 54, 51, 0.1);
+    border: 1px solid var(--danger);
+    border-radius: 8px;
+    padding: 12px;
+    color: var(--danger-bright);
+    font-size: 14px;
+    text-align: center;
+}
+
+/* Desktop - Center Modal */
+@media (min-width: 501px) {
+    .bet-modal-overlay {
+        align-items: center;
+    }
+    
+    .bet-modal {
+        border-radius: 20px;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+    }
+}

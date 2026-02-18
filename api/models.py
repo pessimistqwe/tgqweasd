@@ -47,6 +47,9 @@ class User(Base):
     predictions = relationship("UserPrediction", back_populates="user")
     created_events = relationship("Event", back_populates="creator")
     transactions = relationship("Transaction", back_populates="user")
+    # Betting engine relationships
+    bets = relationship("Bet", back_populates="user", foreign_keys="Bet.user_id")
+    price_predictions = relationship("PricePrediction", back_populates="user", foreign_keys="PricePrediction.user_id")
 
 class EventCategory(str, enum.Enum):
     ALL = "all"
@@ -83,6 +86,9 @@ class Event(Base):
     creator = relationship("User", back_populates="created_events")
     predictions = relationship("UserPrediction", back_populates="event")
     event_options = relationship("EventOption", back_populates="event", cascade="all, delete-orphan")
+    # Betting engine relationships
+    bets = relationship("Bet", back_populates="market", foreign_keys="Bet.market_id")
+    price_predictions = relationship("PricePrediction", back_populates="market", foreign_keys="PricePrediction.market_id")
 
 class EventOption(Base):
     __tablename__ = "event_options"
@@ -292,6 +298,70 @@ with engine.connect() as connection:
         connection.execute(text("CREATE INDEX idx_bet_history_event ON bet_history(event_id)"))
         connection.execute(text("CREATE INDEX idx_bet_history_telegram ON bet_history(telegram_id)"))
         connection.execute(text("CREATE INDEX idx_bet_history_timestamp ON bet_history(timestamp)"))
+        connection.commit()
+
+    # Миграция: создание таблицы bets
+    if "bets" not in tables:
+        connection.execute(text("""
+            CREATE TABLE bets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                market_id INTEGER NOT NULL,
+                bet_type VARCHAR(20) NOT NULL,
+                direction VARCHAR(20) NOT NULL,
+                amount DECIMAL(20, 8) NOT NULL,
+                shares DECIMAL(20, 8) DEFAULT 0,
+                entry_price DECIMAL(20, 8) NOT NULL,
+                leverage DECIMAL(10, 2) DEFAULT 1,
+                liquidation_price DECIMAL(20, 8),
+                exit_price DECIMAL(20, 8),
+                potential_payout DECIMAL(20, 8) DEFAULT 0,
+                actual_payout DECIMAL(20, 8) DEFAULT 0,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                resolved_at DATETIME,
+                symbol VARCHAR(50),
+                take_profit_price DECIMAL(20, 8),
+                stop_loss_price DECIMAL(20, 8),
+                comment TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (market_id) REFERENCES events(id)
+            )
+        """))
+        connection.execute(text("CREATE INDEX idx_bets_user_id ON bets(user_id)"))
+        connection.execute(text("CREATE INDEX idx_bets_market_id ON bets(market_id)"))
+        connection.execute(text("CREATE INDEX idx_bets_status ON bets(status)"))
+        connection.execute(text("CREATE INDEX idx_bets_created_at ON bets(created_at)"))
+        connection.execute(text("CREATE INDEX idx_bets_user_status ON bets(user_id, status)"))
+        connection.commit()
+
+    # Миграция: создание таблицы price_predictions
+    if "price_predictions" not in tables:
+        connection.execute(text("""
+            CREATE TABLE price_predictions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                market_id INTEGER NOT NULL,
+                direction VARCHAR(20) NOT NULL,
+                symbol VARCHAR(50) NOT NULL,
+                amount DECIMAL(20, 8) NOT NULL,
+                odds DECIMAL(10, 4) NOT NULL,
+                entry_price DECIMAL(20, 8) NOT NULL,
+                exit_price DECIMAL(20, 8),
+                potential_payout DECIMAL(20, 8) NOT NULL,
+                actual_payout DECIMAL(20, 8) DEFAULT 0,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                resolved_at DATETIME,
+                duration_seconds INTEGER DEFAULT 300,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (market_id) REFERENCES events(id)
+            )
+        """))
+        connection.execute(text("CREATE INDEX idx_price_predictions_user_id ON price_predictions(user_id)"))
+        connection.execute(text("CREATE INDEX idx_price_predictions_market_id ON price_predictions(market_id)"))
+        connection.execute(text("CREATE INDEX idx_price_predictions_status ON price_predictions(status)"))
+        connection.execute(text("CREATE INDEX idx_price_predictions_created_at ON price_predictions(created_at)"))
         connection.commit()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

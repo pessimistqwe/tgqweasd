@@ -30,7 +30,20 @@ except ImportError:
         EventComment, BetHistory
     )
 
+# Импорт betting engine
+try:
+    from .betting_routes import router as betting_router
+    from .telegram_auth import init_telegram_validator
+    from .betting_resolver import start_resolver_worker, stop_resolver_worker
+except ImportError:
+    from betting_routes import router as betting_router
+    from telegram_auth import init_telegram_validator
+    from betting_resolver import start_resolver_worker, stop_resolver_worker
+
 app = FastAPI(title="EventPredict API")
+
+# Подключаем betting routes
+app.include_router(betting_router)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
@@ -668,6 +681,21 @@ async def startup_event():
     """Инициализация при старте приложения"""
     logger.info("🚀 Starting EventPredict API...")
 
+    # Инициализация Telegram валидатора
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if bot_token:
+        init_telegram_validator(bot_token)
+        logger.info("✅ Telegram auth validator initialized")
+    else:
+        logger.warning("⚠️ TELEGRAM_BOT_TOKEN not set, Telegram auth disabled")
+
+    # Запуск Resolver Worker
+    try:
+        await start_resolver_worker()
+        logger.info("✅ Resolver Worker started")
+    except Exception as e:
+        logger.error(f"Failed to start Resolver Worker: {e}")
+
     # Отключаем scheduler в тестовом режиме
     if not os.getenv("DISABLE_SCHEDULER"):
         # Запускаем планировщик
@@ -709,6 +737,14 @@ async def startup_event():
 async def shutdown_event():
     """Остановка при завершении работы"""
     logger.info("🛑 Shutting down EventPredict API...")
+    
+    # Остановка Resolver Worker
+    try:
+        await stop_resolver_worker()
+        logger.info("✅ Resolver Worker stopped")
+    except Exception as e:
+        logger.error(f"Error stopping Resolver Worker: {e}")
+    
     if not os.getenv("DISABLE_SCHEDULER"):
         scheduler.shutdown(wait=False)
 
