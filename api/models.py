@@ -108,6 +108,23 @@ class PriceHistory(Base):
 
     event = relationship("Event", backref="price_history")
 
+class BetHistory(Base):
+    """История ставок для событий (спорт, политика)"""
+    __tablename__ = "bet_history"
+    id = Column(Integer, primary_key=True)
+    event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    telegram_id = Column(Integer, nullable=False, index=True)
+    username = Column(String(255), nullable=True)
+    option_index = Column(Integer, nullable=False)
+    amount = Column(Float, nullable=False)
+    shares = Column(Float, default=0.0)
+    price = Column(Float, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+    event = relationship("Event", backref="bet_history")
+    user = relationship("User", backref="bet_history")
+
 class UserPrediction(Base):
     __tablename__ = "user_predictions"
     id = Column(Integer, primary_key=True)
@@ -251,6 +268,30 @@ with engine.connect() as connection:
         connection.commit()
     if "average_price" not in columns:
         connection.execute(text("ALTER TABLE user_predictions ADD COLUMN average_price FLOAT DEFAULT 0.0"))
+        connection.commit()
+
+    # Миграция: создание таблицы bet_history
+    tables = [row[0] for row in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
+    if "bet_history" not in tables:
+        connection.execute(text("""
+            CREATE TABLE bet_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id INTEGER NOT NULL,
+                user_id INTEGER,
+                telegram_id INTEGER NOT NULL,
+                username VARCHAR(255),
+                option_index INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                shares REAL DEFAULT 0.0,
+                price REAL NOT NULL,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (event_id) REFERENCES events(id),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """))
+        connection.execute(text("CREATE INDEX idx_bet_history_event ON bet_history(event_id)"))
+        connection.execute(text("CREATE INDEX idx_bet_history_telegram ON bet_history(telegram_id)"))
+        connection.execute(text("CREATE INDEX idx_bet_history_timestamp ON bet_history(timestamp)"))
         connection.commit()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

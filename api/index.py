@@ -21,13 +21,13 @@ try:
     from .models import (
         get_db, User, Event, EventOption, UserPrediction,
         Transaction, TransactionType, TransactionStatus, PriceHistory,
-        EventComment
+        EventComment, BetHistory
     )
 except ImportError:
     from models import (
         get_db, User, Event, EventOption, UserPrediction,
         Transaction, TransactionType, TransactionStatus, PriceHistory,
-        EventComment
+        EventComment, BetHistory
     )
 
 app = FastAPI(title="EventPredict API")
@@ -922,6 +922,32 @@ async def get_price_history(event_id: int, db: Session = Depends(get_db)):
         print(f"Error loading price history: {e}")
         return []
 
+@app.get("/events/{event_id}/bet-history")
+async def get_bet_history(event_id: int, db: Session = Depends(get_db)):
+    """Get bet history for sports/politics events"""
+    try:
+        # Get last 50 bets
+        history = db.query(BetHistory).filter(
+            BetHistory.event_id == event_id
+        ).order_by(BetHistory.timestamp.desc()).limit(50).all()
+
+        return [
+            {
+                "id": h.id,
+                "telegram_id": h.telegram_id,
+                "username": h.username or f"User{h.telegram_id}",
+                "option_index": h.option_index,
+                "amount": h.amount,
+                "shares": h.shares,
+                "price": h.price,
+                "timestamp": h.timestamp.isoformat()
+            }
+            for h in history
+        ]
+    except Exception as e:
+        print(f"Error loading bet history: {e}")
+        return []
+
 
 # ==================== COMMENTS API ====================
 
@@ -1501,6 +1527,19 @@ async def make_prediction(request: PredictionRequest, db: Session = Depends(get_
 
         # Обновляем общий пул
         event.total_pool += request.points
+
+        # Записываем в историю ставок
+        bet = BetHistory(
+            event_id=event.id,
+            user_id=user.id,
+            telegram_id=user.telegram_id,
+            username=user.username or user.display_name,
+            option_index=request.option_index,
+            amount=request.points,
+            shares=shares_to_buy,
+            price=share_price
+        )
+        db.add(bet)
 
         db.commit()
 

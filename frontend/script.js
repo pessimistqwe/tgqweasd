@@ -795,22 +795,25 @@ const categoryNames = {
 document.addEventListener('DOMContentLoaded', function() {
     tg.expand();
     tg.ready();
-    
+
     // Telegram theme colors
     if (tg.themeParams) {
         document.documentElement.style.setProperty('--bg-primary', tg.themeParams.bg_color || '#0a0a0a');
         document.documentElement.style.setProperty('--bg-secondary', tg.themeParams.secondary_bg_color || '#141414');
     }
-    
+
+    // Load profile immediately
+    loadProfile();
+
     setTimeout(() => {
         document.getElementById('loading').classList.add('hidden');
     }, 500);
-    
+
     // Initial load
     loadEvents();
     loadUserBalance();
     checkAdminStatus();
-    
+
     // Start auto-refresh
     startAutoRefresh();
 });
@@ -1077,36 +1080,9 @@ async function loadUserBalance() {
 
         document.getElementById('user-balance').textContent = formattedBalance;
         document.getElementById('wallet-balance-value').textContent = userBalance.toFixed(2);
+        document.getElementById('wallet-balance-value').textContent = userBalance.toFixed(2);
         document.getElementById('profile-balance').textContent = userBalance.toFixed(2);
         document.getElementById('available-balance').textContent = userBalance.toFixed(2);
-
-        // Update profile info с данными из Telegram
-        const user = tg.initDataUnsafe?.user;
-        let displayName = getUsername();
-        let avatarUrl = user?.photo_url || null;
-        
-        // Формируем имя из first_name + last_name если есть
-        if (user) {
-            if (user.first_name && user.last_name) {
-                displayName = `${user.first_name} ${user.last_name}`;
-            } else if (user.first_name) {
-                displayName = user.first_name;
-            } else if (user.last_name) {
-                displayName = user.last_name;
-            }
-            avatarUrl = user.photo_url;
-        }
-        
-        document.getElementById('profile-name').textContent = displayName;
-        document.getElementById('profile-telegram-id').textContent = `ID: ${userId}`;
-        
-        // Обновляем аватар — если есть URL, показываем картинку, иначе букву
-        const avatarEl = document.getElementById('profile-avatar');
-        if (avatarUrl) {
-            avatarEl.innerHTML = `<img src="${avatarUrl}" alt="Avatar" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;">`;
-        } else {
-            avatarEl.textContent = displayName.charAt(0).toUpperCase();
-        }
 
         // Load transactions
         if (data.transactions) {
@@ -1119,7 +1095,7 @@ async function loadUserBalance() {
             document.getElementById('active-predictions').textContent = userData.stats.active_predictions || 0;
             document.getElementById('total-won').textContent = userData.stats.total_won || 0;
         }
-        
+
         // Load and render positions
         if (userData.positions) {
             renderPositions(userData.positions);
@@ -1127,6 +1103,47 @@ async function loadUserBalance() {
     } catch (error) {
         console.error('Balance load error:', error);
         document.getElementById('user-balance').textContent = '0';
+    }
+}
+
+// Load profile with Telegram data
+function loadProfile() {
+    const user = tg.initDataUnsafe?.user;
+    
+    if (!user) {
+        // Telegram not available, use defaults
+        const displayName = getUsername();
+        document.getElementById('profile-name').textContent = displayName;
+        document.getElementById('profile-telegram-id').textContent = `ID: ${getUserId()}`;
+        
+        const avatarEl = document.getElementById('profile-avatar');
+        avatarEl.textContent = displayName.charAt(0).toUpperCase();
+        return;
+    }
+
+    // Формируем имя из first_name + last_name
+    let displayName = '';
+    if (user.first_name && user.last_name) {
+        displayName = `${user.first_name} ${user.last_name}`;
+    } else if (user.first_name) {
+        displayName = user.first_name;
+    } else if (user.last_name) {
+        displayName = user.last_name;
+    } else {
+        displayName = user.username || 'User';
+    }
+
+    const avatarUrl = user.photo_url || null;
+
+    document.getElementById('profile-name').textContent = displayName;
+    document.getElementById('profile-telegram-id').textContent = `ID: ${getUserId()}`;
+
+    // Обновляем аватар
+    const avatarEl = document.getElementById('profile-avatar');
+    if (avatarUrl) {
+        avatarEl.innerHTML = `<img src="${avatarUrl}" alt="Avatar" style="width:100%;height:100%;border-radius:inherit;object-fit:cover;">`;
+    } else {
+        avatarEl.textContent = displayName.charAt(0).toUpperCase();
     }
 }
 
@@ -1668,6 +1685,7 @@ function showSection(sectionName) {
     } else if (sectionName === 'wallet') {
         loadUserBalance();
     } else if (sectionName === 'profile') {
+        loadProfile();
         loadUserBalance();
     } else if (sectionName === 'admin' && isAdmin) {
         loadAdminData();
@@ -1920,6 +1938,93 @@ async function renderEventChart(eventId, options) {
     if (eventChart) {
         eventChart.destroy();
     }
+
+    // Get event details to determine type
+    let eventType = 'crypto'; // default
+    try {
+        const event = await apiRequest(`/events/${eventId}`);
+        if (event && event.category) {
+            eventType = event.category;
+        }
+    } catch (e) {
+        console.log('Could not determine event type, using default');
+    }
+
+    // For sports and politics, show bet history instead of chart
+    if (['sports', 'politics', 'pop_culture'].includes(eventType)) {
+        renderBetHistory(eventId);
+        return;
+    }
+
+    // For crypto, business, science - show price chart
+    renderPriceChart(eventId, options);
+}
+
+// Render bet history for sports/politics events
+async function renderBetHistory(eventId) {
+    const chartContainer = document.getElementById('event-chart');
+    if (!chartContainer) return;
+
+    try {
+        const response = await fetch(`${backendUrl}/events/${eventId}/bet-history`);
+        let betHistory = [];
+        if (response.ok) {
+            betHistory = await response.json();
+        }
+
+        if (betHistory.length === 0) {
+            // No bets yet - show message
+            chartContainer.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); text-align: center;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px; opacity: 0.5;">
+                        <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                    <div style="font-size: 14px; font-weight: 600; color: var(--text-secondary);">Нет ставок</div>
+                    <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">Будьте первым кто сделает ставку!</div>
+                </div>
+            `;
+            return;
+        }
+
+        // Render bet history list
+        chartContainer.innerHTML = `
+            <div style="height: 100%; overflow-y: auto; padding: 8px;">
+                <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 12px; margin-bottom: 8px;">
+                    История ставок
+                </div>
+                ${betHistory.map(bet => `
+                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 8px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="width: 32px; height: 32px; border-radius: var(--radius-md); background: var(--accent-muted); display: flex; align-items: center; justify-content: center; font-weight: 600; color: var(--accent); font-size: 14px;">
+                                ${bet.username.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <div style="font-size: 13px; font-weight: 500; color: var(--text-primary);">${escapeHtml(bet.username)}</div>
+                                <div style="font-size: 11px; color: var(--text-muted);">${formatTimeAgo(new Date(bet.timestamp).getTime())}</div>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 14px; font-weight: 600; color: var(--text-primary);">${bet.amount.toFixed(2)} USDT</div>
+                            <div style="font-size: 11px; color: var(--text-muted);">${bet.shares.toFixed(2)} shares @ ${(bet.price * 100).toFixed(1)}%</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } catch (e) {
+        console.error('Error loading bet history:', e);
+        chartContainer.innerHTML = `
+            <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">
+                Error loading bet history
+            </div>
+        `;
+    }
+}
+
+// Render price chart for crypto/business/science events
+async function renderPriceChart(eventId, options) {
+    const canvas = document.getElementById('event-chart-canvas');
+    if (!canvas) return;
 
     // Try to fetch real price history from backend
     let priceHistory = null;
