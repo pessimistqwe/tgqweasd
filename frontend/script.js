@@ -986,6 +986,9 @@ function createEventCard(event) {
     const totalPool = formatNumber(event.total_pool || 0);
     const categoryName = categoryNames[event.category] || 'Other';
     const categoryInitial = categoryName.charAt(0).toUpperCase();
+    
+    // Форматируем время окончания в МСК
+    const endTimeMSK = event.end_time ? formatTimeMSK(event.end_time) : '';
 
     // Определяем, запущено ли приложение в Telegram
     const isTelegramWebApp = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
@@ -1028,7 +1031,7 @@ function createEventCard(event) {
             </div>
 
             <div class="event-meta">
-                <div class="event-timer">
+                <div class="event-timer" title="${endTimeMSK}">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/>
                         <path d="M12 6v6l4 2"/>
@@ -1693,7 +1696,11 @@ async function openEventModal(eventId) {
         // Загружаем комментарии для события (из localStorage для демо)
         loadCommentsForEvent(eventId);
 
-        document.getElementById('event-modal-title').textContent = translateEventText(event.title);
+        // Форматируем время окончания в МСК
+        const endTimeMSK = event.end_time ? formatTimeMSK(event.end_time) : '';
+        const endTimeDisplay = endTimeMSK ? ` • ${endTimeMSK}` : '';
+
+        document.getElementById('event-modal-title').textContent = translateEventText(event.title) + endTimeDisplay;
         document.getElementById('event-description').innerHTML = `
             <strong>${tr('description')}:</strong><br>
             ${translateEventText(event.description) || tr('no_description')}
@@ -2116,6 +2123,42 @@ async function renderEventChart(eventId, options) {
 
 // ==================== UTILITY FUNCTIONS ====================
 
+/**
+ * Конвертирует время в МСК с 24-часовым форматом
+ * @param {string|Date} isoString - ISO строка времени или Date объект
+ * @returns {string} Отформатированная строка времени в МСК (24-часовой формат)
+ */
+function formatTimeMSK(isoString) {
+    if (!isoString) return '';
+    
+    try {
+        const date = new Date(isoString);
+        
+        // Конвертируем в МСК (UTC+3)
+        const mskOffset = 3 * 60; // минут
+        const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+        const mskDate = new Date(utc + (mskOffset * 60000));
+        
+        // Форматируем в 24-часовом формате
+        const day = mskDate.getDate().toString().padStart(2, '0');
+        const month = (mskDate.getMonth() + 1).toString().padStart(2, '0');
+        const year = mskDate.getFullYear();
+        const hours = mskDate.getHours().toString().padStart(2, '0');
+        const minutes = mskDate.getMinutes().toString().padStart(2, '0');
+        
+        if (isRussian) {
+            return `${day}.${month}.${year} ${hours}:${minutes} МСК`;
+        }
+        return `${day}/${month}/${year} ${hours}:${minutes} MSK`;
+    } catch (e) {
+        console.error('Error formatting time MSK:', e);
+        return isoString;
+    }
+}
+
+/**
+ * Форматирует оставшееся время до события
+ */
 function formatTimeLeft(seconds) {
     if (seconds < 0) return isRussian ? "Завершено" : "Ended";
 
