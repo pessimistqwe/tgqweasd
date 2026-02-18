@@ -75,9 +75,10 @@ class Event(Base):
     correct_option = Column(Integer, nullable=True)
     creator_id = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
     total_pool = Column(Float, default=0.0)
-    
+    has_chart = Column(Boolean, default=False)  # Flag for events with price history chart
+
     # Relationships
     creator = relationship("User", back_populates="created_events")
     predictions = relationship("UserPrediction", back_populates="event")
@@ -229,6 +230,12 @@ with engine.connect() as connection:
         connection.commit()
     if "avatar_url" not in columns:
         connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)"))
+        connection.commit()
+
+    # Миграция: добавление has_chart в events
+    columns = [row[1] for row in connection.execute(text("PRAGMA table_info(events)")).fetchall()]
+    if "has_chart" not in columns:
+        connection.execute(text("ALTER TABLE events ADD COLUMN has_chart BOOLEAN DEFAULT 0"))
         connection.commit()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

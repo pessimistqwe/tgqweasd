@@ -423,6 +423,7 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
         existing.end_time = end_time
         existing.is_active = is_active
         existing.options = json.dumps(options)
+        existing.has_chart = True  # Polymarket events have charts
 
         existing_options = {
             opt.option_index: opt
@@ -477,6 +478,7 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
         end_time=end_time,
         is_active=is_active,
         is_moderated=True,
+        has_chart=True,  # Polymarket events have charts
         total_pool=sum(volumes)
     )
     db.add(new_event)
@@ -827,6 +829,7 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                 "end_time": event.end_time.isoformat(),
                 "time_left": max(0, time_left),
                 "total_pool": event.total_pool,
+                "has_chart": event.has_chart or False,  # Flag for chart availability
                 "options": [
                     {
                         "index": opt.option_index,
@@ -873,6 +876,7 @@ async def get_event(event_id: int, db: Session = Depends(get_db)):
             "end_time": event.end_time.isoformat(),
             "time_left": max(0, time_left),
             "total_pool": event.total_pool,
+            "has_chart": event.has_chart or False,
             "options": [
                 {
                     "index": opt.option_index,

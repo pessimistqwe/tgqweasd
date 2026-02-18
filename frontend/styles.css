@@ -62,7 +62,7 @@ body {
     overflow-x: hidden;
 }
 
-/* Light gradient background */
+/* Light gray-blue gradient background */
 body::before {
     content: '';
     position: fixed;
@@ -71,8 +71,9 @@ body::before {
     width: 100%;
     height: 100%;
     background:
-        radial-gradient(ellipse at 20% 20%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
-        radial-gradient(ellipse at 80% 80%, rgba(34, 197, 94, 0.06) 0%, transparent 50%);
+        radial-gradient(ellipse at 15% 10%, rgba(59, 130, 246, 0.12) 0%, transparent 60%),
+        radial-gradient(ellipse at 85% 30%, rgba(147, 197, 253, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 80%, rgba(203, 213, 225, 0.1) 0%, transparent 60%);
     pointer-events: none;
     z-index: -1;
 }

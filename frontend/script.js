@@ -1526,10 +1526,10 @@ async function openEventModal(eventId) {
 
         selectedOptionIndex = null;
         currentEventIdForComments = eventId;
-        
+
         // Загружаем комментарии для события (из localStorage для демо)
         loadCommentsForEvent(eventId);
-        
+
         document.getElementById('event-modal-title').textContent = translateEventText(event.title);
         document.getElementById('event-description').innerHTML = `
             <strong>${tr('description')}:</strong><br>
@@ -1545,11 +1545,19 @@ async function openEventModal(eventId) {
             </div>
         `).join('');
 
+        // Show/hide chart based on has_chart flag
+        const chartContainer = document.getElementById('event-chart');
+        if (chartContainer) {
+            chartContainer.style.display = event.has_chart ? 'block' : 'none';
+        }
+
         // Show modal
         document.getElementById('event-modal').classList.remove('hidden');
 
-        // Render chart after modal is shown
-        setTimeout(() => renderEventChart(event.id, event.options), 100);
+        // Render chart only if has_chart is true
+        if (event.has_chart) {
+            setTimeout(() => renderEventChart(event.id, event.options), 100);
+        }
     } catch (e) {
         console.error('Error loading event:', e);
         showNotification('Failed to load event details', 'error');
@@ -1766,9 +1774,17 @@ async function renderEventChart(eventId, options) {
             const date = new Date(ts);
             const now = new Date();
             if (date.toDateString() === now.toDateString()) {
-                labels.push(date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+                // Russian 24-hour format or English 12-hour
+                labels.push(date.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', { 
+                    hour: '2-digit', 
+                    minute: '2-digit',
+                    hour12: !isRussian
+                }));
             } else {
-                labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+                labels.push(date.toLocaleDateString(isRussian ? 'ru-RU' : 'en-US', { 
+                    month: 'short', 
+                    day: 'numeric' 
+                }));
             }
         });
 
@@ -1804,7 +1820,12 @@ async function renderEventChart(eventId, options) {
 
         for (let i = historyPoints; i >= 0; i--) {
             const time = new Date(now - i * 3600000);
-            labels.push(time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }));
+            // Russian 24-hour format or English 12-hour
+            labels.push(time.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', { 
+                hour: '2-digit', 
+                minute: '2-digit',
+                hour12: !isRussian
+            }));
         }
 
         // SINGLE LINE: Use only the first (primary) option - Yes/Up
@@ -1933,19 +1954,19 @@ async function renderEventChart(eventId, options) {
 // ==================== UTILITY FUNCTIONS ====================
 
 function formatTimeLeft(seconds) {
-    if (seconds < 0) return "Ended";
-    
+    if (seconds < 0) return isRussian ? "Завершено" : "Ended";
+
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    
+
     if (days > 30) {
         const months = Math.floor(days / 30);
-        return `${months}mo`;
+        return `${months}${isRussian ? ' мес' : 'mo'}`;
     }
-    if (days > 0) return `${days}d ${hours}h`;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
+    if (days > 0) return `${days}${isRussian ? 'д' : 'd'} ${hours}${isRussian ? 'ч' : 'h'}`;
+    if (hours > 0) return `${hours}${isRussian ? 'ч' : 'h'} ${minutes}${isRussian ? 'м' : 'm'}`;
+    return `${minutes}${isRussian ? 'м' : 'm'}`;
 }
 
 function formatNumber(num) {
