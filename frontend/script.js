@@ -85,6 +85,14 @@ const PRESERVE_PATTERNS = [
     /\b\d{1,3}(?:,\d{3})+\b/g
 ];
 
+// Паттерны для удаления (американское время, лишние обозначения)
+const REMOVE_PATTERNS = [
+    /\s*\d{1,2}:\d{2}\s*(?:AM|PM)\s*(?:ET|EST|EDT)?/gi,  // 3:00 PM ET
+    /\s*\d{1,2}\s*(?:AM|PM)\s*(?:ET|EST|EDT)?/gi,  // 3 PM ET
+    /\s*(?:AM|PM)\s*(?:ET|EST|EDT)/gi,  // PM ET
+    /\s*(?:ET|EST|EDT)\b/gi,  // ET, EST, EDT
+];
+
 // Расширенный словарь для перевода
 const TRANSLATION_DICT = {
     // Месяцы
@@ -522,7 +530,12 @@ function translateEventText(text) {
         translated = translated.replace(placeholder, original);
     });
 
-    // Шаг 7: Убираем лишние пробелы
+    // Шаг 7: Удаляем американское время (PM/AM ET)
+    REMOVE_PATTERNS.forEach(pattern => {
+        translated = translated.replace(pattern, '');
+    });
+
+    // Шаг 8: Убираем лишние пробелы
     return translated.replace(/\s+/g, ' ').trim();
 }
 
@@ -1989,6 +2002,10 @@ function closeEventModal() {
     // Clear price buffer
     webSocketPriceBuffer = [];
 
+    // Clear chart data arrays
+    currentChartLabels = [];
+    currentChartPrices = [];
+
     // Close Binance WebSocket
     if (binanceWebSocket) {
         binanceWebSocket.close();
@@ -2375,6 +2392,8 @@ let currentChartInterval = '15m';
 let chartPriceData = { firstPrice: 0, lastPrice: 0 };
 let webSocketPriceBuffer = []; // Buffer for price updates
 let webSocketUpdateTimeout = null; // Debounce timer
+let currentChartLabels = []; // Global chart labels
+let currentChartPrices = []; // Global chart prices
 
 async function renderPriceChart(eventId, options) {
     const canvas = document.getElementById('event-chart-canvas');
@@ -2414,10 +2433,11 @@ async function renderPriceChart(eventId, options) {
 function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
     const ctx = canvas.getContext('2d');
     const chartColor = '#f2b03d';
-    
-    const labels = [];
-    const prices = [];
-    
+
+    // Очищаем глобальные массивы при создании нового графика
+    currentChartLabels = [];
+    currentChartPrices = [];
+
     // Show timeframe buttons and price info
     document.getElementById('event-chart-timeframe').style.display = 'flex';
     document.getElementById('event-chart-info').style.display = 'block';
@@ -2428,6 +2448,11 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
             document.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentChartInterval = btn.dataset.interval;
+            // Очищаем буфер при переключении интервала
+            webSocketPriceBuffer = [];
+            if (webSocketUpdateTimeout) {
+                clearTimeout(webSocketUpdateTimeout);
+            }
             loadChartData(binanceSymbol, currentChartInterval);
         };
     });
@@ -2435,10 +2460,10 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
     eventChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: labels,
+            labels: currentChartLabels,
             datasets: [{
                 label: binanceSymbol,
-                data: prices,
+                data: currentChartPrices,
                 borderColor: chartColor,
                 borderWidth: 2,
                 fill: true,
@@ -2563,44 +2588,45 @@ async function loadChartData(symbol, interval) {
         );
         const data = await response.json();
 
-        const labels = [];
-        const prices = [];
+        // Очищаем и заполняем глобальные массивы
+        currentChartLabels = [];
+        currentChartPrices = [];
 
         data.forEach(candle => {
             const timestamp = candle[0];
             const close = parseFloat(candle[4]);
             const time = new Date(timestamp);
-            labels.push(time.toISOString());
-            prices.push(close);
+            currentChartLabels.push(time.toISOString());
+            currentChartPrices.push(close);
         });
 
-        if (prices.length > 0) {
-            chartPriceData.firstPrice = prices[0];
-            chartPriceData.lastPrice = prices[prices.length - 1];
-            updateChartPriceDisplay(prices[prices.length - 1]);
-            updatePredictionOdds(prices);
+        if (currentChartPrices.length > 0) {
+            chartPriceData.firstPrice = currentChartPrices[0];
+            chartPriceData.lastPrice = currentChartPrices[currentChartPrices.length - 1];
+            updateChartPriceDisplay(currentChartPrices[currentChartPrices.length - 1]);
+            updatePredictionOdds(currentChartPrices);
         }
 
         if (eventChart) {
-            eventChart.data.labels = labels;
-            eventChart.data.datasets[0].data = prices;
+            eventChart.data.labels = currentChartLabels;
+            eventChart.data.datasets[0].data = currentChartPrices;
 
             // Calculate and set fixed Y-axis scale
-            const minPrice = Math.min(...prices);
-            const maxPrice = Math.max(...prices);
+            const minPrice = Math.min(...currentChartPrices);
+            const maxPrice = Math.max(...currentChartPrices);
             const range = maxPrice - minPrice;
             const padding = range > 0 ? range * 0.15 : minPrice * 0.15;
 
             eventChart.options.scales.y.min = minPrice - padding;
             eventChart.options.scales.y.max = maxPrice + padding;
-            
+
             // Set X-axis max based on data length
-            eventChart.options.scales.x.max = prices.length - 1;
-            
+            eventChart.options.scales.x.max = currentChartLabels.length - 1;
+
             eventChart.update('none');
         }
 
-        connectBinanceWebSocket(symbol, labels, prices);
+        connectBinanceWebSocket(symbol);
     } catch (err) {
         console.error('Error loading chart data:', err);
     }
@@ -2623,7 +2649,7 @@ function updateChartPriceDisplay(currentPrice) {
 }
 
 // Connect to Binance WebSocket for real-time price updates
-function connectBinanceWebSocket(symbol, labels, prices) {
+function connectBinanceWebSocket(symbol) {
     const streamName = `${symbol.toLowerCase()}@trade`;
     binanceWebSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
 
@@ -2660,8 +2686,8 @@ function connectBinanceWebSocket(symbol, labels, prices) {
 
         // Добавляем все накопленные цены из буфера
         webSocketPriceBuffer.forEach(({ price, timestamp }) => {
-            labels.push(timestamp.toISOString());
-            prices.push(price);
+            currentChartLabels.push(timestamp.toISOString());
+            currentChartPrices.push(price);
         });
 
         // Keep last N points based on interval
@@ -2670,14 +2696,14 @@ function connectBinanceWebSocket(symbol, labels, prices) {
                          currentChartInterval === '15m' ? 96 :
                          currentChartInterval === '1h' ? 168 : 168;
 
-        while (labels.length > maxPoints) {
-            labels.shift();
-            prices.shift();
+        while (currentChartLabels.length > maxPoints) {
+            currentChartLabels.shift();
+            currentChartPrices.shift();
         }
 
         // Применяем сглаживание к последним нескольким точкам для плавности
-        const smoothingWindow = Math.min(3, prices.length);
-        const smoothedPrices = applySmoothing(prices, smoothingWindow);
+        const smoothingWindow = Math.min(3, currentChartPrices.length);
+        const smoothedPrices = applySmoothing(currentChartPrices, smoothingWindow);
         
         // Проверяем, выходит ли цена за пределы шкалы
         const lastPrice = smoothedPrices[smoothedPrices.length - 1];
@@ -2697,7 +2723,7 @@ function connectBinanceWebSocket(symbol, labels, prices) {
         }
 
         // Обновляем данные графика
-        eventChart.data.labels = labels;
+        eventChart.data.labels = currentChartLabels;
         eventChart.data.datasets[0].data = smoothedPrices;
         
         // Используем 'default' анимацию для плавного обновления
@@ -2744,7 +2770,7 @@ function connectBinanceWebSocket(symbol, labels, prices) {
         }
         setTimeout(() => {
             if (binanceWebSocket && binanceWebSocket.readyState === WebSocket.CLOSED) {
-                connectBinanceWebSocket(symbol, labels, prices);
+                connectBinanceWebSocket(symbol);
             }
         }, 5000);
     };
