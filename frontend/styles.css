@@ -1468,6 +1468,232 @@ body::before {
     gap: 8px;
 }
 
+/* Event Tabs (Polymarket Style) */
+.event-tabs-container {
+    margin-top: 24px;
+}
+
+.event-tabs {
+    display: flex;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0;
+    margin-bottom: 16px;
+}
+
+.event-tab {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.event-tab:hover {
+    color: var(--text-primary);
+    background: rgba(242, 176, 61, 0.05);
+    border-bottom-color: rgba(242, 176, 61, 0.3);
+}
+
+.event-tab.active {
+    color: #f2b03d;
+    border-bottom-color: #f2b03d;
+}
+
+.event-tab svg {
+    width: 16px;
+    height: 16px;
+}
+
+.tab-panel {
+    display: none;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+/* Activity List */
+.activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.activity-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    transition: all 0.2s ease;
+}
+
+.activity-item:hover {
+    border-color: var(--border-hover);
+}
+
+.activity-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.activity-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 14px;
+    color: #fff;
+}
+
+.activity-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.activity-user {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.activity-action {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.activity-right {
+    text-align: right;
+}
+
+.activity-amount {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.activity-time {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+/* Positions Stats */
+.positions-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.position-stat-card {
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    text-align: center;
+}
+
+.position-stat-value {
+    display: block;
+    font-size: 20px;
+    font-weight: 700;
+    color: #f2b03d;
+    margin-bottom: 6px;
+}
+
+.position-stat-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Holdings List */
+.holdings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.holding-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.holding-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.holding-rank {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.holding-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.holding-user {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.holding-shares {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.holding-right {
+    text-align: right;
+}
+
+.holding-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #f2b03d;
+}
+
+.holding-percent {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
 .description-toggle svg {
     color: var(--text-muted);
     transition: transform 0.3s ease;

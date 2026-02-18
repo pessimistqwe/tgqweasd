@@ -1974,18 +1974,144 @@ function closeEventModal() {
     document.getElementById('event-modal').classList.add('hidden');
     selectedOptionIndex = null;
     currentEventIdForComments = null;
-    
+
     // Clear chart update interval
     if (chartUpdateInterval) {
         clearInterval(chartUpdateInterval);
         chartUpdateInterval = null;
     }
-    
+
     // Close Binance WebSocket
     if (binanceWebSocket) {
         binanceWebSocket.close();
         binanceWebSocket = null;
     }
+}
+
+// Event Tabs Switching
+function switchEventTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.event-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.tab === tabName);
+    });
+
+    // Update tab content
+    document.querySelectorAll('.tab-panel').forEach(panel => {
+        panel.classList.toggle('active', panel.id === `${tabName}-tab`);
+    });
+
+    // Load data for specific tab
+    if (tabName === 'activity') {
+        loadActivityData();
+    } else if (tabName === 'positions') {
+        loadPositionsData();
+    } else if (tabName === 'holdings') {
+        loadHoldingsData();
+    }
+}
+
+// Load Activity Data
+function loadActivityData() {
+    const container = document.getElementById('activity-list');
+    if (!container) return;
+
+    // Generate mock activity data (replace with API call later)
+    const activities = generateMockActivity();
+    
+    container.innerHTML = activities.map(act => `
+        <div class="activity-item">
+            <div class="activity-left">
+                <div class="activity-avatar">${act.avatar}</div>
+                <div class="activity-info">
+                    <div class="activity-user">${act.user}</div>
+                    <div class="activity-action">${act.action}</div>
+                </div>
+            </div>
+            <div class="activity-right">
+                <div class="activity-amount">${act.amount}</div>
+                <div class="activity-time">${act.time}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function generateMockActivity() {
+    const actions = ['купил YES', 'купил NO', 'продал YES', 'продал NO'];
+    const result = [];
+    for (let i = 0; i < 15; i++) {
+        result.push({
+            avatar: String.fromCharCode(65 + i),
+            user: `User${1000 + i}`,
+            action: actions[Math.floor(Math.random() * actions.length)],
+            amount: `${(Math.random() * 100).toFixed(0)} USDT`,
+            time: `${Math.floor(Math.random() * 60) + 1} мин назад`
+        });
+    }
+    return result;
+}
+
+// Load Positions Data
+function loadPositionsData() {
+    const container = document.getElementById('positions-stats');
+    if (!container) return;
+
+    // Mock positions data
+    const positions = {
+        totalVolume: (Math.random() * 10000).toFixed(0),
+        openInterest: (Math.random() * 5000).toFixed(0),
+        totalTrades: Math.floor(Math.random() * 500)
+    };
+
+    container.innerHTML = `
+        <div class="position-stat-card">
+            <span class="position-stat-value">$${positions.totalVolume}</span>
+            <span class="position-stat-label">Объём</span>
+        </div>
+        <div class="position-stat-card">
+            <span class="position-stat-value">$${positions.openInterest}</span>
+            <span class="position-stat-label">Открытый интерес</span>
+        </div>
+        <div class="position-stat-card">
+            <span class="position-stat-value">${positions.totalTrades}</span>
+            <span class="position-stat-label">Сделки</span>
+        </div>
+    `;
+}
+
+// Load Holdings Data
+function loadHoldingsData() {
+    const container = document.getElementById('holdings-list');
+    if (!container) return;
+
+    // Mock holdings data
+    const holdings = [];
+    let total = 0;
+    for (let i = 0; i < 10; i++) {
+        const value = Math.floor(Math.random() * 2000) + 100;
+        total += value;
+        holdings.push({
+            rank: i + 1,
+            user: `User${1000 + i}`,
+            shares: Math.floor(Math.random() * 500) + 10,
+            value: value
+        });
+    }
+
+    container.innerHTML = holdings.map(h => `
+        <div class="holding-item">
+            <div class="holding-left">
+                <div class="holding-rank">${h.rank}</div>
+                <div class="holding-info">
+                    <div class="holding-user">${h.user}</div>
+                    <div class="holding-shares">${h.shares} акций</div>
+                </div>
+            </div>
+            <div class="holding-right">
+                <div class="holding-value">$${h.value}</div>
+                <div class="holding-percent">${((h.value / total) * 100).toFixed(1)}%</div>
+            </div>
+        </div>
+    `);
 }
 
 // Toggle description visibility
@@ -2480,9 +2606,9 @@ function connectBinanceWebSocket(symbol, labels, prices) {
     const streamName = `${symbol.toLowerCase()}@trade`;
     binanceWebSocket = new WebSocket(`wss://stream.binance.com:9443/ws/${streamName}`);
 
-    // Store initial scale - DO NOT CHANGE during session
-    const initialMin = eventChart.options.scales.y.min;
-    const initialMax = eventChart.options.scales.y.max;
+    // Store initial scale
+    let currentMin = eventChart.options.scales.y.min;
+    let currentMax = eventChart.options.scales.y.max;
 
     binanceWebSocket.onmessage = function(event) {
         const data = JSON.parse(event.data);
@@ -2504,7 +2630,25 @@ function connectBinanceWebSocket(symbol, labels, prices) {
             prices.shift();
         }
 
-        // Update chart data ONLY - do NOT change scale
+        // Check if price is going out of scale - adjust if needed
+        const padding = (currentMax - currentMin) * 0.1;
+        if (price > currentMax - padding || price < currentMin + padding) {
+            // Recalculate scale from current data
+            const newMin = Math.min(...prices);
+            const newMax = Math.max(...prices);
+            const newRange = newMax - newMin;
+            const newPadding = newRange > 0 ? newRange * 0.15 : newMin * 0.15;
+            
+            currentMin = newMin - newPadding;
+            currentMax = newMax + newPadding;
+            
+            if (eventChart) {
+                eventChart.options.scales.y.min = currentMin;
+                eventChart.options.scales.y.max = currentMax;
+            }
+        }
+
+        // Update chart data
         if (eventChart) {
             eventChart.data.labels = labels;
             eventChart.data.datasets[0].data = prices;

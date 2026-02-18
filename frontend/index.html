@@ -346,34 +346,85 @@
                         </div>
                     </div>
 
-                    <!-- Collapsible Description -->
-                    <div class="event-description-wrapper" style="margin-top: 16px;">
-                        <button class="description-toggle" onclick="toggleDescription()">
-                            <span>О рынке</span>
-                            <svg id="desc-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transition: transform 0.3s ease;">
-                                <path d="M9 18l6-6-6-6"/>
-                            </svg>
-                        </button>
-                        <div id="event-description" class="event-description-content" style="display: none;"></div>
-                    </div>
-
-                    <!-- Comments Section -->
-                    <div class="event-comments-section" style="margin-top: 24px;">
-                        <div class="comments-header">
-                            <h4>Комментарии</h4>
-                            <span class="comments-count" id="comments-count">0</span>
-                        </div>
-                        <div class="add-comment-box">
-                            <textarea id="comment-input" placeholder="Добавить комментарий..." rows="2"></textarea>
-                            <button class="add-comment-btn" onclick="addComment()">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                    <!-- Tabs Section (Polymarket Style) -->
+                    <div class="event-tabs-container" style="margin-top: 24px;">
+                        <div class="event-tabs">
+                            <button class="event-tab active" data-tab="comments" onclick="switchEventTab('comments')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
                                 </svg>
-                                Отправить
+                                Комментарии
+                            </button>
+                            <button class="event-tab" data-tab="activity" onclick="switchEventTab('activity')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <polyline points="12 6 12 12 16 14"/>
+                                </svg>
+                                Активность
+                            </button>
+                            <button class="event-tab" data-tab="positions" onclick="switchEventTab('positions')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                                </svg>
+                                Позиции
+                            </button>
+                            <button class="event-tab" data-tab="holdings" onclick="switchEventTab('holdings')">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                    <path d="M2 17l10 5 10-5"/>
+                                    <path d="M2 12l10 5 10-5"/>
+                                </svg>
+                                Держатели
                             </button>
                         </div>
-                        <div class="comments-list" id="comments-list">
-                            <div class="empty-comments">Нет комментариев. Будьте первыми!</div>
+
+                        <!-- Tab Content -->
+                        <div class="event-tab-content">
+                            <!-- Comments Tab -->
+                            <div id="comments-tab" class="tab-panel active">
+                                <div class="add-comment-box" style="margin-bottom: 16px;">
+                                    <textarea id="comment-input" placeholder="Добавить комментарий..." rows="2"></textarea>
+                                    <button class="add-comment-btn" onclick="addComment()">
+                                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                                        </svg>
+                                        Отправить
+                                    </button>
+                                </div>
+                                <div class="comments-list" id="comments-list">
+                                    <div class="empty-comments">Нет комментариев. Будьте первыми!</div>
+                                </div>
+                            </div>
+
+                            <!-- Activity Tab -->
+                            <div id="activity-tab" class="tab-panel">
+                                <div class="activity-list" id="activity-list">
+                                    <div class="loading-container">
+                                        <div class="spinner"></div>
+                                        <p>Загрузка активности...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Positions Tab -->
+                            <div id="positions-tab" class="tab-panel">
+                                <div class="positions-stats" id="positions-stats">
+                                    <div class="loading-container">
+                                        <div class="spinner"></div>
+                                        <p>Загрузка позиций...</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Holdings Tab -->
+                            <div id="holdings-tab" class="tab-panel">
+                                <div class="holdings-list" id="holdings-list">
+                                    <div class="loading-container">
+                                        <div class="spinner"></div>
+                                        <p>Загрузка держателей...</p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
