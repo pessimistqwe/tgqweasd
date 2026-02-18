@@ -2203,9 +2203,9 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
     // Initialize chart with empty data
     const labels = [];
     const prices = [];
-    const maxPoints = 50;
+    const maxPoints = 60; // More points for wider horizontal view
 
-    // Create initial chart
+    // Create initial chart with Polymarket-style settings
     eventChart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -2214,21 +2214,21 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                 label: binanceSymbol,
                 data: prices,
                 borderColor: primaryColor,
-                borderWidth: 2.5,
+                borderWidth: 2,
                 fill: true,
-                tension: 0.3, // Less tension for smoother curve
+                tension: 0.4, // Smoother curve like Polymarket
                 pointRadius: 0,
-                pointHoverRadius: 5,
+                pointHoverRadius: 4,
                 pointHoverBackgroundColor: primaryColor,
                 pointHoverBorderColor: '#fff',
-                pointHoverBorderWidth: 2
+                pointHoverBorderWidth: 1
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             animation: {
-                duration: 0, // Disable animation for performance
+                duration: 0,
                 x: { duration: 0 },
                 y: { duration: 0 }
             },
@@ -2244,18 +2244,17 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                     bodyColor: '#a1a1aa',
                     borderColor: 'rgba(34, 197, 94, 0.5)',
                     borderWidth: 1,
-                    padding: 14,
+                    padding: 12,
                     displayColors: false,
-                    titleFont: { size: 13, weight: '600' },
-                    bodyFont: { size: 12 },
-                    cornerRadius: 8,
+                    titleFont: { size: 12, weight: '600' },
+                    bodyFont: { size: 11 },
+                    cornerRadius: 6,
                     callbacks: {
                         title: (ctx) => {
                             const date = new Date(ctx[0].label);
                             return date.toLocaleTimeString(isRussian ? 'ru-RU' : 'en-US', {
                                 hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit'
+                                minute: '2-digit'
                             });
                         },
                         label: (ctx) => `$${ctx.parsed.y.toFixed(2)}`
@@ -2268,33 +2267,34 @@ function renderRealtimeChart(canvas, binanceSymbol, options, eventId) {
                     grid: { display: false },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 10 },
-                        maxTicksLimit: 5,
+                        font: { size: 9 },
+                        maxTicksLimit: 6,
                         maxRotation: 0,
                         autoSkip: true,
-                        padding: 4
-                    }
+                        padding: 8
+                    },
+                    // Fix: Add offset to prevent cutting off left side
+                    offset: true
                 },
                 y: {
                     display: true,
                     position: 'right',
-                    grid: { 
+                    grid: {
                         color: 'rgba(255,255,255,0.05)',
                         drawBorder: false
                     },
                     ticks: {
                         color: '#71717a',
-                        font: { size: 10 },
-                        padding: 4,
+                        font: { size: 9 },
+                        padding: 6,
+                        maxTicksLimit: 5,
                         callback: (value) => {
-                            // Format large numbers nicely
                             if (value >= 1000) {
                                 return '$' + (value / 1000).toFixed(1) + 'K';
                             }
                             return '$' + value.toFixed(2);
                         }
                     },
-                    // FIXED: Set explicit min/max, will be updated after data loads
                     min: undefined,
                     max: undefined
                 }
@@ -2338,7 +2338,7 @@ function connectBinanceWebSocket(symbol, labels, prices) {
 
     // FIXED scaling - center the price in the middle of the chart
     const currentPrice = prices.length > 0 ? prices[prices.length - 1] : 0;
-    
+
     // Set fixed percentage range around current price (±10% for stability)
     const priceRange = 0.10; // 10% range on each side
     let fixedMinPrice = currentPrice * (1 - priceRange);
@@ -2366,8 +2366,8 @@ function connectBinanceWebSocket(symbol, labels, prices) {
         labels.push(timestamp.toISOString());
         prices.push(price);
 
-        // Keep only last 50 points
-        if (labels.length > 50) {
+        // Keep only last 60 points for wider horizontal view
+        if (labels.length > 60) {
             labels.shift();
             prices.shift();
         }
