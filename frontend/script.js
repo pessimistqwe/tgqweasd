@@ -1110,16 +1110,92 @@ async function loadUserBalance() {
             renderTransactions(data.transactions);
         }
 
-        // Load user stats
+        // Load user stats and positions
         const userData = await apiRequest(`/user/${userId}`);
         if (userData.stats) {
             document.getElementById('active-predictions').textContent = userData.stats.active_predictions || 0;
             document.getElementById('total-won').textContent = userData.stats.total_won || 0;
         }
+        
+        // Load and render positions
+        if (userData.positions) {
+            renderPositions(userData.positions);
+        }
     } catch (error) {
         console.error('Balance load error:', error);
         document.getElementById('user-balance').textContent = '0';
     }
+}
+
+// Render user's positions (shares)
+function renderPositions(positions) {
+    // Check if we have a positions container in profile, if not create one
+    let container = document.getElementById('positions-container');
+    
+    if (!container) {
+        // Create positions section in profile if it doesn't exist
+        const profileCard = document.querySelector('.profile-card');
+        if (profileCard) {
+            const positionsSection = document.createElement('div');
+            positionsSection.innerHTML = `
+                <div class="profile-section-title" style="margin: 20px 0 12px; font-size: 16px; font-weight: 600; color: var(--text-primary);">
+                    My Positions
+                </div>
+                <div id="positions-container"></div>
+            `;
+            profileCard.appendChild(positionsSection);
+            container = document.getElementById('positions-container');
+        }
+    }
+    
+    if (!container) return;
+    
+    if (!positions || positions.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state-small" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 14px;">
+                No active positions
+            </div>
+        `;
+        return;
+    }
+    
+    const html = positions.map(pos => {
+        const profitClass = pos.profit_loss >= 0 ? 'amount-positive' : 'amount-negative';
+        const profitSign = pos.profit_loss >= 0 ? '+' : '';
+        const percentClass = pos.profit_loss_percent >= 0 ? 'status-approved' : 'status-rejected';
+        
+        return `
+            <div class="position-item" style="display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <div style="flex: 1;">
+                        <div style="font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">${escapeHtml(pos.event_title)}</div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">${escapeHtml(pos.option_text)}</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 14px; font-weight: 700; color: var(--text-primary);">${pos.shares.toFixed(2)} shares</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">@ ${pos.average_price.toFixed(2)} USDT</div>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid var(--border);">
+                    <div>
+                        <div style="font-size: 11px; color: var(--text-muted);">Current Value</div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--text-primary);">${pos.current_value.toFixed(2)} USDT</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 11px; color: var(--text-muted);">P/L</div>
+                        <div style="font-size: 14px; font-weight: 600;" class="${profitClass}">${profitSign}${pos.profit_loss.toFixed(2)} USDT</div>
+                        <div style="font-size: 11px;" class="${percentClass}">(${profitSign}${pos.profit_loss_percent.toFixed(1)}%)</div>
+                    </div>
+                </div>
+                <button class="sell-position-btn" onclick="openSellModal(${pos.event_id}, ${pos.option_index}, '${escapeHtml(pos.option_text)}', ${pos.shares}, ${pos.current_price})" 
+                    style="width: 100%; padding: 10px; background: linear-gradient(135deg, #ef4444, #b91c1c); border: none; border-radius: var(--radius-md); color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; margin-top: 8px;">
+                    Sell Position
+                </button>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = html;
 }
 
 function renderTransactions(transactions) {
@@ -1375,6 +1451,93 @@ async function confirmPrediction() {
         const confirmBtn = document.querySelector('#bet-modal .modal-btn.confirm');
         if (confirmBtn) {
             confirmBtn.textContent = 'Place Bet';
+            confirmBtn.disabled = false;
+        }
+    }
+}
+
+// ==================== SELL FUNCTIONS ====================
+
+let currentSellEventId = null;
+let currentSellOptionIndex = null;
+let currentSellShares = 0;
+let currentSellPrice = 0;
+
+function openSellModal(eventId, optionIndex, optionText, shares, currentPrice) {
+    currentSellEventId = eventId;
+    currentSellOptionIndex = optionIndex;
+    currentSellShares = shares;
+    currentSellPrice = currentPrice;
+    
+    const modal = document.getElementById('sell-modal');
+    if (!modal) return;
+    
+    document.getElementById('sell-option-text').textContent = optionText;
+    document.getElementById('sell-shares-value').textContent = shares.toFixed(2);
+    document.getElementById('sell-price-value').textContent = currentPrice.toFixed(2);
+    document.getElementById('sell-current-value').textContent = (shares * currentPrice).toFixed(2);
+    document.getElementById('sell-shares-input').value = shares.toFixed(2);
+    document.getElementById('sell-shares-input').max = shares;
+    
+    updateSellProceeds(shares, currentPrice);
+    
+    modal.classList.remove('hidden');
+}
+
+function closeSellModal() {
+    document.getElementById('sell-modal').classList.add('hidden');
+    currentSellEventId = null;
+    currentSellOptionIndex = null;
+}
+
+function updateSellProceeds(shares, price) {
+    const sharesInput = parseFloat(document.getElementById('sell-shares-input').value) || 0;
+    const validShares = Math.min(sharesInput, currentSellShares);
+    const proceeds = validShares * (price || currentSellPrice);
+    document.getElementById('sell-proceeds-value').textContent = proceeds.toFixed(2);
+}
+
+async function confirmSell() {
+    const sharesToSell = parseFloat(document.getElementById('sell-shares-input').value) || 0;
+    
+    if (sharesToSell <= 0 || sharesToSell > currentSellShares) {
+        showNotification('Invalid shares amount', 'error');
+        return;
+    }
+    
+    try {
+        const confirmBtn = document.querySelector('#sell-modal .modal-btn.confirm');
+        confirmBtn.textContent = 'Selling...';
+        confirmBtn.disabled = true;
+        
+        const result = await apiRequest('/sell', {
+            method: 'POST',
+            body: JSON.stringify({
+                telegram_id: getUserId(),
+                event_id: currentSellEventId,
+                option_index: currentSellOptionIndex,
+                shares: sharesToSell
+            })
+        });
+        
+        showNotification(`Sold ${sharesToSell.toFixed(2)} shares for ${result.payout.toFixed(2)} USDT! P/L: ${result.profit_loss.toFixed(2)} USDT`, 
+            result.profit_loss >= 0 ? 'success' : 'info');
+        
+        closeSellModal();
+        loadUserBalance();
+        
+        if (tg.HapticFeedback) {
+            tg.HapticFeedback.notificationOccurred('success');
+        }
+    } catch (error) {
+        showNotification(error.message || 'Sell error', 'error');
+        if (tg.HapticFeedback) {
+            tg.HapticFeedback.notificationOccurred('error');
+        }
+    } finally {
+        const confirmBtn = document.querySelector('#sell-modal .modal-btn.confirm');
+        if (confirmBtn) {
+            confirmBtn.textContent = 'Sell';
             confirmBtn.disabled = false;
         }
     }

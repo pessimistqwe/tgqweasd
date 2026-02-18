@@ -696,6 +696,12 @@ class PredictionRequest(BaseModel):
     option_index: int
     points: float
 
+class SellRequest(BaseModel):
+    telegram_id: int
+    event_id: int
+    option_index: int
+    shares: float  # Количество акций для продажи (0 для продажи всех)
+
 class CreateEventRequest(BaseModel):
     telegram_id: int
     title: str
@@ -1200,9 +1206,9 @@ async def proxy_image(url: str, telegram_webapp: Optional[str] = Query(None, ali
 
 @app.get("/user/{telegram_id}")
 async def get_user(telegram_id: int, db: Session = Depends(get_db)):
-    """Получить информацию о пользователе"""
+    """Получить информацию о пользователе с позициями"""
     user = db.query(User).filter(User.telegram_id == telegram_id).first()
-    
+
     if not user:
         # Создаём нового пользователя с начальными очками
         user = User(
@@ -1212,13 +1218,46 @@ async def get_user(telegram_id: int, db: Session = Depends(get_db)):
         db.add(user)
         db.commit()
         db.refresh(user)
-    
+
     # Статистика
     active_predictions = db.query(UserPrediction).filter(
         UserPrediction.user_id == user.id,
-        UserPrediction.is_winner == None
+        UserPrediction.shares > 0
     ).count()
+
+    # Получаем активные позиции (акции)
+    positions = db.query(UserPrediction).filter(
+        UserPrediction.user_id == user.id,
+        UserPrediction.shares > 0
+    ).all()
     
+    positions_data = []
+    for pred in positions:
+        event = db.query(Event).filter(Event.id == pred.event_id).first()
+        option = db.query(EventOption).filter(
+            EventOption.event_id == pred.event_id,
+            EventOption.option_index == pred.option_index
+        ).first()
+        
+        if event and option:
+            current_value = pred.shares * option.current_price
+            profit_loss = current_value - (pred.shares * pred.average_price)
+            profit_loss_percent = (profit_loss / (pred.shares * pred.average_price) * 100) if pred.average_price > 0 else 0
+            
+            positions_data.append({
+                "event_id": event.id,
+                "event_title": event.title[:50],
+                "option_index": pred.option_index,
+                "option_text": option.option_text,
+                "shares": pred.shares,
+                "average_price": pred.average_price,
+                "current_price": option.current_price,
+                "current_value": current_value,
+                "profit_loss": profit_loss,
+                "profit_loss_percent": profit_loss_percent,
+                "end_time": event.end_time.isoformat()
+            })
+
     return {
         "telegram_id": user.telegram_id,
         "username": user.username,
@@ -1227,7 +1266,8 @@ async def get_user(telegram_id: int, db: Session = Depends(get_db)):
             "active_predictions": active_predictions,
             "total_won": 0,
             "total_lost": 0
-        }
+        },
+        "positions": positions_data
     }
 
 
@@ -1387,62 +1427,177 @@ async def upload_avatar(
 
 @app.post("/predict")
 async def make_prediction(request: PredictionRequest, db: Session = Depends(get_db)):
-    """Сделать прогноз"""
+    """Купить акции (Buy shares) - Polymarket style"""
     try:
         # Получаем пользователя
         user = db.query(User).filter(User.telegram_id == request.telegram_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="Пользователь не найден")
-        
+
         # Проверяем баланс
         if user.balance_usdt < request.points:
             raise HTTPException(status_code=400, detail="Недостаточно средств")
-        
+
         # Проверяем событие
         event = db.query(Event).filter(Event.id == request.event_id).first()
         if not event or not event.is_active:
             raise HTTPException(status_code=404, detail="Событие не найдено")
-        
+
         if event.end_time <= datetime.utcnow():
             raise HTTPException(status_code=400, detail="Событие завершено")
-        
-        # Списываем средства
-        user.balance_usdt -= request.points
-        
-        # Создаём прогноз
-        prediction = UserPrediction(
-            user_id=user.id,
-            event_id=event.id,
-            option_index=request.option_index,
-            amount=request.points,
-            asset="USDT"
-        )
-        db.add(prediction)
-        
-        # Обновляем статистику опции
+
+        # Получаем опцию и её текущую цену
         option = db.query(EventOption).filter(
             EventOption.event_id == event.id,
             EventOption.option_index == request.option_index
         ).first()
         
-        if option:
-            option.total_stake += request.points
+        if not option:
+            raise HTTPException(status_code=404, detail="Опция не найдена")
         
+        # Цена за акцию (0.01 - 0.99)
+        share_price = max(0.01, min(0.99, option.current_price))
+        
+        # Вычисляем количество акций
+        shares_to_buy = request.points / share_price
+
+        # Проверяем существующую позицию
+        existing_prediction = db.query(UserPrediction).filter(
+            UserPrediction.user_id == user.id,
+            UserPrediction.event_id == event.id,
+            UserPrediction.option_index == request.option_index,
+            UserPrediction.shares > 0
+        ).first()
+
+        if existing_prediction:
+            # Усредняем цену при покупке дополнительных акций
+            total_shares = existing_prediction.shares + shares_to_buy
+            total_cost = (existing_prediction.shares * existing_prediction.average_price) + request.points
+            new_average_price = total_cost / total_shares
+            
+            existing_prediction.shares = total_shares
+            existing_prediction.average_price = new_average_price
+            existing_prediction.amount += request.points
+            prediction = existing_prediction
+        else:
+            # Создаём новую позицию
+            prediction = UserPrediction(
+                user_id=user.id,
+                event_id=event.id,
+                option_index=request.option_index,
+                shares=shares_to_buy,
+                average_price=share_price,
+                amount=request.points,
+                asset="USDT"
+            )
+            db.add(prediction)
+
+        # Списываем средства
+        user.balance_usdt -= request.points
+
+        # Обновляем статистику опции
+        option.total_stake += request.points
+        option.current_price = share_price  # Обновляем текущую цену
+
         # Обновляем общий пул
         event.total_pool += request.points
-        
+
         db.commit()
-        
+
         return {
             "success": True,
-            "message": "Прогноз принят",
-            "new_balance": user.balance_usdt
+            "message": f"Куплено {shares_to_buy:.2f} акций по цене {share_price:.2f} USDT",
+            "new_balance": user.balance_usdt,
+            "shares": prediction.shares,
+            "average_price": prediction.average_price
         }
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
         print(f"Error making prediction: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/sell")
+async def sell_shares(request: SellRequest, db: Session = Depends(get_db)):
+    """Продать акции (Sell shares) - Polymarket style"""
+    try:
+        # Получаем пользователя
+        user = db.query(User).filter(User.telegram_id == request.telegram_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+        # Проверяем событие
+        event = db.query(Event).filter(Event.id == request.event_id).first()
+        if not event:
+            raise HTTPException(status_code=404, detail="Событие не найдено")
+
+        # Получаем опцию и её текущую цену
+        option = db.query(EventOption).filter(
+            EventOption.event_id == event.id,
+            EventOption.option_index == request.option_index
+        ).first()
+        
+        if not option:
+            raise HTTPException(status_code=404, detail="Опция не найдена")
+        
+        # Получаем позицию пользователя
+        prediction = db.query(UserPrediction).filter(
+            UserPrediction.user_id == user.id,
+            UserPrediction.event_id == event.id,
+            UserPrediction.option_index == request.option_index,
+            UserPrediction.shares > 0
+        ).first()
+        
+        if not prediction:
+            raise HTTPException(status_code=400, detail="У вас нет акций этой опции")
+        
+        # Определяем количество акций для продажи
+        shares_to_sell = request.shares if request.shares > 0 else prediction.shares
+        shares_to_sell = min(shares_to_sell, prediction.shares)  # Не больше чем есть
+        
+        # Текущая цена за акцию
+        current_price = max(0.01, min(0.99, option.current_price))
+        
+        # Сумма к получению
+        payout = shares_to_sell * current_price
+        
+        # Вычисляем прибыль/убыток
+        cost_basis = shares_to_sell * prediction.average_price
+        profit_loss = payout - cost_basis
+        
+        # Обновляем позицию
+        prediction.shares -= shares_to_sell
+        
+        if prediction.shares < 0.01:
+            # Закрываем позицию если осталось мало акций
+            prediction.shares = 0
+            prediction.average_price = 0
+        
+        # Начисляем средства пользователю
+        user.balance_usdt += payout
+
+        # Обновляем статистику опции
+        option.total_stake -= shares_to_sell * current_price
+
+        # Обновляем общий пул
+        event.total_pool -= shares_to_sell * current_price
+
+        db.commit()
+
+        return {
+            "success": True,
+            "message": f"Продано {shares_to_sell:.2f} акций по цене {current_price:.2f} USDT",
+            "new_balance": user.balance_usdt,
+            "payout": payout,
+            "profit_loss": profit_loss,
+            "remaining_shares": prediction.shares
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Error selling shares: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/admin/sync-polymarket")

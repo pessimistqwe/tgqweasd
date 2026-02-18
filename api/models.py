@@ -114,13 +114,19 @@ class UserPrediction(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     event_id = Column(Integer, ForeignKey("events.id"), nullable=False)
     option_index = Column(Integer, nullable=False)
+    
+    # Polymarket-style: shares and average price
+    shares = Column(Float, default=0.0)  # Number of shares owned
+    average_price = Column(Float, default=0.0)  # Average purchase price per share
+    
+    # Legacy support
     amount = Column(Float, nullable=False)
     asset = Column(String(10), default="USDT")
     timestamp = Column(DateTime, default=datetime.utcnow)
-    
+
     is_winner = Column(Boolean, nullable=True)
     payout = Column(Float, default=0.0)
-    
+
     user = relationship("User", back_populates="predictions")
     event = relationship("Event", back_populates="predictions")
 
@@ -236,6 +242,15 @@ with engine.connect() as connection:
     columns = [row[1] for row in connection.execute(text("PRAGMA table_info(events)")).fetchall()]
     if "has_chart" not in columns:
         connection.execute(text("ALTER TABLE events ADD COLUMN has_chart BOOLEAN DEFAULT 0"))
+        connection.commit()
+
+    # Миграция: добавление shares и average_price в user_predictions
+    columns = [row[1] for row in connection.execute(text("PRAGMA table_info(user_predictions)")).fetchall()]
+    if "shares" not in columns:
+        connection.execute(text("ALTER TABLE user_predictions ADD COLUMN shares FLOAT DEFAULT 0.0"))
+        connection.commit()
+    if "average_price" not in columns:
+        connection.execute(text("ALTER TABLE user_predictions ADD COLUMN average_price FLOAT DEFAULT 0.0"))
         connection.commit()
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
