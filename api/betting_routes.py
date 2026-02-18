@@ -30,6 +30,7 @@ try:
         InvalidOddsError,
     )
     from .telegram_auth import validate_telegram_init_data, TelegramAuthError
+    from .volatility_service import get_volatility_odds
 except ImportError:
     from models import get_db, User
     from betting_models import BetType, BetDirection
@@ -43,6 +44,7 @@ except ImportError:
         InvalidOddsError,
     )
     from telegram_auth import validate_telegram_init_data, TelegramAuthError
+    from volatility_service import get_volatility_odds
 
 
 router = APIRouter(prefix="/api/betting", tags=["Betting"])
@@ -323,6 +325,36 @@ async def place_price_bet(
 
 
 # ==================== Price Prediction Endpoints ====================
+
+@router.get("/volatility-odds", response_model=Dict[str, Any])
+async def get_prediction_odds(symbol: str = Query(..., description="Символ актива (например, BTCUSDT)")):
+    """
+    Получить коэффициент для прогноза на основе реальной волатильности
+    
+    Коэффициент рассчитывается автоматически на основе волатильности рынка
+    за последние 5 минут.
+    
+    Требуется заголовок X-Telegram-Init-Data для аутентификации.
+    """
+    try:
+        result = await get_volatility_odds(symbol)
+        return {
+            "success": True,
+            "data": result
+        }
+    except Exception as e:
+        # Возвращаем дефолтный коэффициент при ошибке
+        return {
+            "success": True,
+            "data": {
+                "symbol": symbol,
+                "volatility": 0.0,
+                "odds": 1.90,
+                "cached": False,
+                "error": str(e)
+            }
+        }
+
 
 @router.post("/prediction/place", response_model=Dict[str, Any])
 async def place_price_prediction(

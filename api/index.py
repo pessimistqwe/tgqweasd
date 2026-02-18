@@ -35,15 +35,27 @@ try:
     from .betting_routes import router as betting_router
     from .telegram_auth import init_telegram_validator
     from .betting_resolver import start_resolver_worker, stop_resolver_worker
+    from .volatility_routes import router as volatility_router
+    from .volatility_service import start_volatility_service, stop_volatility_service
+    from .admin_routes import router as admin_router
 except ImportError:
     from betting_routes import router as betting_router
     from telegram_auth import init_telegram_validator
     from betting_resolver import start_resolver_worker, stop_resolver_worker
+    from volatility_routes import router as volatility_router
+    from volatility_service import start_volatility_service, stop_volatility_service
+    from admin_routes import router as admin_router
 
 app = FastAPI(title="EventPredict API")
 
 # Подключаем betting routes
 app.include_router(betting_router)
+
+# Подключаем volatility routes
+app.include_router(volatility_router)
+
+# Подключаем admin routes
+app.include_router(admin_router)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
@@ -696,6 +708,13 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to start Resolver Worker: {e}")
 
+    # Запуск сервиса волатильности для расчета коэффициентов
+    try:
+        await start_volatility_service()
+        logger.info("✅ Volatility Service started (coefficients based on real market volatility)")
+    except Exception as e:
+        logger.error(f"Failed to start Volatility Service: {e}")
+
     # Отключаем scheduler в тестовом режиме
     if not os.getenv("DISABLE_SCHEDULER"):
         # Запускаем планировщик
@@ -737,14 +756,21 @@ async def startup_event():
 async def shutdown_event():
     """Остановка при завершении работы"""
     logger.info("🛑 Shutting down EventPredict API...")
-    
+
     # Остановка Resolver Worker
     try:
         await stop_resolver_worker()
         logger.info("✅ Resolver Worker stopped")
     except Exception as e:
         logger.error(f"Error stopping Resolver Worker: {e}")
-    
+
+    # Остановка сервиса волатильности
+    try:
+        await stop_volatility_service()
+        logger.info("✅ Volatility Service stopped")
+    except Exception as e:
+        logger.error(f"Error stopping Volatility Service: {e}")
+
     if not os.getenv("DISABLE_SCHEDULER"):
         scheduler.shutdown(wait=False)
 
