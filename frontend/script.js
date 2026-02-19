@@ -2817,8 +2817,16 @@ async function loadChartData(symbol, interval) {
  * Fallback загрузка данных напрямую (если binanceService недоступен)
  */
 async function loadChartDataDirect(symbol, interval) {
-    const binanceInterval = BINANCE_INTERVALS[interval] || '15m';
-    const limit = CANDLE_LIMITS[interval] || 96;
+    // Используем глобальные константы из binanceService.js
+    const binanceIntervals = window.BINANCE_INTERVALS || {
+        '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'
+    };
+    const candleLimits = window.CANDLE_LIMITS || {
+        '1m': 100, '5m': 100, '15m': 96, '1h': 168, '4h': 168, '1d': 90
+    };
+    
+    const binanceInterval = binanceIntervals[interval] || '15m';
+    const limit = candleLimits[interval] || 96;
 
     // Нормализация символа: ВЕРХНИЙ регистр для REST API
     const normalizedSymbol = symbol.toUpperCase();

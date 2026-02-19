@@ -425,6 +425,185 @@ const handleConnectWallet = async () => {
 
 ---
 
+## 📦 Официальные SDK Polymarket (Обновлено: Февраль 2026)
+
+### Интеграция SDK в проект
+
+Проект использует официальные SDK Polymarket для полной интеграции с CLOB API.
+
+#### Backend (Python)
+
+**Установка**:
+```bash
+pip install py-clob-client
+pip install py-builder-signing-sdk  # Опционально: для Builder Program
+pip install py-builder-relayer-client  # Опционально: для безгазовых транзакций
+```
+
+**Использование**:
+```python
+from api.services.polymarket_sdk import PolymarketSDK, get_polymarket_sdk
+
+# Проверка доступности
+sdk = get_polymarket_sdk()
+if sdk.is_configured():
+    # Получение данных рынков
+    markets = sdk.get_markets(limit=10)
+    
+    # Размещение ордера
+    order = sdk.place_order(
+        token_id="12345",
+        price=0.55,
+        size=100,
+        side="BUY",
+        order_type="GTC"
+    )
+    
+    # Получение позиций
+    positions = sdk.get_positions()
+else:
+    print("Polymarket SDK not configured. Set API keys in environment.")
+```
+
+**Требуемые переменные окружения**:
+```bash
+POLYMARKET_API_KEY=your_api_key
+POLYMARKET_SECRET=your_api_secret
+POLYMARKET_PASSPHRASE=your_passphrase
+POLYMARKET_PRIVATE_KEY=your_wallet_private_key
+POLYMARKET_CHAIN_ID=137  # Polygon mainnet
+POLYMARKET_SIGNATURE_TYPE=0  # 0=EOA, 1=Magic Link, 2=Web3 Wallet
+```
+
+#### Frontend (TypeScript)
+
+**Установка**:
+```bash
+npm install @polymarket/clob-client ethers@5
+```
+
+**Использование**:
+```typescript
+import { PolymarketSDK, getPolymarketSDK } from './services/polymarketSDK';
+
+// Инициализация
+const sdk = getPolymarketSDK();
+
+// Подключение кошелька
+await sdk.connectWallet(privateKey);
+// ИЛИ через браузерный кошелёк:
+await sdk.connectBrowserWallet();
+
+// Получение данных
+if (sdk.isConfigured()) {
+    const markets = await sdk.getMarkets();
+    const orderbook = await sdk.getOrderbook(tokenId);
+    const positions = await sdk.getPositions();
+}
+```
+
+---
+
+### Таблица SDK со статусом интеграции
+
+| SDK | Язык | Статус | Файл | Описание |
+|-----|------|--------|------|----------|
+| **CLOB Client** | Python | ✅ Prepared | `api/services/polymarket_sdk.py` | Торговля, ордера, позиции |
+| **CLOB Client** | TypeScript | ✅ Prepared | `frontend/services/polymarketSDK.ts` | Торговля, ордера, позиции |
+| **Builder Signing SDK** | Python | ⚠️ Placeholder | `api/services/polymarket_sdk.py` | Подпись транзакций |
+| **Builder Signing SDK** | TypeScript | ⚠️ Placeholder | `frontend/services/polymarketSDK.ts` | Подпись транзакций |
+| **Builder Relayer SDK** | Python | ⚠️ Placeholder | `api/services/polymarket_sdk.py` | Безгазовые транзакции |
+| **Builder Relayer SDK** | TypeScript | ⚠️ Placeholder | `frontend/services/polymarketSDK.ts` | Безгазовые транзакции |
+
+**Статусы**:
+- ✅ **Prepared** — Wrapper создан, требуется только API key для активации
+- ⚠️ **Placeholder** — Методы возвращают заглушки, требуется установка дополнительного SDK
+- ❌ **Not Started** — Интеграция не начата
+
+---
+
+### Инструкция по получению API ключей Polymarket
+
+1. **Перейти на** https://reveal.polymarket.com
+2. **Войти** через Email/Magic Link или подключить кошелек
+3. **Экспортировать приватный ключ** из раздела Settings
+4. **Создать API credentials**:
+   ```python
+   from py_clob_client.client import ClobClient
+   
+   client = ClobClient("https://clob.polymarket.com", key=private_key, chain_id=137)
+   creds = client.create_or_derive_api_creds()
+   print(creds)  # { api_key, api_secret, api_passphrase }
+   ```
+5. **Сохранить** в `.env` файл
+
+---
+
+### Шаги для активации каждой функции
+
+#### 1. Чтение данных рынков (Ready)
+- [x] Wrapper создан
+- [x] Метод `get_markets()` готов
+- [ ] Установить `py-clob-client`
+- [ ] Настроить переменные окружения
+
+**Время активации**: 5 минут
+
+#### 2. Размещение ордеров (Ready)
+- [x] Wrapper создан
+- [x] Метод `place_order()` готов
+- [ ] Установить `py-clob-client`
+- [ ] Настроить API credentials
+- [ ] Настроить allowances (для EOA кошельков)
+
+**Время активации**: 15 минут
+
+#### 3. Отмена ордеров (Ready)
+- [x] Wrapper создан
+- [x] Метод `cancel_order()` готов
+- [ ] Установить `py-clob-client`
+
+**Время активации**: 5 минут
+
+#### 4. Подпись транзакций (Требуется Builder SDK)
+- [ ] Установить `py-builder-signing-sdk`
+- [ ] Импортировать в `polymarket_sdk.py`
+- [ ] Реализовать метод `sign_transaction()`
+
+**Время активации**: 1-2 часа
+
+#### 5. Безгазовые транзакции (Требуется Relayer SDK)
+- [ ] Установить `py-builder-relayer-client`
+- [ ] Импортировать в `polymarket_sdk.py`
+- [ ] Реализовать метод `submit_gasless_transaction()`
+
+**Время активации**: 1-2 часа
+
+---
+
+### Оценка времени на полную интеграцию
+
+| Компонент | Время | Сложность |
+|-----------|-------|-----------|
+| CLOB Client (чтение данных) | 5 минут | 🟢 Low |
+| CLOB Client (ордера) | 15 минут | 🟡 Medium |
+| Builder Signing SDK | 1-2 часа | 🟠 High |
+| Builder Relayer SDK | 1-2 часа | 🟠 High |
+| Тестирование | 2-4 часа | 🟡 Medium |
+| **Итого** | **4-8 часов** | |
+
+---
+
+## 📞 Поддержка
+
+Вопросы по интеграции:
+1. **Документация API**: [POLYMARKET_API_REFERENCE.md](./POLYMARKET_API_REFERENCE.md)
+2. **Официальная документация**: https://docs.polymarket.com/
+3. **GitHub Organization**: https://github.com/Polymarket
+4. **Discord**: https://discord.gg/polymarket
+
+---
+
 **Последнее обновление**: 19 февраля 2026  
-**Статус**: Prepared for Integration  
-**Следующий этап**: Wallet Connection (Этап 2)
+**Статус**: ✅ SDK Integrated (Prepared for Activation)  
+**Следующий этап**: Настройка API ключей и тестирование
