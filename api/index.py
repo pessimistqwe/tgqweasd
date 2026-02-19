@@ -144,6 +144,71 @@ CATEGORY_KEYWORDS = {
     'science': ['nasa', 'spacex', 'rocket', 'mars', 'moon', 'climate', 'vaccine', 'fda', 'research', 'discovery', 'scientist', 'study', 'experiment', 'technology', 'ai model', 'gpt', 'openai', 'physics', 'chemistry', 'biology', 'medicine', 'health', 'disease', 'treatment', 'drug', 'clinical trial', 'gene', 'dna', 'crispr', 'telescope', 'satellite', 'asteroid', 'comet', 'galaxy', 'universe', 'quantum', 'particle', 'atom', 'energy', 'renewable', 'solar', 'wind', 'fusion', 'fission']
 }
 
+# Ключевые слова для CIS сортировки (приоритет для СНГ)
+CIS_KEYWORDS = [
+    'россия', 'russia', 'путин', 'putin', 'украина', 'ukraine', 'казахстан', 'kazakhstan',
+    'минск', 'minsk', 'рубль', 'ruble', 'нефть', 'oil', 'газ', 'gas', 'gazprom',
+    'роснефть', 'rosneft', 'лукойл', 'lukoil', 'яндекс', 'yandex', 'сбербанк', 'sberbank',
+    'зеленский', 'zelensky', 'кремль', 'kremlin', 'москва', 'moscow', 'киев', 'kyiv',
+    'астана', 'astana', 'алматы', 'almaty', 'тон', 'toncoin', 'telegram'
+]
+
+# Крипто ключевые слова (второй приоритет)
+CRYPTO_PRIORITY_KEYWORDS = [
+    'bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'binance', 'solana', 'sol',
+    'dogecoin', 'doge', 'xrp', 'cardano', 'ada', 'polkadot', 'dot', 'avalanche', 'avax',
+    'bnb', 'ton', 'tron', 'trx', 'matic', 'polygon', 'chainlink', 'link'
+]
+
+# Спорт ключевые слова (третий приоритет)
+SPORT_PRIORITY_KEYWORDS = [
+    'football', 'soccer', 'hockey', 'ufc', 'champion', 'nba', 'nfl', 'mlb',
+    'теннис', 'tennis', 'футбол', 'хоккей', 'баскетбол', 'basketball'
+]
+
+# США локальные события (пониженный приоритет)
+US_LOCAL_KEYWORDS = [
+    'governor', 'senate', 'congress', 'sheriff', 'california', 'texas', 'florida',
+    'new york', 'illinois', 'ohio', 'pennsylvania', 'georgia', 'michigan', 'arizona',
+    'nevada', 'wisconsin', 'minnesota', 'colorado', 'oregon', 'washington state'
+]
+
+def calculate_relevance_score(event_title: str, event_description: str = '') -> int:
+    """
+    Рассчитывает релевантность события для СНГ аудитории
+    
+    Args:
+        event_title: Заголовок события
+        event_description: Описание события
+    
+    Returns:
+        Score релевантности (чем выше, тем приоритетнее)
+    """
+    score = 0
+    text = (event_title + ' ' + (event_description or '')).lower()
+    
+    # CIS события - высший приоритет (+100 за каждое совпадение)
+    for keyword in CIS_KEYWORDS:
+        if keyword in text:
+            score += 100
+    
+    # Крипто события - высокий приоритет (+50 за каждое совпадение)
+    for keyword in CRYPTO_PRIORITY_KEYWORDS:
+        if keyword in text:
+            score += 50
+    
+    # Спорт события - средний приоритет (+30 за каждое совпадение)
+    for keyword in SPORT_PRIORITY_KEYWORDS:
+        if keyword in text:
+            score += 30
+    
+    # США локальные события - пониженный приоритет (-20 за каждое совпадение)
+    for keyword in US_LOCAL_KEYWORDS:
+        if keyword in text:
+            score -= 20
+    
+    return score
+
 def detect_category(title: str, description: str = '') -> str:
     """Определяет категорию события по заголовку и описанию"""
     text = (title + ' ' + (description or '')).lower()
@@ -229,17 +294,26 @@ def fetch_polymarket_price_history(condition_id: str, outcome: str, resolution: 
             print(f"   Error fetching price history: {e}")
         return []
 
-def fetch_polymarket_events(limit: int = 50, category: str = None):
-    """Получает активные события из Polymarket API"""
+def fetch_polymarket_events(limit: int = 100, category: str = None):
+    """
+    Получает активные события из Polymarket API
+    
+    Args:
+        limit: Количество событий для загрузки (по умолчанию 100 для запаса)
+        category: Фильтр по категории (None = все категории)
+    
+    Returns:
+        Список словарей с данными событий
+    """
     try:
         print(f"=== fetch_polymarket_events START ===")
-        print(f"Limit: {limit}, Category: {category}")
-        
-        # На практике /markets чаще содержит все нужные поля (включая исходы)
+        print(f"Limit: {limit}, Category: {category or 'all'}")
+
+        # Используем /markets endpoint — он содержит все нужные поля
         primary_url = "https://gamma-api.polymarket.com/markets"
         secondary_url = "https://gamma-api.polymarket.com/events"
 
-        # Заголовки (важно: НЕ запрашиваем brotli 'br', т.к. requests без доп. пакетов может не декодировать)
+        # Заголовки
         headers = {
             "Accept": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -248,9 +322,9 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             "Connection": "keep-alive",
         }
 
-        # Параметры (для /markets и /events)
+        # Параметры — загружаем больше событий для запаса
         params = {
-            "order": "id",
+            "order": "volume",
             "ascending": "false",
             "closed": "false",
             "active": "true",
@@ -266,11 +340,11 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             return resp
 
         response = _do_get(primary_url)
-        
+
         if POLYMARKET_VERBOSE_LOGS:
             print(f"Response status: {response.status_code}")
             print(f"Content-Type: {response.headers.get('content-type', 'unknown')}")
-        
+
         if response.status_code != 200:
             print(f"HTTP error: {response.status_code}")
             print(f"Response: {response.text[:500]}")
@@ -281,7 +355,7 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
             print(f"HTTP error: {response.status_code}")
             print(f"Response: {response.text[:500]}")
             return []
-        
+
         # Проверяем Content-Type
         content_type = response.headers.get('content-type', '').lower()
         if 'application/json' not in content_type:
@@ -291,7 +365,7 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
 
         if POLYMARKET_VERBOSE_LOGS:
             print(f"Response preview (first 1000 chars): {response.text[:1000]}")
-        
+
         try:
             events_data = response.json()
         except ValueError as e:
@@ -326,20 +400,24 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
         for idx, event in enumerate(events_list):
             if POLYMARKET_VERBOSE_LOGS:
                 print(f"Processing event #{idx}: {str(event)[:200]}...")
-            
+
             # Пробуем разные поля для вопроса
             question = event.get('question') or event.get('title') or event.get('description')
             if not question:
-                print("   No question/title/description found")
+                print("   No question/title/description found - skipping")
                 continue
-            
+
             # Получаем исходы/опции из разных возможных структур
             tokens = event.get("tokens")
             outcomes = event.get("outcomes")
             outcome_prices = event.get("outcomePrices") or event.get("outcome_prices")
+            
+            # Получаем volume для фильтра
+            volume = event.get('volume', 0) or event.get('liquidity', 0) or 0
 
             options = []
             volumes = []
+            probabilities = []  # Сохраняем probabilities из Polymarket
 
             # Парсим outcomes если это JSON строка
             if isinstance(outcomes, str):
@@ -348,15 +426,17 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
                 except Exception:
                     pass
 
-            # 1) tokens (новый формат)
+            # 1) tokens (новый формат Polymarket) — содержит price для probability
             if isinstance(tokens, list) and tokens:
                 for token in tokens:
                     outcome = token.get("outcome", "")
                     if not outcome:
                         continue
+                    # Price в Polymarket = probability (0.70 = 70%)
                     price = float(token.get("price", 0.5) or 0.5)
                     options.append(outcome)
-                    volumes.append(price * 1000)
+                    volumes.append(price * 1000)  # Для совместимости
+                    probabilities.append(round(price * 100, 1))  # Конвертируем в проценты
 
             # 2) outcomes + outcomePrices (частый формат /markets)
             elif isinstance(outcomes, list) and outcomes:
@@ -364,50 +444,60 @@ def fetch_polymarket_events(limit: int = 50, category: str = None):
                 if isinstance(outcome_prices, list) and len(outcome_prices) == len(options):
                     for p in outcome_prices:
                         try:
-                            volumes.append(float(p) * 1000)
+                            price = float(p)
+                            volumes.append(price * 1000)
+                            probabilities.append(round(price * 100, 1))
                         except Exception:
                             volumes.append(500.0)
+                            probabilities.append(50.0)
                 else:
                     volumes = [500.0 for _ in options]
+                    probabilities = [50.0 for _ in options]
 
             if not options:
                 # Нечего синкать
+                print(f"   No options found - skipping")
                 continue
-            
+
             if POLYMARKET_VERBOSE_LOGS:
                 print(f"   Found question: {question}")
-                print(f"   Found {len(tokens)} tokens")
-            
+                print(f"   Found {len(options)} options: {options}")
+                print(f"   Probabilities: {probabilities}")
+
             # Формируем структуру события
             title = question
             description = event.get('description', '')
             detected_category = detect_category(title, description)
 
-            if category and category != 'all' and detected_category != category:
-                print(f"   Skipping - category {detected_category} != {category}")
-                continue
+            # НЕ фильтруем по категории здесь — фильтр будет в get_events
+            # Это позволяет загружать все события в БД
 
             if POLYMARKET_VERBOSE_LOGS:
-                print(f"   Options: {options}")
-            
+                print(f"   Category: {detected_category}")
+
             # Получаем ID события
             event_id = event.get('conditionId') or event.get('id') or str(idx)
-            
+
+            # Получаем время окончания
+            end_time = event.get('endDate', '') or event.get('end_date', '')
+
             event_data = {
                 'polymarket_id': event_id,
                 'title': title,
                 'description': description,
                 'category': detected_category,
                 'image_url': event.get('image', ''),
-                'end_time': event.get('endDate', '') or event.get('end_date', ''),
+                'end_time': end_time,
                 'options': options,
-                'volumes': volumes
+                'volumes': volumes,
+                'probabilities': probabilities,  # Сохраняем probabilities
+                'volume_24h': volume  # Сохраняем volume для фильтра
             }
-            
+
             events.append(event_data)
             if POLYMARKET_VERBOSE_LOGS:
-                print(f"   Created event data: {title}")
-        
+                print(f"   Created event data: {title[:50]}...")
+
         print(f"Processed {len(events)} valid events")
         print(f"=== fetch_polymarket_events END ===")
         return events
@@ -442,17 +532,34 @@ def update_event_total_pool(db: Session, event: Event) -> None:
     )
 
 def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
-    print(f"Upserting event: {pm_event.get('title', 'No title')}")
+    """
+    Сохраняет событие из Polymarket в базу данных
     
+    Args:
+        db: Сессия базы данных
+        pm_event: Данные события из Polymarket
+    
+    Returns:
+        True если создано новое событие, False если обновлено существующее
+    """
+    print(f"Upserting event: {pm_event.get('title', 'No title')}")
+
     end_time = parse_polymarket_end_time(pm_event.get('end_time'))
     is_active = end_time > datetime.utcnow()
     options = pm_event.get('options', [])
     volumes = pm_event.get('volumes', [])
+    probabilities = pm_event.get('probabilities', [])  # Получаем probabilities
     
+    # Если probabilities не переданы, рассчитываем из volumes
+    if not probabilities and volumes:
+        total_volume = sum(volumes)
+        probabilities = [round((v / total_volume) * 100, 1) if total_volume > 0 else 50.0 for v in volumes]
+
     print(f"   - Parsed end time: {end_time}")
     print(f"   - Is active: {is_active}")
     print(f"   - Options count: {len(options)}")
     print(f"   - Volumes: {volumes}")
+    print(f"   - Probabilities: {probabilities}")
 
     polymarket_id = pm_event.get('polymarket_id', '')
     if not polymarket_id:
@@ -479,22 +586,15 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
             for opt in db.query(EventOption).filter(EventOption.event_id == existing.id).all()
         }
 
-        for idx, (option_text, volume) in enumerate(zip(options, volumes)):
+        for idx, (option_text, volume, probability) in enumerate(zip(options, volumes, probabilities)):
             option = existing_options.get(idx)
             if option:
                 option.option_text = option_text
                 option.market_stake = volume
-                # Сохраняем историю цен
-                price = volume / (sum(volumes) or 1)
-                option.current_price = price
+                # Используем probability из Polymarket если доступно
+                option.current_price = probability / 100.0  # Конвертируем процент в 0-1
 
-                # Пытаемся получить реальные исторические данные из Polymarket
-                # ПРИМЕЧАНИЕ: Загрузка истории цен перенесена в фоновую задачу
-                # чтобы не замедлять синхронизацию событий
-                condition_id = pm_event.get('polymarket_id', '')
-                # История будет загружена отдельно через sync_polymarket_price_history()
-
-                print(f"   Updated option {idx}: {option_text}, price: {price:.2%}")
+                print(f"   Updated option {idx}: {option_text}, probability: {probability}%")
             else:
                 new_option = EventOption(
                     event_id=existing.id,
@@ -502,10 +602,10 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
                     option_text=option_text,
                     total_stake=0.0,
                     market_stake=volume,
-                    current_price=volume / (sum(volumes) or 1)
+                    current_price=probability / 100.0  # Конвертируем процент в 0-1
                 )
                 db.add(new_option)
-                print(f"   Added option {idx}: {option_text}")
+                print(f"   Added option {idx}: {option_text}, probability: {probability}%")
 
         for idx, option in existing_options.items():
             if idx >= len(options):
@@ -534,22 +634,18 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
     db.flush()
     print(f"   Created event with ID: {new_event.id}")
 
-    for idx, (option_text, volume) in enumerate(zip(options, volumes)):
+    for idx, (option_text, volume, probability) in enumerate(zip(options, volumes, probabilities)):
         new_option = EventOption(
             event_id=new_event.id,
             option_index=idx,
             option_text=option_text,
             total_stake=0.0,
             market_stake=volume,
-            current_price=volume / (sum(volumes) or 1)
+            current_price=probability / 100.0  # Конвертируем процент в 0-1
         )
         db.add(new_option)
 
-        # ПРИМЕЧАНИЕ: Загрузка истории цен перенесена в фоновую задачу
-        # чтобы не замедлять синхронизацию событий
-        # История будет загружена отдельно через sync_polymarket_price_history()
-
-        print(f"   Added option {idx}: {option_text}")
+        print(f"   Added option {idx}: {option_text}, probability: {probability}%")
 
     print(f"   New event created successfully")
     return True
@@ -845,50 +941,44 @@ async def get_categories():
 
 @app.get("/events")
 async def get_events(category: str = None, db: Session = Depends(get_db)):
-    """Получить события с фильтрацией по категории"""
+    """Получить события с фильтрацией по категории и CIS сортировкой"""
     try:
         print(f"Getting events with category filter: {category}")
-        
+
         global last_polymarket_sync
         now = datetime.utcnow()
         if (now - last_polymarket_sync).total_seconds() >= POLYMARKET_SYNC_INTERVAL_SECONDS:
             print("Triggering automatic sync...")
             sync_polymarket_events(db)
             last_polymarket_sync = datetime.utcnow()
-        
-        query = db.query(Event).filter(
-            Event.is_active == True,
-            Event.end_time > datetime.utcnow()
-        )
 
         if category and category != 'all':
             # Получаем события выбранной категории
-            query = db.query(Event).filter(
+            events = db.query(Event).filter(
                 Event.is_active == True,
                 Event.end_time > datetime.utcnow(),
                 Event.category == category
-            )
-            events = query.order_by(Event.total_pool.desc()).limit(50).all()
+            ).all()
             print(f"   Found {len(events)} events for category: {category}")
         else:
-            query = db.query(Event).filter(
+            # Получаем все активные события
+            events = db.query(Event).filter(
                 Event.is_active == True,
                 Event.end_time > datetime.utcnow()
-            )
-            events = query.order_by(Event.total_pool.desc()).limit(50).all()
+            ).all()
             print(f"   Found {len(events)} events in database")
-        
+
         result = []
         for event in events:
             print(f"   Processing event: {event.title} (ID: {event.id})")
-            
+
             # Получаем опции
             options = db.query(EventOption).filter(
                 EventOption.event_id == event.id
             ).all()
-            
+
             print(f"      - Found {len(options)} options in database")
-            
+
             # Парсим опции из JSON если нет в EventOption
             if not options and event.options:
                 try:
@@ -911,14 +1001,17 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                 except Exception as e:
                     print(f"      - Error creating options from JSON: {e}")
                     pass
-            
+
             # Вычисляем оставшееся время
             time_left = int((event.end_time - datetime.utcnow()).total_seconds())
             total_stakes = sum(
                 (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
                 for opt in options
             ) or 1
-            
+
+            # Рассчитываем релевантность для СНГ
+            relevance_score = calculate_relevance_score(event.title, event.description or '')
+
             event_data = {
                 "id": event.id,
                 "polymarket_id": event.polymarket_id,
@@ -929,22 +1022,31 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                 "end_time": event.end_time.isoformat(),
                 "time_left": max(0, time_left),
                 "total_pool": event.total_pool,
-                "has_chart": event.has_chart or False,  # Flag for chart availability
+                "has_chart": event.has_chart or False,
+                "relevance_score": relevance_score,  # Для сортировки
                 "options": [
                     {
                         "index": opt.option_index,
                         "text": opt.option_text,
                         "total_points": (opt.total_stake or 0.0) + (opt.market_stake or 0.0),
-                        "probability": round(((opt.total_stake or 0.0) + (opt.market_stake or 0.0)) / total_stakes * 100, 1)
+                        # Используем current_price из БД (probability из Polymarket) если доступно
+                        # Иначе рассчитываем из total_stakes
+                        "probability": round((opt.current_price or 0) * 100, 1) if opt.current_price and opt.current_price > 0 else round(((opt.total_stake or 0.0) + (opt.market_stake or 0.0)) / total_stakes * 100, 1)
                     }
                     for opt in options
                 ]
             }
-            
+
             result.append(event_data)
-            print(f"      Added event to result: {len(event_data['options'])} options")
-        
-        print(f"Returning {len(result)} events to frontend")
+            print(f"      Added event to result: {len(event_data['options'])} options, relevance: {relevance_score}")
+
+        # Сортировка: сначала по relevance_score (убывание), затем по total_pool (убывание)
+        result.sort(key=lambda x: (x['relevance_score'], x['total_pool']), reverse=True)
+
+        # Лимит 50 событий
+        result = result[:50]
+
+        print(f"Returning {len(result)} events to frontend (sorted by CIS relevance)")
         return {"events": result}
     except Exception as e:
         print(f"Error loading events: {e}")
@@ -2124,6 +2226,77 @@ async def health_check():
             "next_sync_in": POLYMARKET_SYNC_INTERVAL_SECONDS
         }
     }
+
+# Debug endpoint для проверки графиков
+@app.get("/debug/chart/{symbol}")
+async def debug_chart(symbol: str):
+    """
+    Debug endpoint для проверки что графики разные для разных символов
+    
+    Пример:
+    - /debug/chart/BTC → возвращает свечи для BTCUSDT
+    - /debug/chart/ETH → возвращает свечи для ETHUSDT
+    """
+    try:
+        # Нормализация символа
+        symbol = symbol.upper()
+        if not symbol.endswith('USDT'):
+            symbol = symbol + 'USDT'
+        
+        # Запрос к Binance API
+        binance_url = f"{BINANCE_API_URL}/api/v3/klines"
+        params = {
+            "symbol": symbol,
+            "interval": "5m",
+            "limit": 100
+        }
+        
+        import requests
+        response = requests.get(binance_url, params=params, timeout=10)
+        
+        if response.status_code != 200:
+            return {
+                "error": f"Binance API error: {response.status_code}",
+                "symbol": symbol,
+                "data": []
+            }
+        
+        data = response.json()
+        
+        # Преобразуем в читаемый формат
+        candles = []
+        for candle in data:
+            candles.append({
+                "timestamp": candle[0],
+                "open": float(candle[1]),
+                "high": float(candle[2]),
+                "low": float(candle[3]),
+                "close": float(candle[4]),
+                "volume": float(candle[5])
+            })
+        
+        # Статистика для проверки
+        prices = [c["close"] for c in candles]
+        unique_prices = len(set(prices))
+        
+        return {
+            "symbol": symbol,
+            "candles_count": len(candles),
+            "unique_prices": unique_prices,
+            "first_price": prices[0] if prices else 0,
+            "last_price": prices[-1] if prices else 0,
+            "min_price": min(prices) if prices else 0,
+            "max_price": max(prices) if prices else 0,
+            "data": candles,
+            "check": f"Если видите это для {symbol} — данные РЕАЛЬНЫЕ из Binance ✅"
+        }
+        
+    except Exception as e:
+        return {
+            "error": str(e),
+            "symbol": symbol,
+            "data": []
+        }
 
 
 if os.path.isdir(FRONTEND_DIR):
