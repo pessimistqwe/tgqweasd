@@ -531,5 +531,9 @@ window.binanceService = new BinanceService();
 // Экспортируем класс и экземпляр
 window.BinanceService = BinanceService;
 
+// Экспортируем константы для использования в script.js
+window.BINANCE_INTERVALS = BINANCE_INTERVALS;
+window.CANDLE_LIMITS = CANDLE_LIMITS;
+
 console.log('✅ [BinanceService] Модуль загружен');
 console.log('📡 [BinanceService] Available endpoints:', BINANCE_ENDPOINTS.length);

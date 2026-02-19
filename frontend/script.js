@@ -819,6 +819,20 @@ function handleImageError(imgElement) {
     }
 }
 
+/**
+ * Определяет является ли событие крипто-событием
+ * @param {object} event - Объект события
+ * @returns {boolean}
+ */
+function isCryptoEvent(event) {
+    if (!event) return false;
+    
+    const cryptoKeywords = ['bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'crypto', 'price', 'ton', 'bnb', 'xrp', 'cardano', 'ada', 'dogecoin', 'doge', 'polkadot', 'dot', 'avalanche', 'avax'];
+    const textToCheck = ((event.title || '') + ' ' + (event.description || '') + ' ' + (event.symbol || '')).toLowerCase();
+    
+    return cryptoKeywords.some(keyword => textToCheck.includes(keyword));
+}
+
 const categoryNames = {
     'all': 'All',
     'politics': 'Politics',
@@ -1977,6 +1991,7 @@ async function openEventModal(eventId) {
 
         selectedOptionIndex = null;
         currentEventIdForComments = eventId;
+        currentEventId = eventId; // Сохраняем текущий ID события
 
         // Загружаем комментарии для события (из localStorage для демо)
         loadCommentsForEvent(eventId);
@@ -1992,10 +2007,21 @@ async function openEventModal(eventId) {
             </div>
         `).join('');
 
+        // Определяем тип события (крипто или нет)
+        const cryptoEvent = isCryptoEvent(event);
+        console.log('📊 [Event] Тип события:', cryptoEvent ? 'КРИПТО' : 'НЕ-КРИПТО', '| Category:', event.category);
+
         // Show/hide chart based on has_chart flag
         const chartContainer = document.getElementById('event-chart');
         if (chartContainer) {
             chartContainer.style.display = event.has_chart ? 'block' : 'none';
+        }
+
+        // Show/hide "Прогноз на 5 минут" block - только для крипто событий
+        const predictionSection = document.querySelector('.price-prediction-section');
+        if (predictionSection) {
+            predictionSection.style.display = cryptoEvent ? 'block' : 'none';
+            console.log('📊 [Event] Блок прогноза:', cryptoEvent ? 'показан' : 'скрыт');
         }
 
         // Show modal
@@ -2345,8 +2371,16 @@ let eventChart = null;
 let chartUpdateInterval = null; // Auto-update interval
 
 async function renderEventChart(eventId, options) {
+    console.log('📊 [Chart] === ЗАПУСК renderEventChart ===');
+    console.log('📊 [Chart] Event ID:', eventId);
+    console.log('📊 [Chart] Options count:', options?.length);
+    
     const canvas = document.getElementById('event-chart-canvas');
-    if (!canvas) return;
+    if (!canvas) {
+        console.error('❌ [Chart] Canvas элемент не найден!');
+        return;
+    }
+    console.log('📊 [Chart] Canvas найден:', canvas);
 
     // Clear any existing update interval
     if (chartUpdateInterval) {
@@ -2357,26 +2391,33 @@ async function renderEventChart(eventId, options) {
     // Destroy existing chart
     if (eventChart) {
         eventChart.destroy();
+        eventChart = null;
     }
 
     // Get event details to determine type
     let eventType = 'crypto'; // default
     try {
         const event = await apiRequest(`/events/${eventId}`);
+        console.log('📊 [Chart] Данные события:', event);
         if (event && event.category) {
             eventType = event.category;
         }
     } catch (e) {
-        console.log('Could not determine event type, using default');
+        console.error('❌ [Chart] Error loading event:', e);
+        console.log('⚠️ [Chart] Could not determine event type, using default');
     }
+
+    console.log('📊 [Chart] Тип события:', eventType);
 
     // For sports and politics, show bet history instead of chart
     if (['sports', 'politics', 'pop_culture'].includes(eventType)) {
+        console.log('📊 [Chart] Показываем bet history для не-крипто события');
         renderBetHistory(eventId);
         return;
     }
 
     // For crypto, business, science - show price chart
+    console.log('📊 [Chart] Показываем price chart для крипто события');
     renderPriceChart(eventId, options);
 }
 
@@ -2458,8 +2499,14 @@ let currentBinanceSymbol = null; // Текущий символ Binance
 // Используем глобальные переменные оттуда
 
 async function renderPriceChart(eventId, options) {
+    console.log('📊 [Chart] === renderPriceChart: ЗАПУСК ===');
+    console.log('📊 [Chart] Event ID:', eventId);
+    
     const canvas = document.getElementById('event-chart-canvas');
-    if (!canvas) return;
+    if (!canvas) {
+        console.error('❌ [Chart] Canvas не найден в renderPriceChart');
+        return;
+    }
 
     console.log('📊 [Chart] Инициализация графика для события:', eventId);
 
@@ -2732,20 +2779,23 @@ async function loadChartData(symbol, interval) {
 
     } catch (err) {
         console.error('❌ [Chart] Error loading chart data:', err);
-        
-        // Показываем ошибку пользователю
-        const canvas = document.getElementById('event-chart-canvas');
-        if (canvas) {
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1a1a1a';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = '#ff4444';
-            ctx.font = '14px Arial';
-            ctx.textAlign = 'center';
-            ctx.fillText('Ошибка загрузки данных', canvas.width / 2, canvas.height / 2);
+        console.error('❌ [Chart] Stack:', err.stack);
+
+        // Показываем сообщение об ошибке пользователю
+        const chartContainer = document.getElementById('event-chart');
+        if (chartContainer) {
+            chartContainer.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); text-align: center; padding: 20px;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px; opacity: 0.5;">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 8v4M12 16h.01"/>
+                    </svg>
+                    <div style="font-size: 14px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">График временно недоступен</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">Попробуйте обновить страницу или выберите другое событие</div>
+                    <div style="font-size: 10px; color: #666; margin-top: 12px; max-width: 80%;">${err.message || 'Ошибка загрузки данных'}</div>
+                </div>
+            `;
         }
-        
-        throw err;
     }
 }
 
