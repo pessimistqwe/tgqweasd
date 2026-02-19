@@ -2454,25 +2454,8 @@ let chartYMin = null;
 let chartYMax = null;
 let currentBinanceSymbol = null; // Текущий символ Binance
 
-// Конфигурация интервалов для Binance API
-const BINANCE_INTERVALS = {
-    '1m': '1m',
-    '5m': '5m',
-    '15m': '15m',
-    '1h': '1h',
-    '4h': '4h',
-    '1d': '1d'
-};
-
-// Количество свечей для загрузки
-const CANDLE_LIMITS = {
-    '1m': 100,
-    '5m': 100,
-    '15m': 96,
-    '1h': 168,
-    '4h': 168,
-    '1d': 90
-};
+// Константы BINANCE_INTERVALS и CANDLE_LIMITS определены в binanceService.js
+// Используем глобальные переменные оттуда
 
 async function renderPriceChart(eventId, options) {
     const canvas = document.getElementById('event-chart-canvas');

@@ -12,22 +12,15 @@
  * 8. Fallback UI при недоступности данных
  */
 
-// Конфигурация интервалов для Binance API
-const BINANCE_ENDPOINTS = [
-    'https://api.binance.com',
-    'https://api1.binance.com',
-    'https://api2.binance.com',
-    'https://api3.binance.com',
-];
+// Константы определяются в binanceService.js - используем глобальные
+// const BINANCE_ENDPOINTS - из binanceService.js
+// const BINANCE_INTERVALS - из binanceService.js
+// const CANDLE_LIMITS - из binanceService.js
+// const REQUEST_TIMEOUT_MS - из binanceService.js
 
-const BINANCE_INTERVALS = {
-    '1m': '1m',
-    '5m': '5m',
-    '15m': '15m',
-    '1h': '1h',
-    '4h': '4h',
-    '1d': '1d'
-};
+let chartInstance = null;
+let priceCallback = null;
+let currentEndpointIndex = 0;
 
 // Количество свечей для загрузки в зависимости от таймфрейма
 const CANDLE_LIMITS = {
@@ -60,7 +53,7 @@ let lastCachedData = null; // Кэш последних данных для fall
  * @param {Chart} chart - Chart.js инстанс
  * @param {Function} onPriceUpdate - Callback для обновления цены (price, change)
  */
-export function initBinanceWebSocket(chart, onPriceUpdate) {
+function initBinanceWebSocket(chart, onPriceUpdate) {
     chartInstance = chart;
     priceCallback = onPriceUpdate;
     console.log('🔌 [WebSocket] Initialized with chart instance');
@@ -72,7 +65,7 @@ export function initBinanceWebSocket(chart, onPriceUpdate) {
  * @param {string} interval - Таймфрейм ('1m', '5m', '1h', etc.)
  * @returns {Promise<{labels: string[], prices: number[], firstPrice: number, lastPrice: number}>}
  */
-export async function loadHistoricalCandles(symbol, interval) {
+async function loadHistoricalCandles(symbol, interval) {
     const binanceInterval = BINANCE_INTERVALS[interval] || '15m';
     const limit = CANDLE_LIMITS[interval] || 96;
 
@@ -211,7 +204,7 @@ export async function loadHistoricalCandles(symbol, interval) {
  * @param {string} symbol - Торговая пара (например, 'BTCUSDT')
  * @param {Function} onTrade - Callback для каждой новой сделки (price, timestamp)
  */
-export function connectWebSocket(symbol, onTrade) {
+function connectWebSocket(symbol, onTrade) {
     // Закрываем предыдущее соединение если есть
     disconnectWebSocket();
 
@@ -344,7 +337,7 @@ export function connectWebSocket(symbol, onTrade) {
 /**
  * Отключается от WebSocket
  */
-export function disconnectWebSocket() {
+function disconnectWebSocket() {
     if (binanceWebSocket) {
         console.log('🔌 [WebSocket] Disconnecting WebSocket...');
         binanceWebSocket.close();
@@ -362,7 +355,7 @@ export function disconnectWebSocket() {
  * @param {string[]} labels - Метки времени
  * @param {number[]} prices - Цены
  */
-export function updateChartData(labels, prices) {
+function updateChartData(labels, prices) {
     currentChartLabels = [...labels];
     currentChartPrices = [...prices];
     recalculateYScale();
@@ -411,7 +404,7 @@ function updateChart() {
  * Получает текущие данные графика
  * @returns {{labels: string[], prices: number[]}}
  */
-export function getChartData() {
+function getChartData() {
     return {
         labels: [...currentChartLabels],
         prices: [...currentChartPrices]
@@ -422,7 +415,7 @@ export function getChartData() {
  * Устанавливает callback для обновления цены
  * @param {Function} callback - (price: number) => void
  */
-export function setPriceCallback(callback) {
+function setPriceCallback(callback) {
     priceCallback = callback;
 }
 
@@ -434,7 +427,7 @@ export function setPriceCallback(callback) {
  * @param {Function} onPriceUpdate - Callback для обновления цены
  * @param {Function} onTrade - Callback для каждой сделки
  */
-export async function initializeChart(symbol, interval, chart, onPriceUpdate, onTrade) {
+async function initializeChart(symbol, interval, chart, onPriceUpdate, onTrade) {
     console.log('🚀 [Chart] Initializing chart for', symbol, interval);
     
     // Инициализируем
@@ -464,7 +457,7 @@ export async function initializeChart(symbol, interval, chart, onPriceUpdate, on
 /**
  * Сбрасывает состояние при смене таймфрейма
  */
-export function resetOnIntervalChange() {
+function resetOnIntervalChange() {
     console.log('🔄 [Chart] Resetting on interval change');
     disconnectWebSocket();
     currentChartLabels = [];
@@ -480,7 +473,7 @@ export function resetOnIntervalChange() {
  * Получает статус загрузки данных
  * @returns {{hasData: boolean, fromCache: boolean, error: string|null}}
  */
-export function getDataStatus() {
+function getDataStatus() {
     const hasData = currentChartPrices.length > 0;
     const fromCache = lastCachedData !== null;
     
