@@ -1,6 +1,6 @@
 /**
  * Betting Engine Frontend Module
- * 
+ *
  * Модуль для работы со ставками в Telegram Mini App:
  * - usePlaceBet hook (в vanilla JS стиле)
  * - BetModal компонент
@@ -10,6 +10,7 @@
 // ==================== Constants ====================
 
 const BETTING_API_BASE = '/api/betting';
+const BETTING_TIMEOUT = 15000; // 15 секунд timeout
 
 // ==================== Utilities ====================
 
@@ -26,40 +27,57 @@ function getTelegramInitData() {
 
 /**
  * Выполнить API запрос с авторизацией через Telegram
- * @param {string} endpoint 
- * @param {object} options 
+ * @param {string} endpoint
+ * @param {object} options
  * @returns {Promise<any>}
  */
 async function bettingApiRequest(endpoint, options = {}) {
     const initData = getTelegramInitData();
-    
+    const fullUrl = `${BETTING_API_BASE}${endpoint}`;
+
+    console.log('🎲 Betting API Request:', fullUrl);
+
     const headers = {
         'Content-Type': 'application/json',
         ...options.headers,
     };
-    
+
     // Добавляем Telegram initData для аутентификации
     if (initData) {
         headers['X-Telegram-Init-Data'] = initData;
     }
-    
-    const response = await fetch(`${BETTING_API_BASE}${endpoint}`, {
-        ...options,
-        headers,
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-        throw new BettingError(data.detail || 'Request failed');
+
+    // Добавляем AbortController для timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), BETTING_TIMEOUT);
+
+    try {
+        const response = await fetch(fullUrl, {
+            ...options,
+            headers,
+            signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ detail: `HTTP ${response.status}` }));
+            console.error('❌ Betting API Error:', error);
+            throw new Error(error.detail || 'Betting request failed');
+        }
+
+        const data = await response.json();
+        console.log('✅ Betting API Response:', data);
+        return data;
+    } catch (error) {
+        console.error('❌ Betting Request Failed:', endpoint, error);
+        throw error;
     }
-    
-    return data;
 }
 
 /**
  * Форматировать число как деньги
- * @param {number|string} value 
+ * @param {number|string} value
  * @returns {string}
  */
 function formatMoney(value) {

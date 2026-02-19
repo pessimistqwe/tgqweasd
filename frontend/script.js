@@ -765,12 +765,17 @@ const t = translations[isRussian ? 'ru' : 'en'];
 function tr(key) {
     return t[key] || key;
 }
-// Автоматическое определение backend URL
+
+// ==================== BACKEND URL CONFIG ====================
+// Backend НЕ использует префикс /api для основных endpoints
+// Только betting routes используют /api/betting
 const configuredBackendUrl = window.__BACKEND_URL__;
 let backendUrl = configuredBackendUrl
     || (window.location.hostname === 'localhost'
         ? 'http://localhost:8000'
-        : `${window.location.origin}/api`);
+        : window.location.origin); // Без /api префикса!
+
+console.log('🔧 Backend URL:', backendUrl);
 
 // Crypto symbols mapping for Binance
 const CRYPTO_SYMBOLS = {
@@ -838,11 +843,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load profile immediately
     loadProfile();
 
+    // Ready timeout - скрываем лоадер даже если данные не загрузились
     setTimeout(() => {
+        console.log('⏰ Ready timeout - hiding loader');
         document.getElementById('loading').classList.add('hidden');
-    }, 500);
+    }, 10000); // 10 секунд максимум
 
-    // Initial load
+    // Initial load - загружаем данные
+    console.log('🚀 Starting initial load...');
     loadEvents();
     loadUserBalance();
     checkAdminStatus();
@@ -864,15 +872,23 @@ function startAutoRefresh() {
 async function apiRequest(url, options = {}) {
     try {
         const fullUrl = `${backendUrl}${url}`;
-        
+        console.log('📡 API Request:', fullUrl);
+
+        // Добавляем AbortController для timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 секунд timeout
+
         const response = await fetch(fullUrl, {
-            headers: { 
+            headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
+            signal: controller.signal,
             ...options
         });
-        
+
+        clearTimeout(timeoutId);
+
         if (!response.ok) {
             let error;
             try {
@@ -880,12 +896,16 @@ async function apiRequest(url, options = {}) {
             } catch {
                 error = { detail: `HTTP ${response.status}: ${response.statusText}` };
             }
+            console.error('❌ API Error:', error);
             throw new Error(error.detail || 'Request error');
         }
-        
-        return await response.json();
+
+        const data = await response.json();
+        console.log('✅ API Response:', url, data);
+        return data;
     } catch (error) {
-        console.error('API Error:', error);
+        console.error('❌ API Request Failed:', url, error);
+        // Пробрасываем ошибку дальше для обработки в UI
         throw error;
     }
 }
@@ -946,9 +966,10 @@ function setupCategoryScroll() {
 }
 
 async function loadEvents(silent = false) {
+    const container = document.getElementById('events-container');
+    console.log('📥 loadEvents() called, silent:', silent, 'category:', currentCategory);
+
     try {
-        const container = document.getElementById('events-container');
-        
         if (!silent) {
             container.innerHTML = `
                 <div class="loading-container">
@@ -957,14 +978,19 @@ async function loadEvents(silent = false) {
                 </div>
             `;
         }
-        
-        const url = currentCategory && currentCategory !== 'all' 
-            ? `/events?category=${currentCategory}` 
+
+        const url = currentCategory && currentCategory !== 'all'
+            ? `/events?category=${currentCategory}`
             : '/events';
-        
+
+        console.log('📡 Fetching events from:', url);
+        const startTime = Date.now();
         const data = await apiRequest(url);
-        
+        const loadTime = Date.now() - startTime;
+        console.log(`⏱️ Events loaded in ${loadTime}ms, count:`, data.events?.length || 0);
+
         if (!data.events || data.events.length === 0) {
+            console.log('⚠️ No events found');
             container.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">
@@ -981,10 +1007,11 @@ async function loadEvents(silent = false) {
             `;
             return;
         }
-        
+
         container.innerHTML = data.events.map(event => createEventCard(event)).join('');
+        console.log('✅ Events rendered successfully');
     } catch (error) {
-        console.error('Load events error:', error);
+        console.error('❌ Load events error:', error);
         if (!silent) {
             const container = document.getElementById('events-container');
             container.innerHTML = `
@@ -996,7 +1023,7 @@ async function loadEvents(silent = false) {
                         </svg>
                     </div>
                     <div class="empty-state-title">Connection Error</div>
-                    <div class="empty-state-text">${error.message}</div>
+                    <div class="empty-state-text">${error.message || 'Failed to load markets'}</div>
                     <button class="empty-state-btn" onclick="loadEvents()">
                         Try Again
                     </button>
@@ -3072,7 +3099,7 @@ function formatTimeMSK(isoString) {
         const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
         const mskDate = new Date(utc + (mskOffset * 60000));
         
-        // Форматируем в 24-часовом формате
+        // Формати��уем в 24-часовом формате
         const day = mskDate.getDate().toString().padStart(2, '0');
         const month = (mskDate.getMonth() + 1).toString().padStart(2, '0');
         const year = mskDate.getFullYear();
