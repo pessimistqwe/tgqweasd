@@ -1985,59 +1985,79 @@ let eventComments = []; // Хранилище комментариев для т
 
 async function openEventModal(eventId) {
     try {
+        console.log('📊 [Event] Opening modal for event ID:', eventId);
+        
         const event = await apiRequest(`/events/${eventId}`);
-        if (!event) return;
+        console.log('📊 [Event] Получен ответ:', event);
+        
+        if (!event) {
+            console.error('❌ [Event] Событие не найдено (пустой ответ)');
+            showNotification('Событие не найдено', 'error');
+            return;
+        }
 
         selectedOptionIndex = null;
         currentEventIdForComments = eventId;
-        currentEventId = eventId; // Сохраняем текущий ID события
+        currentEventId = eventId;
 
-        // Загружаем комментарии для события (из localStorage для демо)
+        // Загружаем комментарии для события
         loadCommentsForEvent(eventId);
 
         document.getElementById('event-modal-title').textContent = translateEventText(event.title);
 
-        // Render options
+        // ⚠️ ЗАЩИТА: Проверяем что options существует и это массив
         const optionsContainer = document.getElementById('event-options');
-        optionsContainer.innerHTML = event.options.map((opt, idx) => `
-            <div class="event-option-btn" onclick="selectEventOption(${idx}, ${opt.probability})">
-                <span class="event-option-text">${translateEventText(opt.text)}</span>
-                <span class="event-option-probability">${opt.probability}%</span>
-            </div>
-        `).join('');
+        const options = Array.isArray(event.options) ? event.options : [];
+        
+        console.log('📊 [Event] Опции:', options.length, 'шт');
+        
+        if (options.length === 0) {
+            console.warn('⚠️ [Event] Нет опций у события!');
+            optionsContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">Нет доступных вариантов</div>';
+        } else {
+            optionsContainer.innerHTML = options.map((opt, idx) => {
+                const probability = opt.probability || 50;
+                const text = opt.text || `Вариант ${idx + 1}`;
+                return `
+                    <div class="event-option-btn" onclick="selectEventOption(${idx}, ${probability})">
+                        <span class="event-option-text">${translateEventText(text)}</span>
+                        <span class="event-option-probability">${probability}%</span>
+                    </div>
+                `;
+            }).join('');
+        }
 
-        // Определяем тип события (крипто или нет) — по КАТЕГОРИИ а не по ключевым словам
+        // Определяем тип события (крипто или нет)
         const cryptoEvent = event.category === 'crypto';
         console.log('📊 [Event] Тип события:', cryptoEvent ? 'КРИПТО' : 'НЕ-КРИПТО', '| Category:', event.category);
 
         // Show/hide chart based on has_chart flag
         const chartContainer = document.getElementById('event-chart');
         if (chartContainer) {
-            // ⚠️ Явно показываем/скрываем график
-            chartContainer.style.display = event.has_chart ? 'block' : 'none';
-            console.log('📊 [Event] График:', event.has_chart ? 'показан' : 'скрыт', '| has_chart:', event.has_chart);
-            
+            // ⚠️ ЗАЩИТА: has_chart может быть null/undefined
+            const hasChart = event.has_chart === true;
+            chartContainer.style.display = hasChart ? 'block' : 'none';
+            console.log('📊 [Event] График:', hasChart ? 'показан' : 'скрыт', '| has_chart:', event.has_chart);
+
             // Восстанавливаем видимость внутренних элементов если график показан
             const chartTimeframe = document.getElementById('event-chart-timeframe');
             const chartInfo = document.getElementById('event-chart-info');
             const liveBadge = document.getElementById('chart-live-badge');
-            
-            if (event.has_chart) {
-                // Показываем элементы управления через небольшую задержку
+
+            if (hasChart) {
                 setTimeout(() => {
                     if (chartTimeframe) chartTimeframe.style.display = 'flex';
                     if (chartInfo) chartInfo.style.display = 'flex';
-                    if (liveBadge) liveBadge.style.display = 'none'; // Скрыт пока не подключится WebSocket
+                    if (liveBadge) liveBadge.style.display = 'none';
                 }, 100);
             } else {
-                // Скрываем элементы управления
                 if (chartTimeframe) chartTimeframe.style.display = 'none';
                 if (chartInfo) chartInfo.style.display = 'none';
                 if (liveBadge) liveBadge.style.display = 'none';
             }
         }
 
-        // Show/hide "Прогноз на 5 минут" block - ТОЛЬКО для crypto категории
+        // Show/hide "Прогноз на 5 минут" block
         const predictionSection = document.querySelector('.price-prediction-section');
         if (predictionSection) {
             predictionSection.style.display = cryptoEvent ? 'block' : 'none';
@@ -2045,18 +2065,21 @@ async function openEventModal(eventId) {
         }
 
         // Show modal
+        console.log('📊 [Event] Показываем модальное окно');
         document.getElementById('event-modal').classList.remove('hidden');
 
         // Reset to comments tab
         switchEventTab('comments');
 
         // Render chart only if has_chart is true
-        if (event.has_chart) {
-            setTimeout(() => renderEventChart(event.id, event.options), 100);
+        if (event.has_chart === true) {
+            console.log('📊 [Chart] Рендерим график для события', event.id);
+            setTimeout(() => renderEventChart(event.id, options), 100);
         }
     } catch (e) {
-        console.error('Error loading event:', e);
-        showNotification('Failed to load event details', 'error');
+        console.error('❌ [Event] Error loading event details:', e);
+        console.error('❌ [Event] Stack:', e.stack);
+        showNotification('Failed to load event details: ' + (e.message || 'Unknown error'), 'error');
     }
 }
 

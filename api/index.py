@@ -1065,18 +1065,41 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
 async def get_event(event_id: int, db: Session = Depends(get_db)):
     """Get single event by ID"""
     try:
+        print(f"📊 [API] Loading event {event_id}...")
+        
         event = db.query(Event).filter(Event.id == event_id).first()
         if not event:
+            print(f"❌ [API] Event {event_id} not found")
             raise HTTPException(status_code=404, detail="Event not found")
 
         options = db.query(EventOption).filter(EventOption.event_id == event_id).all()
+        print(f"📊 [API] Found {len(options)} options for event {event_id}")
+        
         time_left = int((event.end_time - datetime.utcnow()).total_seconds())
         total_stakes = sum(
             (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
             for opt in options
         ) or 1
 
-        return {
+        # Формируем options с probability
+        options_data = []
+        for opt in options:
+            # Используем current_price из БД если доступно, иначе рассчитываем из stakes
+            if opt.current_price and opt.current_price > 0:
+                probability = round(opt.current_price * 100, 1)
+            else:
+                opt_total = (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
+                probability = round(opt_total / total_stakes * 100, 1)
+            
+            options_data.append({
+                "index": opt.option_index,
+                "text": opt.option_text,
+                "total_points": (opt.total_stake or 0.0) + (opt.market_stake or 0.0),
+                "probability": probability
+            })
+            print(f"   - Option {opt.option_index}: {opt.option_text[:30]}... probability: {probability}%")
+
+        response_data = {
             "id": event.id,
             "title": event.title,
             "description": event.description,
@@ -1086,20 +1109,18 @@ async def get_event(event_id: int, db: Session = Depends(get_db)):
             "time_left": max(0, time_left),
             "total_pool": event.total_pool,
             "has_chart": event.has_chart or False,
-            "options": [
-                {
-                    "index": opt.option_index,
-                    "text": opt.option_text,
-                    "total_points": (opt.total_stake or 0.0) + (opt.market_stake or 0.0),
-                    "probability": round(((opt.total_stake or 0.0) + (opt.market_stake or 0.0)) / total_stakes * 100, 1)
-                }
-                for opt in options
-            ]
+            "options": options_data
         }
+        
+        print(f"✅ [API] Event {event_id} loaded successfully")
+        return response_data
+        
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error loading event: {e}")
+        print(f"❌ [API] Error loading event {event_id}: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/events/{event_id}/price-history")
