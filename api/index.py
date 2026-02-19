@@ -107,10 +107,16 @@ logger.info("✅ CORS middleware configured - allowing all origins")
 @app.middleware("http")
 async def strip_api_prefix(request, call_next):
     path = request.scope.get("path", "")
+    method = request.scope.get("method", "")
+    print(f"🌐 [MIDDLEWARE] {method} {path}")
+    
     if path == "/api":
         request.scope["path"] = "/"
+        print(f"   ⏩ Rewritten to: /")
     elif path.startswith("/api/"):
         request.scope["path"] = path[4:] or "/"
+        print(f"   ⏩ Rewritten to: {request.scope['path']}")
+    
     return await call_next(request)
 
 # ==================== POLYMARKET API INTEGRATION ====================
