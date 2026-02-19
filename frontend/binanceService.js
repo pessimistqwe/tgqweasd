@@ -131,6 +131,7 @@ class BinanceService {
 
     /**
      * Загружает исторические свечи с Binance REST API
+     * Приоритет: 1) Backend API, 2) Прямой Binance API, 3) Кэш
      * @param {string} symbol - Торговая пара (например, 'BTCUSDT')
      * @param {string} interval - Таймфрейм ('1m', '5m', '1h', etc.)
      * @returns {Promise<{labels: string[], prices: number[], candles: Array, firstPrice: number, lastPrice: number}>}
@@ -155,7 +156,49 @@ class BinanceService {
             return cachedData;
         }
 
-        // Пробуем каждый endpoint
+        // ПРИОРИТЕТ 1: Пробуем backend API (с CORS proxy)
+        try {
+            console.log('🔄 [BinanceService] Attempt 1: Backend API (/api/chart/history)');
+            const backendUrl = `/api/chart/history/${normalizedSymbol}?interval=${binanceInterval}&limit=${limit}`;
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => {
+                console.log('⏱️ [BinanceService] Backend request timeout');
+                controller.abort();
+            }, REQUEST_TIMEOUT_MS);
+            
+            const response = await fetch(backendUrl, {
+                signal: controller.signal,
+                headers: { 'Accept': 'application/json' }
+            });
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ [BinanceService] Backend API success:', data.candles?.length || 0, 'candles');
+                
+                const result = {
+                    labels: data.labels || [],
+                    prices: data.prices || [],
+                    candles: data.candles || [],
+                    firstPrice: data.first_price || (data.prices && data.prices[0]) || 0,
+                    lastPrice: data.last_price || (data.prices && data.prices[data.prices.length - 1]) || 0
+                };
+                
+                // Сохраняем в кэш
+                saveToCache(cacheKey, result);
+                this.lastCachedData = result;
+                
+                return result;
+            } else {
+                console.warn('⚠️ [BinanceService] Backend API returned:', response.status);
+            }
+        } catch (error) {
+            console.warn('⚠️ [BinanceService] Backend API failed:', error.message);
+            // Продолжаем к следующему варианту
+        }
+
+        // ПРИОРИТЕТ 2: Прямой Binance API (failover)
         const endpointsToTry = [
             getCurrentEndpoint(),
             ...BINANCE_ENDPOINTS.filter(ep => ep !== getCurrentEndpoint())
@@ -163,7 +206,7 @@ class BinanceService {
 
         for (let i = 0; i < endpointsToTry.length; i++) {
             const endpoint = endpointsToTry[i];
-            console.log(`🔄 [BinanceService] Attempt ${i + 1}: Trying endpoint ${endpoint}`);
+            console.log(`🔄 [BinanceService] Attempt ${i + 2}: Direct Binance endpoint ${endpoint}`);
 
             try {
                 const url = `${endpoint}/api/v3/klines?symbol=${normalizedSymbol}&interval=${binanceInterval}&limit=${limit}`;

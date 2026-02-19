@@ -38,6 +38,7 @@ try:
     from .volatility_routes import router as volatility_router
     from .volatility_service import start_volatility_service, stop_volatility_service
     from .admin_routes import router as admin_router
+    from .chart_routes import router as chart_router
 except ImportError:
     from betting_routes import router as betting_router
     from telegram_auth import init_telegram_validator
@@ -45,6 +46,7 @@ except ImportError:
     from volatility_routes import router as volatility_router
     from volatility_service import start_volatility_service, stop_volatility_service
     from admin_routes import router as admin_router
+    from chart_routes import router as chart_router
 
 app = FastAPI(title="EventPredict API")
 
@@ -56,6 +58,9 @@ app.include_router(volatility_router)
 
 # Подключаем admin routes
 app.include_router(admin_router)
+
+# Подключаем chart routes
+app.include_router(chart_router)
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")

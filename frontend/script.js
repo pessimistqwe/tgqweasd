@@ -826,10 +826,11 @@ function handleImageError(imgElement) {
  */
 function isCryptoEvent(event) {
     if (!event) return false;
-    
-    const cryptoKeywords = ['bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'crypto', 'price', 'ton', 'bnb', 'xrp', 'cardano', 'ada', 'dogecoin', 'doge', 'polkadot', 'dot', 'avalanche', 'avax'];
+
+    // Убрали 'price' — слишком общее слово (ложные срабатывания для политики/бизнеса)
+    const cryptoKeywords = ['bitcoin', 'btc', 'ethereum', 'eth', 'solana', 'sol', 'crypto', 'ton', 'bnb', 'xrp', 'cardano', 'ada', 'dogecoin', 'doge', 'polkadot', 'dot', 'avalanche', 'avax'];
     const textToCheck = ((event.title || '') + ' ' + (event.description || '') + ' ' + (event.symbol || '')).toLowerCase();
-    
+
     return cryptoKeywords.some(keyword => textToCheck.includes(keyword));
 }
 
