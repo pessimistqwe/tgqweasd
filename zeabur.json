@@ -12,8 +12,8 @@
   },
   "envs": {
     "PORT": {
-      "value": "8080",
-      "description": "Port for the application (Zeabur requires 8080)"
+      "value": "8000",
+      "description": "Port for the application"
     },
     "TEST_DB_PATH": {
       "value": "/tmp/events.db",
@@ -26,6 +26,10 @@
     "POLYMARKET_SYNC_INTERVAL": {
       "value": "7200",
       "description": "Polymarket sync interval in seconds"
+    },
+    "PYTHONUNBUFFERED": {
+      "value": "1",
+      "description": "Unbuffered Python output"
     }
   }
 }

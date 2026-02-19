@@ -9,7 +9,11 @@ RUN apk add --no-cache gcc musl-dev libffi-dev
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=8080
+    PORT=8000 \
+    TEST_DB_PATH=/tmp/events.db
+
+# Create /tmp directory for SQLite database
+RUN mkdir -p /tmp && chmod 777 /tmp
 
 # Copy requirements and install dependencies
 COPY api/requirements-minimal.txt /tmp/requirements.txt
@@ -19,11 +23,11 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 COPY api /app/api
 COPY frontend /app/frontend
 
-EXPOSE 8080
+EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
 
 # Start the application
-CMD ["sh", "-c", "uvicorn index:app --host 0.0.0.0 --port ${PORT:-8080} --app-dir api"]
+CMD ["sh", "-c", "uvicorn index:app --host 0.0.0.0 --port ${PORT:-8000} --app-dir api"]

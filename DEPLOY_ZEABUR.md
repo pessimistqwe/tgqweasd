@@ -39,12 +39,14 @@ Start Command: (оставьте пустым - используется из Do
 
 | Ключ | Значение | Описание |
 |------|----------|----------|
-| `PORT` | `8000` | Порт сервера |
+| `PORT` | `8000` | Порт сервера (важно для Zeabur) |
 | `TELEGRAM_BOT_TOKEN` | `your_bot_token` | Токен бота от @BotFather |
 | `ADMIN_TELEGRAM_ID` | `123456789` | Ваш Telegram ID |
 | `TEST_DB_PATH` | `/tmp/events.db` | Путь к SQLite БД |
 | `POLYMARKET_SYNC_INTERVAL` | `7200` | Интервал синхронизации (сек) |
 | `SECRET_KEY` | `random_string` | Секретный ключ |
+
+**Важно:** PORT должен быть 8000 (не 8080)!
 
 #### Шаг 5: Деплой
 
