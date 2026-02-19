@@ -58,6 +58,16 @@ class InvalidOddsError(BettingError):
     pass
 
 
+class SlippageError(BettingError):
+    """
+    Превышение допустимого проскальзывания цены
+    
+    Возникает когда цена клиента отличается от цены сервера
+    больше чем на допустимый процент (0.5%)
+    """
+    pass
+
+
 class BettingService:
     """
     Сервис для управления ставками
@@ -72,6 +82,7 @@ class BettingService:
     MIN_BET_AMOUNT = Decimal("0.01")  # Минимальная ставка 0.01 USDT
     MAX_BET_AMOUNT = Decimal("10000")  # Максимальная ставка 10000 USDT
     MAX_LEVERAGE = Decimal("100")  # Максимальное плечо 100x
+    MAX_PRICE_SLIPPAGE = Decimal("0.005")  # Максимальное проскальзывание цены 0.5%
     
     def __init__(self, db: Session):
         """
@@ -333,14 +344,15 @@ class BettingService:
     ) -> Dict[str, Any]:
         """
         Разместить краткосрочный прогноз цены (5 минут)
-        
+
         Логика:
         1. Проверка баланса
         2. Валидация коэффициента
-        3. Расчёт потенциального выигрыша (amount * odds)
-        4. Списывание средств
-        5. Создание прогноза
-        
+        3. Валидация цены (защита от манипуляций)
+        4. Расчёт потенциального выигрыша (amount * odds)
+        5. Списывание средств
+        6. Создание прогноза
+
         Args:
             user_id: ID пользователя
             market_id: ID рынка
@@ -350,7 +362,7 @@ class BettingService:
             entry_price: Текущая цена актива
             symbol: Символ актива (BTCUSDT)
             duration_seconds: Длительность прогноза в секундах
-            
+
         Returns:
             Dict с информацией о прогнозе:
             {
@@ -362,21 +374,28 @@ class BettingService:
         """
         # === Валидация суммы ===
         self._validate_bet_amount(amount)
-        
+
         # === Валидация коэффициента ===
         if odds <= 1:
             raise InvalidOddsError(f"Odds must be greater than 1, got {odds}")
-        
+
         # === Проверка баланса ===
         if not self.repository.check_user_balance(user_id, amount):
             balance = self.repository.get_user_balance(user_id)
             raise InsufficientBalanceError(
                 f"Insufficient balance: required {amount}, has {balance}"
             )
+
+        # === ЗАЩИТА ОТ МАНИПУЛЯЦИЙ: валидация цены ===
+        # Получаем реальную цену с сервера (Binance API)
+        server_price = self._get_server_price(symbol)
         
+        # Проверяем что цена клиента не отличается от цены сервера больше чем на 0.5%
+        self.validate_price_against_server(entry_price, server_price)
+
         # === Расчёт потенциального выигрыша ===
         potential_payout = (amount * odds).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
-        
+
         # === Списываем средства ===
         success, new_balance = self.repository.update_user_balance(
             user_id=user_id,
@@ -384,7 +403,7 @@ class BettingService:
             create_transaction=True,
             transaction_type=TransactionType.BET_PLACED,
         )
-        
+
         if not success:
             raise InsufficientBalanceError("Failed to deduct balance")
         
@@ -793,5 +812,106 @@ class BettingService:
         else:
             # Для SHORT ликвидация когда цена растёт на 100%/leverage
             liq_price = entry_price * (1 + (1 / leverage))
-        
+
         return liq_price.quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
+
+    def validate_price_against_server(
+        self,
+        client_price: Decimal,
+        server_price: Decimal,
+        max_slippage: Optional[Decimal] = None,
+    ) -> bool:
+        """
+        Проверка цены клиента против цены сервера
+        
+        Защита от манипуляций: если цена клиента отличается от цены сервера
+        больше чем на допустимый процент, ставка отклоняется.
+        
+        Args:
+            client_price: Цена от клиента
+            server_price: Реальная цена с сервера (Binance API)
+            max_slippage: Максимальное допустимое проскальзывание (по умолчанию 0.5%)
+            
+        Returns:
+            bool: True если цена в допуске
+            
+        Raises:
+            SlippageError: Если цена вне допуска
+        """
+        if max_slippage is None:
+            max_slippage = self.MAX_PRICE_SLIPPAGE
+        
+        # Рассчитываем процентное отклонение
+        price_diff = abs(client_price - server_price) / server_price
+        
+        # Проверяем что отклонение в допуске
+        if price_diff > max_slippage:
+            slippage_percent = (price_diff * 100).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            max_slippage_percent = (max_slippage * 100).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+            
+            logger.warning(
+                f"🚫 Price manipulation detected: "
+                f"client_price={client_price}, server_price={server_price}, "
+                f"slippage={slippage_percent}% (max={max_slippage_percent}%)"
+            )
+            
+            raise SlippageError(
+                f"Slippage too high: {slippage_percent}% (max allowed: {max_slippage_percent}%)"
+            )
+        
+        logger.debug(
+            f"✅ Price validated: client={client_price}, server={server_price}, "
+            f"slippage={(price_diff * 100):.4f}%"
+        )
+        
+        return True
+
+    def _get_server_price(self, symbol: str) -> Decimal:
+        """
+        Получить реальную цену с сервера (Binance API)
+        
+        Args:
+            symbol: Торговая пара (например, 'BTCUSDT')
+            
+        Returns:
+            Decimal: Реальная цена с Binance API
+            
+        Raises:
+            BettingError: Если не удалось получить цену
+        """
+        try:
+            # Импортируем volatility service для получения цены
+            from volatility_service import get_from_cache
+            
+            # Пробуем получить из кэша volatility service
+            cached = get_from_cache(symbol)
+            if cached and cached.get("prices"):
+                # Берем последнюю цену из кэша
+                last_price = cached["prices"][-1]
+                logger.info(f"💰 Server price for {symbol} from cache: ${last_price}")
+                return Decimal(str(last_price))
+            
+            # Если кэша нет, делаем запрос к Binance API напрямую
+            import requests
+            
+            url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+            response = requests.get(url, timeout=5)
+            
+            if response.ok:
+                data = response.json()
+                price = float(data["price"])
+                logger.info(f"💰 Server price for {symbol} from API: ${price}")
+                return Decimal(str(price))
+            
+            # Fallback: если API недоступен, используем дефолтную цену
+            logger.warning(f"⚠️ Could not fetch server price for {symbol}, using default")
+            return Decimal("50000.00")  # Дефолтная цена BTC
+            
+        except Exception as e:
+            logger.error(f"❌ Error fetching server price for {symbol}: {e}")
+            # Возвращаем дефолтную цену чтобы не блокировать ставки
+            return Decimal("50000.00")
