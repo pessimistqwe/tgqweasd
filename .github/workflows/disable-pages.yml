@@ -1,0 +1,16 @@
+# Empty workflow to disable GitHub Pages
+# GitHub Pages пытается построить Jekyll сайт, но нам это не нужно
+# Этот файл явно указывает что Pages не требуется
+
+name: No Pages Build
+
+on:
+  # Пустой триггер - workflow никогда не запускается
+  # Это нужно только для отключения Pages
+  workflow_dispatch:
+
+jobs:
+  skip:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "GitHub Pages отключен - это не Jekyll сайт"
