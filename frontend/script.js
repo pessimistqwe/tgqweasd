@@ -2008,8 +2008,8 @@ async function openEventModal(eventId) {
             </div>
         `).join('');
 
-        // Определяем тип события (крипто или нет)
-        const cryptoEvent = isCryptoEvent(event);
+        // Определяем тип события (крипто или нет) — по КАТЕГОРИИ а не по ключевым словам
+        const cryptoEvent = event.category === 'crypto';
         console.log('📊 [Event] Тип события:', cryptoEvent ? 'КРИПТО' : 'НЕ-КРИПТО', '| Category:', event.category);
 
         // Show/hide chart based on has_chart flag
@@ -2018,7 +2018,7 @@ async function openEventModal(eventId) {
             chartContainer.style.display = event.has_chart ? 'block' : 'none';
         }
 
-        // Show/hide "Прогноз на 5 минут" block - только для крипто событий
+        // Show/hide "Прогноз на 5 минут" block - ТОЛЬКО для crypto категории
         const predictionSection = document.querySelector('.price-prediction-section');
         if (predictionSection) {
             predictionSection.style.display = cryptoEvent ? 'block' : 'none';
@@ -2549,8 +2549,21 @@ async function renderPriceChart(eventId, options) {
     }
 
     if (!binanceSymbol) {
-        console.warn('⚠️ [Chart] Символ Binance не найден, используем симуляцию');
-        renderSimulatedChart(canvas, options);
+        console.error('❌ [Chart] Символ Binance не найден для события:', event.title);
+        // Показываем ошибку вместо симуляции
+        const chartContainer = document.getElementById('event-chart');
+        if (chartContainer) {
+            chartContainer.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); text-align: center; padding: 20px;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px; opacity: 0.5;">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 8v4M12 16h.01"/>
+                    </svg>
+                    <div style="font-size: 14px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">График недоступен</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">Не удалось определить криптовалюту для этого события</div>
+                </div>
+            `;
+        }
         return;
     }
 
@@ -3007,112 +3020,6 @@ function connectBinanceWebSocket(symbol) {
     };
 
     console.log('✅ [Chart] Binance WebSocket подключён:', streamName);
-}
-
-// Fallback: simulated chart for non-crypto events
-function renderSimulatedChart(canvas, options) {
-    const ctx = canvas.getContext('2d');
-    const primaryColor = '#22c55e';
-    const labels = [];
-    const prices = [];
-    const historyPoints = 50;
-    const now = Date.now();
-
-    // Generate time labels
-    for (let i = historyPoints; i >= 0; i--) {
-        const time = new Date(now - i * 60000); // 1 minute intervals
-        labels.push(time.toISOString());
-    }
-
-    // Generate simulated prices with smooth random walk (Perlin-like noise)
-    if (options.length > 0) {
-        const opt = options[0];
-        let basePrice = opt.probability / 100;
-        let currentPrice = basePrice;
-        let velocity = 0;
-        
-        for (let i = 0; i <= historyPoints; i++) {
-            // Smooth random walk with momentum
-            const acceleration = (Math.random() - 0.5) * 0.008;
-            velocity = velocity * 0.85 + acceleration; // Smooth with damping
-            currentPrice = currentPrice + velocity;
-            
-            // Keep price in valid range with soft boundaries
-            if (currentPrice < 0.05) {
-                velocity += 0.02; // Push back up
-                currentPrice = 0.05 + Math.abs(currentPrice - 0.05) * 0.5;
-            } else if (currentPrice > 0.95) {
-                velocity -= 0.02; // Push back down
-                currentPrice = 0.95 - Math.abs(currentPrice - 0.95) * 0.5;
-            }
-            
-            prices.push(Math.max(0.01, Math.min(0.99, currentPrice)));
-        }
-    }
-
-    // Create chart with smooth animation
-    eventChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: options.length > 0 ? translateEventText(options[0].text) : 'Price',
-                data: prices,
-                borderColor: primaryColor,
-                borderWidth: 3,
-                fill: true,
-                tension: 0.4,
-                pointRadius: 0,
-                pointHoverRadius: 6
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: {
-                duration: 1000,
-                easing: 'easeOutQuart',
-                x: {
-                    duration: 1000,
-                    easing: 'easeOutQuart'
-                },
-                y: {
-                    duration: 1000,
-                    easing: 'easeOutQuart'
-                }
-            },
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: 'rgba(15, 15, 18, 0.98)',
-                    titleColor: '#fff',
-                    bodyColor: '#a1a1aa',
-                    callbacks: {
-                        label: (ctx) => (ctx.parsed.y * 100).toFixed(1) + '%'
-                    }
-                }
-            },
-            scales: {
-                x: { display: false },
-                y: {
-                    min: 0,
-                    max: 1,
-                    grid: { color: 'rgba(255,255,255,0.03)' },
-                    ticks: {
-                        color: '#71717a',
-                        callback: (value) => (value * 100) + '%'
-                    }
-                }
-            }
-        }
-    });
-
-    // Apply gradient
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, 'rgba(34, 197, 94, 0.5)');
-    gradient.addColorStop(0.5, 'rgba(34, 197, 94, 0.2)');
-    gradient.addColorStop(1, 'rgba(239, 68, 68, 0.3)');
-    eventChart.data.datasets[0].backgroundColor = gradient;
 }
 
 // ==================== UTILITY FUNCTIONS ====================
