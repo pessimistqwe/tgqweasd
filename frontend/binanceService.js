@@ -152,10 +152,18 @@ class BinanceService {
         const cacheKey = `${normalizedSymbol}-${interval}`;
         const cachedData = getFromCache(cacheKey);
         if (cachedData) {
-            console.log('💾 [BinanceService] Using cached data for', cacheKey);
-            console.log('📊 [BinanceService] 📊 Cached prices:', cachedData.prices?.length, 'candles');
-            console.log('📊 [BinanceService] 📊 First:', cachedData.firstPrice?.toFixed(2), '| Last:', cachedData.lastPrice?.toFixed(2));
-            return cachedData;
+            const cacheAge = Date.now() - cachedData.timestamp;
+            console.log('💾 [BinanceService] Кэш найден для', cacheKey, 'возраст:', Math.floor(cacheAge/1000), 'сек');
+            
+            // Если кэш свежий (< 30 сек) — используем, иначе загружаем заново
+            // Это исправляет проблему "нарисованного" графика при первом клике
+            if (cacheAge < 30000) {
+                console.log('📊 [BinanceService] 📊 Cached prices:', cachedData.prices?.length, 'candles');
+                console.log('📊 [BinanceService] 📊 First:', cachedData.firstPrice?.toFixed(2), '| Last:', cachedData.lastPrice?.toFixed(2));
+                return cachedData;
+            } else {
+                console.log('⚠️ [BinanceService] Кэш устарел (>30 сек), загружаем заново');
+            }
         }
 
         // ПРИОРИТЕТ 1: Пробуем backend API (с CORS proxy)

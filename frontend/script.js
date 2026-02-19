@@ -1508,24 +1508,18 @@ let currentOdds = { up: 1.95, down: 1.95 };
 
 // Calculate dynamic odds based on 5-minute price volatility
 function calculateDynamicOdds(prices) {
-    if (prices.length < 2) {
+    if (!prices || prices.length < 2) {
         return { up: 1.95, down: 1.95 };
     }
 
-    // Берём последние 5 минут данных в зависимости от интервала
-    // 1m: 5 свечей, 5m: 1 свеча, 15m: часть свечи, 1h+: часть свечи
-    const candlesFor5Min = {
-        '1m': 5,
-        '5m': 1,
-        '15m': 1,
-        '1h': 1,
-        '4h': 1,
-        '1d': 1
-    };
+    // ⚠️ ВСЕГДА используем последние 5 свечей 1m интервала для расчёта 5-минутной волатильности
+    // Это исправляет проблему "коэффициенты меняются при смене таймфрейма"
+    // Даже если график показывает 1h/4h, волатильность считаем по реальным 5 минутам
+    const candlesFor5Min = 5; // Всегда 5 свечей (5 минут на 1m интервале)
     
-    const candlesCount = candlesFor5Min[currentChartInterval] || 1;
-    const recentPrices = prices.slice(-Math.max(candlesCount, 5));
-    
+    // Берём последние 5 цен из переданных (это должны быть 1m данные)
+    const recentPrices = prices.slice(-candlesFor5Min);
+
     if (recentPrices.length < 2) {
         return { up: 1.95, down: 1.95 };
     }
@@ -1534,7 +1528,7 @@ function calculateDynamicOdds(prices) {
     const firstPrice = recentPrices[0];
     const lastPrice = recentPrices[recentPrices.length - 1];
     const priceChange = (lastPrice - firstPrice) / firstPrice;
-    
+
     // Расчёт волатильности (максимальное отклонение за период)
     const minPrice = Math.min(...recentPrices);
     const maxPrice = Math.max(...recentPrices);
@@ -1565,6 +1559,10 @@ function calculateDynamicOdds(prices) {
     // Ограничиваем коэффициенты
     upOdds = Math.max(1.1, Math.min(5.0, upOdds));
     downOdds = Math.max(1.1, Math.min(5.0, downOdds));
+
+    console.log('💰 [Prediction] Коэффициенты:', { up: upOdds.toFixed(2), down: downOdds.toFixed(2) }, 
+                '| волатильность:', (volatility * 100).toFixed(2) + '%',
+                '| изменение:', (priceChange * 100).toFixed(2) + '%');
 
     return {
         up: parseFloat(upOdds.toFixed(2)),
@@ -2015,7 +2013,28 @@ async function openEventModal(eventId) {
         // Show/hide chart based on has_chart flag
         const chartContainer = document.getElementById('event-chart');
         if (chartContainer) {
+            // ⚠️ Явно показываем/скрываем график
             chartContainer.style.display = event.has_chart ? 'block' : 'none';
+            console.log('📊 [Event] График:', event.has_chart ? 'показан' : 'скрыт', '| has_chart:', event.has_chart);
+            
+            // Восстанавливаем видимость внутренних элементов если график показан
+            const chartTimeframe = document.getElementById('event-chart-timeframe');
+            const chartInfo = document.getElementById('event-chart-info');
+            const liveBadge = document.getElementById('chart-live-badge');
+            
+            if (event.has_chart) {
+                // Показываем элементы управления через небольшую задержку
+                setTimeout(() => {
+                    if (chartTimeframe) chartTimeframe.style.display = 'flex';
+                    if (chartInfo) chartInfo.style.display = 'flex';
+                    if (liveBadge) liveBadge.style.display = 'none'; // Скрыт пока не подключится WebSocket
+                }, 100);
+            } else {
+                // Скрываем элементы управления
+                if (chartTimeframe) chartTimeframe.style.display = 'none';
+                if (chartInfo) chartInfo.style.display = 'none';
+                if (liveBadge) liveBadge.style.display = 'none';
+            }
         }
 
         // Show/hide "Прогноз на 5 минут" block - ТОЛЬКО для crypto категории
@@ -3082,14 +3101,26 @@ function connectBinanceWebSocket(symbol) {
         // Обновляем цену в UI сразу (для мгновенной реакции)
         updateChartPriceDisplay(price);
 
-        // Debounce обновления графика для плавности (обновляем каждые 200мс)
+        // ⚠️ Debounce обновления графика ЗАВИСИТ от таймфрейма!
+        // Это исправляет проблему "одинаковой скорости" графиков
+        // 1m: обновляем часто (каждые 500мс) — видно движение
+        // 5m: обновляем реже (каждые 2 сек) — сглаженное движение
+        // 15m+: обновляем ещё реже (каждые 5 сек) — для долгосрочных графиков
+        const debounceTime = currentChartInterval === '1m' ? 500 :
+                            currentChartInterval === '5m' ? 2000 :
+                            currentChartInterval === '15m' ? 5000 :
+                            currentChartInterval === '1h' ? 10000 :
+                            currentChartInterval === '4h' ? 15000 : 20000;
+
         if (webSocketUpdateTimeout) {
             clearTimeout(webSocketUpdateTimeout);
         }
 
         webSocketUpdateTimeout = setTimeout(() => {
             updateChartFromBuffer();
-        }, 200);
+        }, debounceTime);
+        
+        console.log('🔌 [WebSocket] Новая цена:', price.toFixed(2), '| таймфрейм:', currentChartInterval, '| debounce:', debounceTime + 'мс');
     };
 
     // Обработчик ошибок
