@@ -15,6 +15,7 @@ from typing import Optional, List, Dict
 import httpx
 import logging
 from datetime import datetime
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -175,14 +176,14 @@ async def get_chart_history(
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=BINANCE_HEADERS) as client:
                 request_url = f"{endpoint}/api/v3/klines"
                 response = await client.get(request_url, params=params)
-            
+
             # Обработка ошибки 451
             if response.status_code == 451:
                 logger.error(f"🚫 Binance blocked request (451) for {normalized_symbol} from {endpoint}")
                 switch_to_next_endpoint()
                 continue
-            
-            if not response.ok:
+
+            if not response.is_success:
                 logger.error(f"❌ Binance API error {response.status_code} for {normalized_symbol}")
                 last_error = f"Binance API error: {response.status_code}"
                 switch_to_next_endpoint()
@@ -242,12 +243,18 @@ async def get_chart_history(
                 cached=False
             )
             
-        except requests.exceptions.Timeout:
+        except httpx.TimeoutException:
             logger.error(f"⏱️ Timeout fetching data for {normalized_symbol} from {endpoint}")
             last_error = "Request timeout"
             switch_to_next_endpoint()
             continue
-            
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"❌ HTTP status error for {normalized_symbol}: {e}")
+            last_error = str(e)
+            switch_to_next_endpoint()
+            continue
+
         except Exception as e:
             logger.error(f"❌ Error fetching chart data for {normalized_symbol}: {e}")
             last_error = str(e)
