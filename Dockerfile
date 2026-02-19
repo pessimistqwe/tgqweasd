@@ -1,4 +1,4 @@
-# Simple Dockerfile for Zeabur deployment
+# Dockerfile for Zeabur deployment
 FROM python:3.12-alpine
 
 WORKDIR /app
@@ -25,9 +25,5 @@ COPY frontend /app/frontend
 
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
-
 # Start the application
-CMD ["sh", "-c", "uvicorn index:app --host 0.0.0.0 --port ${PORT:-8000} --app-dir api"]
+CMD ["sh", "-c", "cd /app && uvicorn index:app --host 0.0.0.0 --port ${PORT:-8000} --app-dir api"]
