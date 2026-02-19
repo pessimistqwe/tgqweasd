@@ -12,10 +12,9 @@ Chart Routes - API endpoints для загрузки исторических д
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List, Dict
-import requests
+import httpx
 import logging
 from datetime import datetime
-import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -171,18 +170,11 @@ async def get_chart_history(
                 "interval": binance_interval,
                 "limit": min(limit, 1000)  # Binance max limit
             }
-            
-            # Используем asyncio для non-blocking запроса
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None,
-                lambda ep=endpoint, p=params: requests.get(
-                    f"{ep}/api/v3/klines",
-                    params=p,
-                    headers=BINANCE_HEADERS,
-                    timeout=REQUEST_TIMEOUT
-                )
-            )
+
+            # Используем httpx для async запроса
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=BINANCE_HEADERS) as client:
+                request_url = f"{endpoint}/api/v3/klines"
+                response = await client.get(request_url, params=params)
             
             # Обработка ошибки 451
             if response.status_code == 451:
