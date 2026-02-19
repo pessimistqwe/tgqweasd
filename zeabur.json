@@ -7,11 +7,13 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "start": {},
+  "start": {
+    "cmd": "uvicorn index:app --host 0.0.0.0 --port $PORT --app-dir api"
+  },
   "envs": {
     "PORT": {
-      "value": "8000",
-      "description": "Port for the application"
+      "value": "8080",
+      "description": "Port for the application (Zeabur requires 8080)"
     },
     "TEST_DB_PATH": {
       "value": "/tmp/events.db",
