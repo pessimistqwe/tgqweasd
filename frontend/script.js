@@ -2090,9 +2090,27 @@ function closeEventModal() {
     // Clear chart data arrays
     currentChartLabels = [];
     currentChartPrices = [];
-    
+
     // Reset chart price data
     chartPriceData = { firstPrice: 0, lastPrice: 0 };
+
+    // Останавливаем таймер обновления
+    if (window.chartUpdatedTimer) {
+        clearInterval(window.chartUpdatedTimer);
+        window.chartUpdatedTimer = null;
+    }
+
+    // Скрываем Live бейдж
+    const liveBadgeEl = document.getElementById('chart-live-badge');
+    if (liveBadgeEl) {
+        liveBadgeEl.style.display = 'none';
+    }
+
+    // Скрываем индикатор обновления
+    const updatedEl = document.getElementById('chart-updated');
+    if (updatedEl) {
+        updatedEl.style.display = 'none';
+    }
 }
 
 // Event Tabs Switching
@@ -2732,29 +2750,53 @@ function renderRealtimeChart(canvas, binanceSymbol, options) {
  * Загружает данные графика через binanceService
  */
 async function loadChartData(symbol, interval) {
-    console.log('📊 [Chart] Загрузка данных для:', symbol, 'interval:', interval);
+    console.log('📊 [Chart] ========== ЗАГРУЗКА ГРАФИКА ==========');
+    console.log('📊 [Chart] Символ:', symbol, '| Таймфрейм:', interval);
+    console.log('📊 [Chart] Вызов binanceService.loadHistoricalCandles...');
 
     try {
         // Используем binanceService если доступен
         if (window.binanceService) {
-            console.log('📊 [Chart] Вызов binanceService.loadHistoricalCandles...');
-            
-            const { labels, prices, firstPrice, lastPrice } = 
+            const { labels, prices, firstPrice, lastPrice, candles } =
                 await window.binanceService.loadHistoricalCandles(symbol, interval);
 
-            console.log('📊 [Chart] Получено данных из сервиса:', labels.length, 'свечей');
+            console.log('📊 [Chart] ✅ Получено данных:', labels.length, 'свечей');
+            console.log('📊 [Chart] 📊 Первая свеча:', {
+                time: labels[0],
+                price: firstPrice.toFixed(2)
+            });
+            console.log('📊 [Chart] 📊 Последняя свеча:', {
+                time: labels[labels.length - 1],
+                price: lastPrice.toFixed(2)
+            });
+
+            // Проверка на "ровную линию" - все цены одинаковые
+            const uniquePrices = new Set(prices);
+            console.log('📊 [Chart] 🔍 Уникальных цен:', uniquePrices.size, 'из', prices.length);
+
+            if (uniquePrices.size < 5) {
+                console.error('❌ [Chart] ⚠️ ПОДОЗРИТЕЛЬНО: мало уникальных цен! Возможно данные шаблонные');
+            }
 
             if (labels.length === 0) {
                 console.warn('⚠️ [Chart] Нет данных от Binance API');
                 return;
             }
 
+            // Проверка диапазона цен для разных монет
+            const priceRange = lastPrice - firstPrice;
+            const priceChangePercent = (priceRange / firstPrice) * 100;
+            console.log('📊 [Chart] 💹 Изменение цены:', priceChangePercent.toFixed(2), '%');
+
             // Обновляем глобальные переменные
             currentChartLabels = labels;
             currentChartPrices = prices;
-            chartPriceData = { firstPrice, lastPrice, symbol };
+            chartPriceData = { firstPrice, lastPrice, symbol, candles };
 
-            console.log('📊 [Chart] Диапазон цен:', firstPrice.toFixed(4), '-', lastPrice.toFixed(4));
+            console.log('📊 [Chart] Диапазон цен:', firstPrice.toFixed(2), '-', lastPrice.toFixed(2));
+
+            // Обновляем время последнего обновления
+            window.chartLastUpdateTime = Date.now();
 
             // Обновляем отображение цены
             updateChartPriceDisplay(lastPrice);
@@ -2772,14 +2814,15 @@ async function loadChartData(symbol, interval) {
             if (eventChart) {
                 eventChart.options.scales.y.min = chartYMin;
                 eventChart.options.scales.y.max = chartYMax;
-                
+
                 // Обновляем данные графика
                 eventChart.data.labels = currentChartLabels;
                 eventChart.data.datasets[0].data = currentChartPrices;
                 eventChart.data.datasets[0].label = symbol;
                 eventChart.update('none');
-                
-                console.log('📊 [Chart] График обновлён');
+
+                console.log('📊 [Chart] ✅ График обновлён успешно');
+                console.log('📊 [Chart] ========== ЗАГРУЗКА ЗАВЕРШЕНА ==========');
             }
 
             // Подключаем WebSocket для реального времени
@@ -2884,17 +2927,58 @@ async function loadChartDataDirect(symbol, interval) {
 function updateChartPriceDisplay(currentPrice) {
     const priceEl = document.getElementById('chart-price');
     const changeEl = document.getElementById('chart-change');
-    
+    const updatedEl = document.getElementById('chart-updated');
+    const liveBadgeEl = document.getElementById('chart-live-badge');
+
     if (!priceEl || !changeEl) return;
-    
+
     priceEl.textContent = `$${currentPrice.toFixed(2)}`;
-    
+
     const firstPrice = chartPriceData.firstPrice || currentPrice;
     const change = ((currentPrice - firstPrice) / firstPrice) * 100;
     const changeStr = change >= 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
-    
+
     changeEl.textContent = changeStr;
     changeEl.className = 'event-chart-change' + (change >= 0 ? '' : ' negative');
+
+    // Показываем Live бейдж для крипто событий
+    if (liveBadgeEl) {
+        liveBadgeEl.style.display = 'flex';
+    }
+
+    // Обновляем индикатор "Обновлено X сек назад"
+    if (updatedEl) {
+        updatedEl.style.display = 'block';
+        updateChartUpdatedTime(updatedEl);
+        
+        // Запускаем таймер обновления
+        if (window.chartUpdatedTimer) {
+            clearInterval(window.chartUpdatedTimer);
+        }
+        window.chartUpdatedTimer = setInterval(() => {
+            updateChartUpdatedTime(updatedEl);
+        }, 1000);
+    }
+}
+
+/**
+ * Обновляет текст "Обновлено X сек назад"
+ */
+function updateChartUpdatedTime(element) {
+    if (!element) return;
+    
+    const now = Date.now();
+    const lastUpdate = window.chartLastUpdateTime || now;
+    const seconds = Math.floor((now - lastUpdate) / 1000);
+    
+    if (seconds < 1) {
+        element.textContent = '🔄 Обновлено только что';
+    } else if (seconds < 60) {
+        element.textContent = `🔄 Обновлено ${seconds} сек назад`;
+    } else {
+        const minutes = Math.floor(seconds / 60);
+        element.textContent = `🔄 Обновлено ${minutes} мин назад`;
+    }
 }
 
 /**
@@ -2925,7 +3009,7 @@ function connectBinanceWebSocket(symbol) {
 
     // Обработчик открытия соединения
     binanceWebSocket.onopen = function() {
-        console.log('✅ [Chart] WebSocket соединение открыто для:', symbol);
+        console.log('✅ [Chart] WebSocket соединени�� открыто для:', symbol);
     };
 
     // Функция обновления графика

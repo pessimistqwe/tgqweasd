@@ -583,16 +583,18 @@ body::before {
     font-weight: 700;
     font-size: 15px;
     font-variant-numeric: tabular-nums;
-    min-width: 40px;
+    min-width: 45px;
     text-align: right;
+    /* Добавляем тень для лучшей видимости */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .option-btn.yes-option .option-probability {
-    color: var(--yes-bright);
+    color: #4ade80; /* Более яркий зелёный */
 }
 
 .option-btn.no-option .option-probability {
-    color: var(--no-bright);
+    color: #f87171; /* Более яркий красный */
 }
 
 /* ==================== WALLET SECTION ==================== */
@@ -1326,6 +1328,57 @@ body::before {
     z-index: 1;
 }
 
+/* Live Badge */
+.event-chart-live-badge {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: rgba(35, 134, 54, 0.15);
+    border: 1px solid rgba(35, 134, 54, 0.4);
+    border-radius: 20px;
+    z-index: 10;
+    animation: pulse-live 2s infinite;
+}
+
+.live-dot {
+    font-size: 10px;
+    line-height: 1;
+}
+
+.live-text {
+    font-size: 11px;
+    font-weight: 700;
+    color: #238636;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+@keyframes pulse-live {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(35, 134, 54, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(35, 134, 54, 0);
+    }
+}
+
+/* Updated indicator */
+.event-chart-updated {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    font-size: 10px;
+    color: var(--text-muted);
+    background: rgba(110, 118, 129, 0.15);
+    padding: 4px 8px;
+    border-radius: 4px;
+    z-index: 10;
+}
+
 /* Price Prediction Buttons */
 .prediction-btn {
     display: flex;
@@ -1429,9 +1482,13 @@ body::before {
 }
 
 .event-option-probability {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--accent);
+    font-size: 15px;
+    font-weight: 700;
+    color: #fbbf24; /* Яркий янтарный цвет для лучшей видимости */
+    min-width: 45px;
+    text-align: right;
+    /* Добавляем тень для лучшей видимости */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .event-description {

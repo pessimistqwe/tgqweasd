@@ -143,7 +143,7 @@ class BinanceService {
         // Нормализация символа: ВЕРХНИЙ регистр для REST API
         const normalizedSymbol = symbol.toUpperCase();
 
-        console.log('📊 [BinanceService] Загрузка исторических данных...');
+        console.log('📊 [BinanceService] ========== ЗАГРУЗКА СВЕЧЕЙ ==========');
         console.log('📊 [BinanceService] Символ:', symbol, '→', normalizedSymbol);
         console.log('📊 [BinanceService] Таймфрейм:', interval, '(', binanceInterval, ')');
         console.log('📊 [BinanceService] Лимит свечей:', limit);
@@ -153,6 +153,8 @@ class BinanceService {
         const cachedData = getFromCache(cacheKey);
         if (cachedData) {
             console.log('💾 [BinanceService] Using cached data for', cacheKey);
+            console.log('📊 [BinanceService] 📊 Cached prices:', cachedData.prices?.length, 'candles');
+            console.log('📊 [BinanceService] 📊 First:', cachedData.firstPrice?.toFixed(2), '| Last:', cachedData.lastPrice?.toFixed(2));
             return cachedData;
         }
 
@@ -292,25 +294,41 @@ class BinanceService {
                 console.log('📊 [BinanceService] Диапазон цен:', firstPrice.toFixed(4), '-', lastPrice.toFixed(4));
 
                 // Проверка уникальности данных
-                const dataHash = this.calculateDataHash(prices);
-                if (dataHashes.has(symbol) && dataHashes.get(symbol) === dataHash) {
-                    console.warn('⚠️ [BinanceService] Данные идентичны предыдущей загрузке для', symbol);
-                }
-                dataHashes.set(symbol, dataHash);
-
-                // Проверка на шаблонные данные
                 const uniquePrices = new Set(prices);
-                if (uniquePrices.size < prices.length * 0.9) {
-                    console.error('❌ [BinanceService] Подозрительные данные: много повторяющихся цен!', symbol);
+                console.log('📊 [BinanceService] 🔍 Уникальных цен:', uniquePrices.size, 'из', prices.length);
+
+                if (uniquePrices.size < prices.length * 0.5) {
+                    console.error('❌ [BinanceService] ⚠️ ПОДОЗРИТЕЛЬНО: мало уникальных цен! Возможно данные шаблонные');
+                }
+
+                // Проверка что цены РЕАЛЬНО разные для разных монет
+                const priceRange = Math.abs(lastPrice - firstPrice);
+                const priceChangePercent = (priceRange / firstPrice) * 100;
+                console.log('📊 [BinanceService] 💹 Изменение цены:', priceChangePercent.toFixed(2), '%');
+
+                // Проверка на реалистичность цены для BTC/ETH
+                if (normalizedSymbol.startsWith('BTC')) {
+                    if (firstPrice < 10000 || firstPrice > 200000) {
+                        console.error('❌ [BinanceService] ⚠️ ПОДОЗРИТЕЛЬНО: цена BTC не реалистична!', firstPrice);
+                    } else {
+                        console.log('📊 [BinanceService] ✅ Цена BTC выглядит реалистично:', firstPrice.toFixed(2));
+                    }
+                } else if (normalizedSymbol.startsWith('ETH')) {
+                    if (firstPrice < 100 || firstPrice > 10000) {
+                        console.error('❌ [BinanceService] ⚠️ ПОДОЗРИТЕЛЬНО: цена ETH не реалистична!', firstPrice);
+                    } else {
+                        console.log('📊 [BinanceService] ✅ Цена ETH выглядит реалистично:', firstPrice.toFixed(2));
+                    }
                 }
 
                 // Сохраняем в кэш
                 const result = { labels, prices, candles, firstPrice, lastPrice };
                 saveToCache(cacheKey, result);
-                
+
                 // Сохраняем для fallback
                 this.lastCachedData = result;
 
+                console.log('📊 [BinanceService] ========== ЗАГРУЗКА ЗАВЕРШЕНА ==========');
                 return result;
 
             } catch (error) {

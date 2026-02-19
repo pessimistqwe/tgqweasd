@@ -299,10 +299,20 @@
                 </div>
                 <div class="event-modal-body">
                     <div class="event-chart" id="event-chart">
+                        <!-- Live индикатор -->
+                        <div class="event-chart-live-badge" id="chart-live-badge" style="display: none;">
+                            <span class="live-dot">🟢</span>
+                            <span class="live-text">Live</span>
+                        </div>
+                        
                         <div class="event-chart-info" id="event-chart-info" style="display: none;">
                             <div class="event-chart-price" id="chart-price">$0.00</div>
                             <div class="event-chart-change" id="chart-change">
                                 <span>0.00%</span>
+                            </div>
+                            <!-- Индикатор обновления -->
+                            <div class="event-chart-updated" id="chart-updated">
+                                <span>🔄 Обновлено только что</span>
                             </div>
                         </div>
                         <canvas id="event-chart-canvas"></canvas>

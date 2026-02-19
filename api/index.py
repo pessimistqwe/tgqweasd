@@ -1043,7 +1043,9 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
             }
 
             result.append(event_data)
-            print(f"      Added event to result: {len(event_data['options'])} options, relevance: {relevance_score}")
+            print(f"      Added event to result: {len(event_data['options'])} options")
+            for opt in event_data['options']:
+                print(f"        - Option: {opt['text'][:30]}... probability: {opt['probability']}%")
 
         # Сортировка: сначала по relevance_score (убывание), затем по total_pool (убывание)
         result.sort(key=lambda x: (x['relevance_score'], x['total_pool']), reverse=True)
