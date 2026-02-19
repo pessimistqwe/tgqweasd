@@ -4,6 +4,11 @@ from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime, timedelta
 import os
 import enum
+import logging
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 Base = declarative_base()
 
@@ -200,8 +205,30 @@ class EventComment(Base):
 TEST_MODE = os.getenv("TEST_MODE", "0") == "1"
 
 if not TEST_MODE:
-    db_path = os.getenv("TEST_DB_PATH", "/tmp/events.db")
-    engine = create_engine(f"sqlite:///{db_path}", echo=False, connect_args={"check_same_thread": False})
+    # Проверка на PostgreSQL (Zeabur, Railway, Render)
+    database_url = os.getenv("DATABASE_URL")
+    
+    if database_url:
+        # PostgreSQL для production
+        # Zeabur использует postgresql://, SQLAlchemy требует postgresql+psycopg2://
+        if database_url.startswith("postgresql://"):
+            database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        
+        engine = create_engine(
+            database_url,
+            echo=False,
+            pool_pre_ping=True,  # Проверка соединения перед использованием
+            pool_size=10,        # Размер пула соединений
+            max_overflow=20      # Максимум дополнительных соединений
+        )
+        logger.info(f"✅ Using PostgreSQL database")
+    else:
+        # SQLite для разработки / serverless
+        db_path = os.getenv("TEST_DB_PATH", "/tmp/events.db")
+        engine = create_engine(f"sqlite:///{db_path}", echo=False, connect_args={"check_same_thread": False})
+        logger.info(f"✅ Using SQLite database: {db_path}")
+    
+    # Создаём таблицы
     Base.metadata.create_all(engine)
     
     with engine.connect() as connection:
