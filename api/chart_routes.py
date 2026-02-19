@@ -15,7 +15,6 @@ from typing import Optional, List, Dict
 import httpx
 import logging
 from datetime import datetime
-import requests
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +39,8 @@ BINANCE_HEADERS = {
     'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
 }
 
-# Timeout для запросов (15 секунд)
-REQUEST_TIMEOUT = 15
+# Timeout для запросов (30 секунд)
+REQUEST_TIMEOUT = 30
 
 # Кэш данных
 CHART_CACHE: Dict[str, Dict] = {}
@@ -65,14 +64,14 @@ def get_from_cache(key: str) -> Optional[Dict]:
     """Получить данные из кэша"""
     if key not in CHART_CACHE:
         return None
-    
+
     cached = CHART_CACHE[key]
     age = (datetime.utcnow() - cached["timestamp"]).total_seconds()
-    
+
     if age > CACHE_TTL_SECONDS:
         logger.warning(f"⚠️ Cache expired for {key}")
         return None
-    
+
     return cached
 
 
@@ -100,8 +99,8 @@ class ChartHistoryResponse(BaseModel):
     symbol: str
     interval: str
     candles: List[CandleData]
-    labels: List[str]  # ISO timestamps для Chart.js
-    prices: List[float]  # Close prices для Chart.js
+    labels: List[str]
+    prices: List[float]
     first_price: float
     last_price: float
     cached: bool = False
@@ -116,20 +115,14 @@ async def get_chart_history(
 ):
     """
     Получить исторические данные для графика из Binance API
-    
-    Пример:
-    - GET /api/chart/history/BTCUSDT?interval=15m&limit=96
-    - GET /api/chart/history/ETHUSDT?interval=1h&limit=168
-    
-    Возвращает свечи для построения графика с кэшированием и fallback
     """
     # Нормализация символа
     normalized_symbol = symbol.upper()
     if not normalized_symbol.endswith('USDT'):
         normalized_symbol = normalized_symbol + 'USDT'
-    
+
     cache_key = f"{normalized_symbol}-{interval}"
-    
+
     # Проверяем кэш
     cached_data = get_from_cache(cache_key)
     if cached_data:
@@ -144,7 +137,7 @@ async def get_chart_history(
             last_price=cached_data["last_price"],
             cached=True
         )
-    
+
     # Binance interval mapping
     interval_map = {
         "1m": "1m", "5m": "5m", "15m": "15m",
@@ -153,54 +146,67 @@ async def get_chart_history(
         "1d": "1d", "3d": "3d", "1w": "1w", "1M": "1M"
     }
     binance_interval = interval_map.get(interval, "15m")
-    
+
     # Пробуем каждый endpoint
     endpoints_to_try = [get_current_endpoint()] + [
         ep for ep in BINANCE_ENDPOINTS if ep != get_current_endpoint()
     ]
-    
+
     last_error = None
-    
-    for i, endpoint in enumerate(endpoints_to_try[:3]):  # Максимум 3 попытки
+
+    for i, endpoint in enumerate(endpoints_to_try[:5]):  # Максимум 5 попыток
         try:
-            logger.info(f"🔄 Attempt {i+1}: Trying endpoint {endpoint}")
-            
+            logger.info(f"🔄 Attempt {i+1}: Trying endpoint {endpoint} for {normalized_symbol}")
+
             url = f"{endpoint}/api/v3/klines"
             params = {
                 "symbol": normalized_symbol,
                 "interval": binance_interval,
-                "limit": min(limit, 1000)  # Binance max limit
+                "limit": min(limit, 1000)
             }
 
             # Используем httpx для async запроса
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=BINANCE_HEADERS) as client:
-                request_url = f"{endpoint}/api/v3/klines"
-                response = await client.get(request_url, params=params)
+            async with httpx.AsyncClient(
+                timeout=REQUEST_TIMEOUT,
+                headers=BINANCE_HEADERS,
+                follow_redirects=True
+            ) as client:
+                response = await client.get(url, params=params)
+
+            logger.info(f"📊 Response status: {response.status_code} from {endpoint}")
 
             # Обработка ошибки 451
             if response.status_code == 451:
-                logger.error(f"🚫 Binance blocked request (451) for {normalized_symbol} from {endpoint}")
+                logger.error(f"🚫 Binance blocked request (451) for {normalized_symbol}")
                 switch_to_next_endpoint()
                 continue
 
-            if not response.is_success:
-                logger.error(f"❌ Binance API error {response.status_code} for {normalized_symbol}")
+            # Обработка других ошибок
+            if response.status_code != 200:
+                logger.error(f"❌ Binance API error {response.status_code}: {response.text[:200]}")
                 last_error = f"Binance API error: {response.status_code}"
                 switch_to_next_endpoint()
                 continue
-            
-            data = response.json()
-            
+
+            # Парсим JSON
+            try:
+                data = response.json()
+            except Exception as json_err:
+                logger.error(f"❌ JSON parse error: {json_err}")
+                last_error = "Invalid JSON response"
+                switch_to_next_endpoint()
+                continue
+
             if not data or len(data) == 0:
                 logger.warning(f"⚠️ Empty response from Binance for {normalized_symbol}")
                 last_error = "No data from Binance"
                 continue
-            
+
             # Обрабатываем свечи
             candles = []
             labels = []
             prices = []
-            
+
             for candle in data:
                 if len(candle) >= 6:
                     candle_data = {
@@ -214,11 +220,11 @@ async def get_chart_history(
                     candles.append(candle_data)
                     labels.append(datetime.fromtimestamp(candle[0] / 1000).isoformat())
                     prices.append(float(candle[4]))
-            
+
             if not candles:
                 logger.warning(f"⚠️ No valid candles parsed for {normalized_symbol}")
                 continue
-            
+
             result_data = {
                 "candles": candles,
                 "labels": labels,
@@ -226,12 +232,12 @@ async def get_chart_history(
                 "first_price": prices[0],
                 "last_price": prices[-1]
             }
-            
+
             # Сохраняем в кэш
             save_to_cache(cache_key, result_data)
-            
+
             logger.info(f"✅ Successfully fetched {len(candles)} candles for {normalized_symbol}")
-            
+
             return ChartHistoryResponse(
                 symbol=normalized_symbol,
                 interval=interval,
@@ -242,29 +248,28 @@ async def get_chart_history(
                 last_price=prices[-1],
                 cached=False
             )
-            
-        except httpx.TimeoutException:
-            logger.error(f"⏱️ Timeout fetching data for {normalized_symbol} from {endpoint}")
+
+        except httpx.TimeoutException as e:
+            logger.error(f"⏱️ Timeout for {normalized_symbol} from {endpoint}: {e}")
             last_error = "Request timeout"
             switch_to_next_endpoint()
             continue
 
-        except httpx.HTTPStatusError as e:
-            logger.error(f"❌ HTTP status error for {normalized_symbol}: {e}")
-            last_error = str(e)
+        except httpx.RequestError as e:
+            logger.error(f"❌ Request error for {normalized_symbol}: {e}")
+            last_error = f"Request error: {str(e)}"
             switch_to_next_endpoint()
             continue
 
         except Exception as e:
-            logger.error(f"❌ Error fetching chart data for {normalized_symbol}: {e}")
-            last_error = str(e)
+            logger.error(f"❌ Unexpected error for {normalized_symbol}: {e}", exc_info=True)
+            last_error = f"Unexpected error: {str(e)}"
             switch_to_next_endpoint()
             continue
-    
-    # Все endpoints не сработали - пробуем вернуть кэш даже если устарел
+
+    # Все endpoints не сработали - пробуем вернуть кэш
     logger.error(f"🚫 All Binance endpoints failed for {normalized_symbol}")
-    
-    # Возвращаем последний известный кэш
+
     all_cache_keys = [k for k in CHART_CACHE.keys() if k.startswith(normalized_symbol)]
     if all_cache_keys:
         for key in all_cache_keys:
@@ -282,7 +287,7 @@ async def get_chart_history(
                     cached=True,
                     error="Using stale cache (Binance API unavailable)"
                 )
-    
+
     # Если кэша нет - выбрасываем ошибку
     raise HTTPException(
         status_code=503,
