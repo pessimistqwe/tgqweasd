@@ -870,14 +870,22 @@ function startAutoRefresh() {
 }
 
 async function apiRequest(url, options = {}) {
+    const fullUrl = `${backendUrl}${url}`;
+    const startTime = Date.now();
+    
+    console.log('📡 [FRONTEND] API Request START:', url);
+    console.log('📡 [FRONTEND] Full URL:', fullUrl);
+    console.log('📡 [FRONTEND] Options:', JSON.stringify(options));
+    
+    // Добавляем AbortController для timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+        console.error('⏰ [FRONTEND] Request timeout after 20 seconds!');
+        controller.abort();
+    }, 20000); // 20 секунд timeout
+
     try {
-        const fullUrl = `${backendUrl}${url}`;
-        console.log('📡 API Request:', fullUrl);
-
-        // Добавляем AbortController для timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 секунд timeout
-
+        console.log('📡 [FRONTEND] Calling fetch()...');
         const response = await fetch(fullUrl, {
             headers: {
                 'Content-Type': 'application/json',
@@ -888,23 +896,44 @@ async function apiRequest(url, options = {}) {
         });
 
         clearTimeout(timeoutId);
+        const responseTime = Date.now() - startTime;
+        console.log(`⏱️ [FRONTEND] Fetch completed in ${responseTime}ms`);
+        console.log('📡 [FRONTEND] Response status:', response.status, response.ok);
+        console.log('📡 [FRONTEND] Response headers:', Object.fromEntries(response.headers.entries()));
 
         if (!response.ok) {
             let error;
             try {
-                error = await response.json();
-            } catch {
+                const errorText = await response.text();
+                console.log('📡 [FRONTEND] Error response body:', errorText);
+                error = JSON.parse(errorText);
+            } catch (parseError) {
+                console.error('📡 [FRONTEND] Could not parse error response:', parseError);
                 error = { detail: `HTTP ${response.status}: ${response.statusText}` };
             }
-            console.error('❌ API Error:', error);
+            console.error('❌ [FRONTEND] API Error:', error);
             throw new Error(error.detail || 'Request error');
         }
 
+        console.log('📡 [FRONTEND] Parsing JSON response...');
         const data = await response.json();
-        console.log('✅ API Response:', url, data);
+        const parseTime = Date.now() - startTime;
+        console.log(`⏱️ [FRONTEND] JSON parsed in ${parseTime}ms`);
+        console.log('✅ [FRONTEND] API Response:', url);
+        console.log('✅ [FRONTEND] Response data keys:', Object.keys(data || {}));
+        console.log('✅ [FRONTEND] Events count:', data?.events?.length || 'N/A');
+        
         return data;
     } catch (error) {
-        console.error('❌ API Request Failed:', url, error);
+        const totalTime = Date.now() - startTime;
+        console.error('❌ [FRONTEND] API Request Failed after', totalTime, 'ms');
+        console.error('❌ [FRONTEND] Error name:', error.name);
+        console.error('❌ [FRONTEND] Error message:', error.message);
+        console.error('❌ [FRONTEND] Error stack:', error.stack);
+        
+        if (error.name === 'AbortError') {
+            throw new Error('Request timeout - server took too long to respond (20s)');
+        }
         // Пробрасываем ошибку дальше для обработки в UI
         throw error;
     }
@@ -968,6 +997,29 @@ function setupCategoryScroll() {
 async function loadEvents(silent = false) {
     const container = document.getElementById('events-container');
     console.log('📥 loadEvents() called, silent:', silent, 'category:', currentCategory);
+    
+    // Принудительный timeout - убираем лоадер через 20 секунд независимо от результата
+    let loadingTimeout = null;
+    if (!silent) {
+        loadingTimeout = setTimeout(() => {
+            console.error('⏰ [FRONTEND] Forced loader timeout after 20 seconds!');
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="12" cy="12" r="10"/>
+                            <path d="M12 8v4M12 16h.01"/>
+                        </svg>
+                    </div>
+                    <div class="empty-state-title">Loading took too long</div>
+                    <div class="empty-state-text">Server is taking too long to respond. Please try again.</div>
+                    <button class="empty-state-btn" onclick="loadEvents()">
+                        Try Again
+                    </button>
+                </div>
+            `;
+        }, 20000); // 20 секунд максимум на загрузку
+    }
 
     try {
         if (!silent) {
@@ -988,6 +1040,9 @@ async function loadEvents(silent = false) {
         const data = await apiRequest(url);
         const loadTime = Date.now() - startTime;
         console.log(`⏱️ Events loaded in ${loadTime}ms, count:`, data.events?.length || 0);
+        
+        // Очищаем timeout если загрузка успешна
+        if (loadingTimeout) clearTimeout(loadingTimeout);
 
         if (!data.events || data.events.length === 0) {
             console.log('⚠️ No events found');
@@ -1012,6 +1067,9 @@ async function loadEvents(silent = false) {
         console.log('✅ Events rendered successfully');
     } catch (error) {
         console.error('❌ Load events error:', error);
+        // Очищаем timeout если была ошибка
+        if (loadingTimeout) clearTimeout(loadingTimeout);
+        
         if (!silent) {
             const container = document.getElementById('events-container');
             container.innerHTML = `
