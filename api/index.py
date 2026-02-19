@@ -91,32 +91,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# CORS для работы с frontend - максимально открытый для отладки
+# CORS для работы с frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Разрешаем все origin для отладки
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Разрешаем все методы
-    allow_headers=["*"],  # Разрешаем все заголовки
-    expose_headers=["*"],  # Показываем все заголовки клиенту
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
-
-logger.info("✅ CORS middleware configured - allowing all origins")
 
 # Vercel routes keep the "/api" prefix; strip it so FastAPI routes match.
 @app.middleware("http")
 async def strip_api_prefix(request, call_next):
     path = request.scope.get("path", "")
-    method = request.scope.get("method", "")
-    print(f"🌐 [MIDDLEWARE] {method} {path}")
-    
     if path == "/api":
         request.scope["path"] = "/"
-        print(f"   ⏩ Rewritten to: /")
     elif path.startswith("/api/"):
         request.scope["path"] = path[4:] or "/"
-        print(f"   ⏩ Rewritten to: {request.scope['path']}")
-    
     return await call_next(request)
 
 # ==================== POLYMARKET API INTEGRATION ====================
@@ -855,72 +846,58 @@ async def get_categories():
 @app.get("/events")
 async def get_events(category: str = None, db: Session = Depends(get_db)):
     """Получить события с фильтрацией по категории"""
-    print("=" * 60)
-    print("📥 /events endpoint START")
-    print("=" * 60)
     try:
-        print(f"📂 Category filter: {category}")
-        print(f"📊 Database session: {db}")
-
+        print(f"Getting events with category filter: {category}")
+        
         global last_polymarket_sync
         now = datetime.utcnow()
-        print(f"⏰ Current time: {now}")
-        print(f"⏰ Last sync: {last_polymarket_sync}")
-        print(f"⏰ Sync interval: {POLYMARKET_SYNC_INTERVAL_SECONDS}s")
-        
         if (now - last_polymarket_sync).total_seconds() >= POLYMARKET_SYNC_INTERVAL_SECONDS:
-            print("🔄 Triggering automatic Polymarket sync...")
+            print("Triggering automatic sync...")
             sync_polymarket_events(db)
             last_polymarket_sync = datetime.utcnow()
-            print(f"✅ Sync completed at {last_polymarket_sync}")
-        else:
-            print("⏭️ Skipping sync - not time yet")
-
+        
         query = db.query(Event).filter(
             Event.is_active == True,
             Event.end_time > datetime.utcnow()
         )
 
         if category and category != 'all':
-            print(f"🔍 Filtering by category: {category}")
+            # Получаем события выбранной категории
             query = db.query(Event).filter(
                 Event.is_active == True,
                 Event.end_time > datetime.utcnow(),
                 Event.category == category
             )
             events = query.order_by(Event.total_pool.desc()).limit(50).all()
-            print(f"✅ Found {len(events)} events for category: {category}")
+            print(f"   Found {len(events)} events for category: {category}")
         else:
-            print("🔍 Getting all active events")
             query = db.query(Event).filter(
                 Event.is_active == True,
                 Event.end_time > datetime.utcnow()
             )
             events = query.order_by(Event.total_pool.desc()).limit(50).all()
-            print(f"✅ Found {len(events)} events in database")
-
-        print(f"📦 Processing {len(events)} events...")
+            print(f"   Found {len(events)} events in database")
+        
         result = []
-        for idx, event in enumerate(events):
-            print(f"  [{idx+1}/{len(events)}] Processing event ID={event.id}: {event.title[:50]}...")
-
+        for event in events:
+            print(f"   Processing event: {event.title} (ID: {event.id})")
+            
             # Получаем опции
             options = db.query(EventOption).filter(
                 EventOption.event_id == event.id
             ).all()
-
-            print(f"      📍 Found {len(options)} options in database")
-
+            
+            print(f"      - Found {len(options)} options in database")
+            
             # Парсим опции из JSON если нет в EventOption
             if not options and event.options:
                 try:
-                    print(f"      📄 Parsing options from JSON...")
                     options_list = json.loads(event.options)
-                    print(f"      📄 JSON contains {len(options_list)} options")
-                    for idx_opt, opt_text in enumerate(options_list):
+                    print(f"      - Creating {len(options_list)} options from JSON")
+                    for idx, opt_text in enumerate(options_list):
                         opt = EventOption(
                             event_id=event.id,
-                            option_index=idx_opt,
+                            option_index=idx,
                             option_text=opt_text,
                             total_stake=0.0,
                             market_stake=0.0
@@ -930,18 +907,18 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                     options = db.query(EventOption).filter(
                         EventOption.event_id == event.id
                     ).all()
-                    print(f"      ✅ Created {len(options)} options from JSON")
+                    print(f"      - Created {len(options)} options successfully")
                 except Exception as e:
-                    print(f"      ❌ Error creating options from JSON: {e}")
+                    print(f"      - Error creating options from JSON: {e}")
                     pass
-
+            
             # Вычисляем оставшееся время
             time_left = int((event.end_time - datetime.utcnow()).total_seconds())
             total_stakes = sum(
                 (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
                 for opt in options
             ) or 1
-
+            
             event_data = {
                 "id": event.id,
                 "polymarket_id": event.polymarket_id,
@@ -952,7 +929,7 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                 "end_time": event.end_time.isoformat(),
                 "time_left": max(0, time_left),
                 "total_pool": event.total_pool,
-                "has_chart": event.has_chart or False,
+                "has_chart": event.has_chart or False,  # Flag for chart availability
                 "options": [
                     {
                         "index": opt.option_index,
@@ -963,23 +940,16 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
                     for opt in options
                 ]
             }
-
+            
             result.append(event_data)
-            print(f"      ✅ Added event to result with {len(event_data['options'])} options")
-
-        print("=" * 60)
-        print(f"📤 Returning {len(result)} events to frontend")
-        print(f"📊 Response size: {len(json.dumps({'events': result}))} bytes")
-        print("📥 /events endpoint END")
-        print("=" * 60)
+            print(f"      Added event to result: {len(event_data['options'])} options")
+        
+        print(f"Returning {len(result)} events to frontend")
         return {"events": result}
     except Exception as e:
-        print("=" * 60)
-        print(f"❌ ERROR in /events endpoint: {e}")
-        print("📋 Traceback:")
+        print(f"Error loading events: {e}")
         import traceback
         traceback.print_exc()
-        print("=" * 60)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/events/{event_id}")
@@ -1610,7 +1580,7 @@ async def upload_avatar(
         file_content = await file.read()
         file_size = len(file_content)
 
-        # Проверка размера (максим��м 5MB)
+        # Проверка размера (максимум 5MB)
         max_size = 5 * 1024 * 1024  # 5MB
         if file_size > max_size:
             raise HTTPException(
@@ -2141,55 +2111,6 @@ async def create_event(request: CreateEventRequest, db: Session = Depends(get_db
     except Exception as e:
         print(f"Error creating event: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-# Debug endpoint - всегда возвращает hardcoded данные для диагностики
-@app.get("/debug-markets")
-async def debug_markets():
-    """
-    Debug endpoint для диагностики frontend подключения.
-    Возвращает hardcoded данные без запросов к БД.
-    """
-    logger.info("🔍 DEBUG endpoint called - returning hardcoded markets")
-    return {
-        "events": [
-            {
-                "id": 999,
-                "polymarket_id": "debug-1",
-                "title": "🔍 DEBUG: Will Bitcoin reach $100k in 2024?",
-                "description": "This is a debug market to test frontend connection",
-                "category": "crypto",
-                "image_url": "",
-                "end_time": (datetime.utcnow() + timedelta(days=30)).isoformat(),
-                "time_left": 2592000,
-                "total_pool": 1000.0,
-                "has_chart": True,
-                "options": [
-                    {"index": 0, "text": "Yes", "total_points": 600.0, "probability": 60.0},
-                    {"index": 1, "text": "No", "total_points": 400.0, "probability": 40.0}
-                ]
-            },
-            {
-                "id": 998,
-                "polymarket_id": "debug-2",
-                "title": "🔍 DEBUG: Test Market #2",
-                "description": "If you see this - frontend is working!",
-                "category": "other",
-                "image_url": "",
-                "end_time": (datetime.utcnow() + timedelta(days=60)).isoformat(),
-                "time_left": 5184000,
-                "total_pool": 500.0,
-                "has_chart": False,
-                "options": [
-                    {"index": 0, "text": "Option A", "total_points": 300.0, "probability": 60.0},
-                    {"index": 1, "text": "Option B", "total_points": 200.0, "probability": 40.0}
-                ]
-            }
-        ],
-        "debug_info": {
-            "timestamp": datetime.utcnow().isoformat(),
-            "message": "Debug endpoint working correctly"
-        }
-    }
 
 # Health check
 @app.get("/health")
