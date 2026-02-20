@@ -1,6 +1,5 @@
 .git
 .gitignore
-.dockerignore
 .cursor
 .env
 .env.*
@@ -18,4 +17,3 @@ env
 node_modules
 *.md
 vercel.json
-Dockerfile
