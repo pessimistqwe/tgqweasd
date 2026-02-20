@@ -872,6 +872,29 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Start auto-refresh
     startAutoRefresh();
+
+    // Search clear button handler
+    const searchClearBtn = document.getElementById('search-clear-btn');
+    const searchInput = document.getElementById('search-input');
+    
+    if (searchClearBtn && searchInput) {
+        searchClearBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            searchClearBtn.style.display = 'none';
+            if (window.clearSearch) {
+                window.clearSearch();
+            }
+            searchInput.focus();
+        });
+
+        searchInput.addEventListener('input', () => {
+            if (searchInput.value.length > 0) {
+                searchClearBtn.style.display = 'flex';
+            } else {
+                searchClearBtn.style.display = 'none';
+            }
+        });
+    }
 });
 
 function startAutoRefresh() {
