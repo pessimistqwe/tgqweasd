@@ -21,9 +21,11 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 try:
-    from .models import get_db, User, Event, EventOption, UserPrediction, Bet, Transaction, TransactionType
+    from .models import get_db, User, Event, EventOption, UserPrediction, Transaction, TransactionType
+    from .betting_models import Bet
 except ImportError:
-    from models import get_db, User, Event, EventOption, UserPrediction, Bet, Transaction, TransactionType
+    from models import get_db, User, Event, EventOption, UserPrediction, Transaction, TransactionType
+    from betting_models import Bet
 
 router = APIRouter(prefix="/api", tags=["Leaderboard", "User Stats"])
 
