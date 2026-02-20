@@ -1,15 +1,31 @@
 {
   "$schema": "https://zeabur.com/schema.json",
   "name": "eventpredict",
-  "description": "Telegram Mini App Prediction Market",
+  "description": "Telegram Mini App Prediction Market with Polymarket Integration",
   "build": {
-    "dockerfile": "Dockerfile"
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "start": {
+    "command": "uvicorn api.index:app --host 0.0.0.0 --port 8000"
   },
   "envs": {
     "PORT": "8000",
     "TEST_DB_PATH": "/tmp/events.db",
     "DISABLE_SCHEDULER": "0",
     "POLYMARKET_SYNC_INTERVAL": "7200",
-    "PYTHONUNBUFFERED": "1"
+    "PYTHONUNBUFFERED": "1",
+    "PYTHONPATH": "/app:/app/api",
+    "DATABASE_URL": "",
+    "CRYPTOBOT_API_TOKEN": "",
+    "ADMIN_TELEGRAM_IDS": "",
+    "POLYMARKET_VERBOSE_LOGS": "0"
+  },
+  "healthcheck": {
+    "path": "/health",
+    "port": 8000,
+    "interval": 30,
+    "timeout": 10,
+    "retries": 3
   }
 }
