@@ -37,7 +37,7 @@ const POLYMARKET_LIMITS = {
 };
 
 // Timeout для запросов (15 секунд)
-const REQUEST_TIMEOUT_MS = 15000;
+const POLYMARKET_CHART_TIMEOUT_MS = 15000;
 
 // TTL кэша (3 минуты для реальных данных)
 const CACHE_TTL_MS = 3 * 60 * 1000;
@@ -145,7 +145,7 @@ class PolymarketChartService {
             const timeoutId = setTimeout(() => {
                 console.log('⏱️ [PolymarketChart] Backend request timeout');
                 controller.abort();
-            }, REQUEST_TIMEOUT_MS);
+            }, POLYMARKET_CHART_TIMEOUT_MS);
 
             const response = await fetch(backendUrl, {
                 signal: controller.signal,
@@ -189,7 +189,7 @@ class PolymarketChartService {
             const timeoutId = setTimeout(() => {
                 console.log('⏱️ [PolymarketChart] Polymarket request timeout');
                 controller.abort();
-            }, REQUEST_TIMEOUT_MS);
+            }, POLYMARKET_CHART_TIMEOUT_MS);
 
             const response = await fetch(url, {
                 signal: controller.signal,

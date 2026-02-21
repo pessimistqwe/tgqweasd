@@ -23,7 +23,7 @@ const PRICE_CONFIG = {
 // ==================== State ====================
 
 let priceCache = new Map();  // token_id -> { price, timestamp }
-let autoRefreshInterval = null;
+let priceAutoRefreshInterval = null;  // Интервал авто-обновления цен
 let priceSubscribers = [];  // Callbacks для обновления цен
 
 // ==================== Helper Functions ====================
@@ -247,13 +247,13 @@ async function getMarketPrices(marketId) {
  * @param {string[]} tokenIds - Список token ID для обновления
  */
 function startAutoRefresh(tokenIds) {
-    if (autoRefreshInterval) {
+    if (priceAutoRefreshInterval) {
         stopAutoRefresh();
     }
     
     console.log('🔄 [PriceService] Starting auto-refresh for', tokenIds.length, 'tokens');
     
-    autoRefreshInterval = setInterval(async () => {
+    priceAutoRefreshInterval = setInterval(async () => {
         console.log('🔄 [PriceService] Auto-refreshing prices...');
         const prices = await getPrices(tokenIds, false);  // Не использовать кэш
         notifySubscribers(prices);
@@ -264,9 +264,9 @@ function startAutoRefresh(tokenIds) {
  * Остановить авто-обновление цен
  */
 function stopAutoRefresh() {
-    if (autoRefreshInterval) {
-        clearInterval(autoRefreshInterval);
-        autoRefreshInterval = null;
+    if (priceAutoRefreshInterval) {
+        clearInterval(priceAutoRefreshInterval);
+        priceAutoRefreshInterval = null;
         console.log('⏹️ [PriceService] Auto-refresh stopped');
     }
 }

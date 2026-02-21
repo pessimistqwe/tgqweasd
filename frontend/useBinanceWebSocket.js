@@ -33,19 +33,20 @@ const CANDLE_LIMITS = {
 };
 
 // Timeout для запросов (15 секунд максимум)
-const REQUEST_TIMEOUT_MS = 15000;
+// Используем REQUEST_TIMEOUT_MS из binanceService.js
+// const REQUEST_TIMEOUT_MS = 15000;  // ЗАКОММЕНТИРОВАНО - используется из binanceService.js
 
 // Состояние WebSocket
 let binanceWebSocket = null;
 let webSocketBuffer = [];
 let webSocketUpdateTimeout = null;
-let chartInstance = null;
+// chartInstance уже объявлен выше (строка 21)
 let currentChartLabels = [];
 let currentChartPrices = [];
 let chartYMin = null;
 let chartYMax = null;
-let priceCallback = null; // Callback для обновления цены в реальном времени
-let currentEndpointIndex = 0;
+// priceCallback уже объявлен выше (строка 22)
+// currentEndpointIndex уже объявлен выше (строка 23)
 let lastCachedData = null; // Кэш последних данных для fallback
 
 /**
