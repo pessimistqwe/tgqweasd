@@ -864,8 +864,12 @@ document.addEventListener('DOMContentLoaded', function() {
         document.documentElement.style.setProperty('--bg-secondary', tg.themeParams.secondary_bg_color || '#141414');
     }
 
-    // Load profile immediately
-    loadProfile();
+    // Load profile immediately (в try/catch чтобы не блокировало загрузку)
+    try {
+        loadProfile();
+    } catch (e) {
+        console.error('❌ Error loading profile:', e);
+    }
 
     // CRITICAL: Скрываем лоадер СРАЗУ и дополнительно по таймерам
     const hideLoader = () => {
@@ -888,9 +892,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Небольшая задержка чтобы DOM точно был готов
     setTimeout(() => {
-        loadEvents();
-        loadUserBalance();
-        checkAdminStatus();
+        // Вызываем каждую функцию в try/catch чтобы одна ошибка не блокировала остальные
+        try { loadEvents(); } catch (e) { console.error('❌ loadEvents error:', e); }
+        try { loadUserBalance(); } catch (e) { console.error('❌ loadUserBalance error:', e); }
+        try { checkAdminStatus(); } catch (e) { console.error('❌ checkAdminStatus error:', e); }
     }, 100);
 
     // Start auto-refresh
@@ -923,9 +928,13 @@ document.addEventListener('DOMContentLoaded', function() {
 function startAutoRefresh() {
     if (autoRefreshInterval) clearInterval(autoRefreshInterval);
     autoRefreshInterval = setInterval(() => {
-        const activeSection = document.querySelector('.section:not(.hidden)');
-        if (activeSection && activeSection.id === 'events-section') {
-            loadEvents(true); // Silent refresh
+        try {
+            const activeSection = document.querySelector('.section:not(.hidden)');
+            if (activeSection && activeSection.id === 'events-section') {
+                loadEvents(true); // Silent refresh
+            }
+        } catch (e) {
+            console.error('❌ Auto-refresh error:', e);
         }
     }, AUTO_REFRESH_DELAY);
 }
