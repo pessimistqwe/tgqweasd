@@ -1023,11 +1023,15 @@ async function loadEvents(silent = false) {
 
         console.log('📡 Fetching events from:', url);
         const startTime = Date.now();
+        
         const data = await apiRequest(url);
         const loadTime = Date.now() - startTime;
-        console.log(`⏱️ Events loaded in ${loadTime}ms, count:`, data.events?.length || 0);
+        console.log(`⏱️ Events loaded in ${loadTime}ms, count:`, data?.length || 0);
 
-        if (!data.events || data.events.length === 0) {
+        // Обрабатываем оба формата ответа: массив и объект {events: []}
+        const events = Array.isArray(data) ? data : (data?.events || []);
+
+        if (!events || events.length === 0) {
             console.log('⚠️ No events found');
             container.innerHTML = `
                 <div class="empty-state">
@@ -1046,7 +1050,7 @@ async function loadEvents(silent = false) {
             return;
         }
 
-        container.innerHTML = data.events.map(event => createEventCard(event)).join('');
+        container.innerHTML = events.map(event => createEventCard(event)).join('');
         console.log('✅ Events rendered successfully');
     } catch (error) {
         console.error('❌ Load events error:', error);
@@ -1067,6 +1071,13 @@ async function loadEvents(silent = false) {
                     </button>
                 </div>
             `;
+        }
+    } finally {
+        // Гарантированно скрываем главный лоадер если он есть
+        const mainLoader = document.getElementById('loading');
+        if (mainLoader && !mainLoader.classList.contains('hidden')) {
+            console.log('👋 Hiding main loader');
+            mainLoader.classList.add('hidden');
         }
     }
 }

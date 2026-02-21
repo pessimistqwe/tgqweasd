@@ -676,27 +676,27 @@ window.clearSearchCache = clearSearchCache;
 
 // Авто-инициализация при загрузке DOM
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('🔍 [Search] Initializing search...');
-    
-    // Ищем search input в header
-    const searchInput = document.querySelector('header input[type="search"], header .search-input, #search-input');
-    const resultsContainer = document.querySelector('.search-results');
+    // Ждем когда script.js полностью загрузится
+    setTimeout(() => {
+        console.log('🔍 [Search] Initializing search...');
+        
+        // Ищем search input в header
+        const searchInput = document.querySelector('header input[type="search"], header .search-input, #search-input');
+        const resultsContainer = document.querySelector('.search-results');
 
-    console.log('🔍 [Search] Search input found:', !!searchInput);
-    console.log('🔍 [Search] Results container found:', !!resultsContainer);
+        console.log('🔍 [Search] Search input found:', !!searchInput);
+        console.log('🔍 [Search] Results container found:', !!resultsContainer);
 
-    if (searchInput && !resultsContainer) {
-        // Создаем контейнер для результатов если его нет
-        const container = document.createElement('div');
-        container.className = 'search-results';
-        searchInput.parentNode.appendChild(container);
-        console.log('🔍 [Search] Created results container');
-    }
+        // НЕ создаем контейнер если его нет - он должен быть в HTML
+        if (!resultsContainer) {
+            console.warn('⚠️ [Search] Results container not found in HTML, search may not work properly');
+        }
 
-    if (searchInput) {
-        initSearch('input[type="search"], .search-input', '.search-results');
-        console.log('✅ [Search] Initialization complete');
-    } else {
-        console.warn('⚠️ [Search] Search input not found, initialization skipped');
-    }
+        if (searchInput) {
+            initSearch('input[type="search"], .search-input', '.search-results');
+            console.log('✅ [Search] Initialization complete');
+        } else {
+            console.warn('⚠️ [Search] Search input not found, initialization skipped');
+        }
+    }, 100); // Небольшая задержка чтобы script.js успел инициализироваться
 });
