@@ -1,6 +1,6 @@
 {
   "name": "eventpredict",
-  "description": "Telegram Mini App Prediction Market with Polymarket Integration",
+  "description": "Telegram Mini App Prediction Market",
   "build": {
     "dockerfile": "Dockerfile",
     "context": "."
@@ -8,9 +8,9 @@
   "envs": {
     "PORT": "8000",
     "TEST_DB_PATH": "/tmp/events.db",
-    "DISABLE_SCHEDULER": "0",
-    "POLYMARKET_SYNC_INTERVAL": "7200",
+    "PYTHONPATH": "/app:/app/api",
     "PYTHONUNBUFFERED": "1",
-    "PYTHONPATH": "/app:/app/api"
+    "DISABLE_SCHEDULER": "0",
+    "POLYMARKET_SYNC_INTERVAL": "7200"
   }
 }

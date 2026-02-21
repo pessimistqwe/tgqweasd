@@ -20,3 +20,6 @@ psycopg2-binary==2.9.9
 
 # Redis support
 redis==5.0.1
+
+# Telegram Bot API
+python-telegram-bot==20.7
