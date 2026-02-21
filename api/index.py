@@ -530,7 +530,8 @@ def fetch_polymarket_events(limit: int = 100, category: str = None):
                 'options': options,
                 'volumes': volumes,
                 'probabilities': probabilities,  # Сохраняем probabilities
-                'volume_24h': volume  # Сохраняем volume для фильтра
+                'volume_24h': volume,  # Сохраняем volume для фильтра
+                'tokens': tokens  # Сохраняем tokens для token_id
             }
 
             events.append(event_data)
@@ -573,11 +574,11 @@ def update_event_total_pool(db: Session, event: Event) -> None:
 def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
     """
     Сохраняет событие из Polymarket в базу данных
-    
+
     Args:
         db: Сессия базы данных
         pm_event: Данные события из Polymarket
-    
+
     Returns:
         True если создано новое событие, False если обновлено существующее
     """
@@ -588,7 +589,8 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
     options = pm_event.get('options', [])
     volumes = pm_event.get('volumes', [])
     probabilities = pm_event.get('probabilities', [])  # Получаем probabilities
-    
+    tokens = pm_event.get('tokens', [])  # Получаем tokens для token_id
+
     # Если probabilities не переданы, рассчитываем из volumes
     if not probabilities and volumes:
         total_volume = sum(volumes)
@@ -599,6 +601,7 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
     print(f"   - Options count: {len(options)}")
     print(f"   - Volumes: {volumes}")
     print(f"   - Probabilities: {probabilities}")
+    print(f"   - Tokens count: {len(tokens) if tokens else 0}")
 
     polymarket_id = pm_event.get('polymarket_id', '')
     if not polymarket_id:
@@ -627,11 +630,22 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
 
         for idx, (option_text, volume, probability) in enumerate(zip(options, volumes, probabilities)):
             option = existing_options.get(idx)
+            
+            # Получаем token_id из tokens если доступно
+            token_id = None
+            if tokens and idx < len(tokens):
+                token_id = tokens[idx].get("token_id") or tokens[idx].get("tokenId")
+            
             if option:
                 option.option_text = option_text
                 option.market_stake = volume
                 # Используем probability из Polymarket если доступно
                 option.current_price = probability / 100.0  # Конвертируем процент в 0-1
+                
+                # Сохраняем token_id если есть
+                if token_id:
+                    option.polymarket_token_id = token_id
+                    print(f"   Updated option {idx}: {option_text}, token_id: {token_id}")
 
                 print(f"   Updated option {idx}: {option_text}, probability: {probability}%")
             else:
@@ -641,10 +655,11 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
                     option_text=option_text,
                     total_stake=0.0,
                     market_stake=volume,
-                    current_price=probability / 100.0  # Конвертируем процент в 0-1
+                    current_price=probability / 100.0,  # Конвертируем процент в 0-1
+                    polymarket_token_id=token_id  # Сохраняем token_id
                 )
                 db.add(new_option)
-                print(f"   Added option {idx}: {option_text}, probability: {probability}%")
+                print(f"   Added option {idx}: {option_text}, probability: {probability}%, token_id: {token_id}")
 
         for idx, option in existing_options.items():
             if idx >= len(options):
