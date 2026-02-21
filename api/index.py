@@ -1152,6 +1152,91 @@ async def get_event(event_id: int, db: Session = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/events/search")
+async def search_events(
+    q: str = Query(..., min_length=2, description="Поисковый запрос"),
+    limit: int = Query(default=50, ge=1, le=100, description="Максимум результатов"),
+    category: str = Query(default=None, description="Фильтр по категории"),
+    db: Session = Depends(get_db)
+):
+    """
+    Поиск событий по названию и описанию
+    
+    Ищет по локальной базе данных с поддержкой категории
+    """
+    try:
+        print(f"🔍 [Search] Поиск: '{q}', категория: {category}, лимит: {limit}")
+        
+        # Базовый запрос
+        query = db.query(Event).filter(
+            Event.is_active == True,
+            Event.end_time > datetime.utcnow()
+        )
+        
+        # Фильтр по категории если указан
+        if category and category != 'all':
+            query = query.filter(Event.category == category)
+        
+        # Поиск по названию и описанию
+        search_term = f"%{q}%"
+        query = query.filter(
+            (Event.title.ilike(search_term)) | 
+            (Event.description.ilike(search_term))
+        )
+        
+        # Получаем результаты
+        events = query.limit(limit).all()
+        print(f"✅ [Search] Найдено событий: {len(events)}")
+        
+        result = []
+        for event in events:
+            options = db.query(EventOption).filter(
+                EventOption.event_id == event.id
+            ).all()
+            
+            time_left = int((event.end_time - datetime.utcnow()).total_seconds())
+            total_stakes = sum(
+                (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
+                for opt in options
+            ) or 1
+            
+            relevance_score = calculate_relevance_score(event.title, event.description or '')
+            
+            event_data = {
+                "id": event.id,
+                "polymarket_id": event.polymarket_id,
+                "title": event.title,
+                "description": event.description,
+                "category": event.category or "other",
+                "image_url": event.image_url,
+                "end_time": event.end_time.isoformat(),
+                "time_left": max(0, time_left),
+                "total_pool": event.total_pool,
+                "has_chart": event.has_chart or False,
+                "relevance_score": relevance_score,
+                "options": [
+                    {
+                        "index": opt.option_index,
+                        "text": opt.option_text,
+                        "total_points": (opt.total_stake or 0.0) + (opt.market_stake or 0.0),
+                        "probability": round((opt.current_price or 0) * 100, 1) if opt.current_price and opt.current_price > 0 else round(((opt.total_stake or 0.0) + (opt.market_stake or 0.0)) / total_stakes * 100, 1)
+                    }
+                    for opt in options
+                ]
+            }
+            result.append(event_data)
+        
+        # Сортировка по релевантности
+        result.sort(key=lambda x: x['relevance_score'], reverse=True)
+        
+        return {"events": result, "total": len(result)}
+        
+    except Exception as e:
+        print(f"❌ [Search] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/events/{event_id}/price-history")
 async def get_price_history(event_id: int, db: Session = Depends(get_db)):
     """Get price history for event chart"""

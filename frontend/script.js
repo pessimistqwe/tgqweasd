@@ -1530,18 +1530,36 @@ let currentPredictionEventId = null;
 let currentOdds = { up: 1.95, down: 1.95 };
 
 // Calculate dynamic odds based on 5-minute price volatility
-function calculateDynamicOdds(prices) {
+// ⚠️ ВАЖНО: Для расчёта 5-минутной волатильности ВСЕГДА используем 1m интервал
+// Это исправляет проблему "коэффициенты меняются при смене таймфрейма"
+async function calculateDynamicOdds(prices, symbol = null) {
     if (!prices || prices.length < 2) {
         return { up: 1.95, down: 1.95 };
     }
 
     // ⚠️ ВСЕГДА используем последние 5 свечей 1m интервала для расчёта 5-минутной волатильности
-    // Это исправляет проблему "коэффициенты меняются при смене таймфрейма"
     // Даже если график показывает 1h/4h, волатильность считаем по реальным 5 минутам
-    const candlesFor5Min = 5; // Всегда 5 свечей (5 минут на 1m интервале)
     
-    // Берём последние 5 цен из переданных (это должны быть 1m данные)
-    const recentPrices = prices.slice(-candlesFor5Min);
+    let recentPrices = prices;
+    
+    // Если передан символ, загружаем свежие 1m данные для точного расчёта
+    if (symbol && window.binanceService) {
+        try {
+            console.log('💰 [Prediction] Загрузка 1m данных для расчёта волатильности:', symbol);
+            const { prices: m1Prices } = await window.binanceService.loadHistoricalCandles(symbol, '1m');
+            if (m1Prices && m1Prices.length >= 5) {
+                recentPrices = m1Prices.slice(-5); // Последние 5 минут
+                console.log('💰 [Prediction] Использованы 1m данные:', recentPrices.length, 'цен');
+            }
+        } catch (e) {
+            console.warn('⚠️ [Prediction] Не удалось загрузить 1m данные, используем fallback:', e.message);
+        }
+    }
+    
+    // Если не удалось загрузить 1m данные, используем последние 5 цен из переданных
+    if (recentPrices.length > 5) {
+        recentPrices = recentPrices.slice(-5);
+    }
 
     if (recentPrices.length < 2) {
         return { up: 1.95, down: 1.95 };
@@ -1583,7 +1601,7 @@ function calculateDynamicOdds(prices) {
     upOdds = Math.max(1.1, Math.min(5.0, upOdds));
     downOdds = Math.max(1.1, Math.min(5.0, downOdds));
 
-    console.log('💰 [Prediction] Коэффициенты:', { up: upOdds.toFixed(2), down: downOdds.toFixed(2) }, 
+    console.log('💰 [Prediction] Коэффициенты:', { up: upOdds.toFixed(2), down: downOdds.toFixed(2) },
                 '| волатильность:', (volatility * 100).toFixed(2) + '%',
                 '| изменение:', (priceChange * 100).toFixed(2) + '%');
 
@@ -1593,15 +1611,24 @@ function calculateDynamicOdds(prices) {
     };
 }
 
-function updatePredictionOdds(prices) {
-    const odds = calculateDynamicOdds(prices);
-    currentOdds = odds;
+function updatePredictionOdds(prices, symbol = null) {
+    // Если символ не передан, используем текущий Binance символ
+    const binanceSymbol = symbol || currentBinanceSymbol;
+    
+    // Вызываем async функцию и обновляем когда данные готовы
+    calculateDynamicOdds(prices, binanceSymbol).then(odds => {
+        currentOdds = odds;
 
-    const upEl = document.getElementById('up-odds');
-    const downEl = document.getElementById('down-odds');
+        const upEl = document.getElementById('up-odds');
+        const downEl = document.getElementById('down-odds');
 
-    if (upEl) upEl.textContent = `${odds.up}x`;
-    if (downEl) downEl.textContent = `${odds.down}x`;
+        if (upEl) upEl.textContent = `${odds.up}x`;
+        if (downEl) downEl.textContent = `${odds.down}x`;
+    }).catch(err => {
+        console.warn('⚠️ [Prediction] Error calculating odds:', err.message);
+        // Используем дефолтные коэффициенты
+        currentOdds = { up: 1.95, down: 1.95 };
+    });
 }
 
 function openPredictionBet(direction) {
@@ -2865,7 +2892,7 @@ async function loadChartData(symbol, interval) {
 
             // Обновляем отображение цены
             updateChartPriceDisplay(lastPrice);
-            updatePredictionOdds(currentChartPrices);
+            updatePredictionOdds(currentChartPrices, chartPriceData.symbol);
 
             // Рассчитываем масштаб Y
             const minPrice = Math.min(...currentChartPrices);
@@ -2965,9 +2992,9 @@ async function loadChartDataDirect(symbol, interval) {
     if (currentChartPrices.length > 0) {
         chartPriceData.firstPrice = currentChartPrices[0];
         chartPriceData.lastPrice = currentChartPrices[currentChartPrices.length - 1];
-        
+
         updateChartPriceDisplay(currentChartPrices[currentChartPrices.length - 1]);
-        updatePredictionOdds(currentChartPrices);
+        updatePredictionOdds(currentChartPrices, chartPriceData.symbol);
 
         const minPrice = Math.min(...currentChartPrices);
         const maxPrice = Math.max(...currentChartPrices);
@@ -3129,7 +3156,7 @@ function connectBinanceWebSocket(symbol) {
 
         // Обновляем отображение цены и коэффициенты
         updateChartPriceDisplay(lastPrice);
-        updatePredictionOdds(currentChartPrices);
+        updatePredictionOdds(currentChartPrices, chartPriceData.symbol);
 
         // Очищаем буфер
         webSocketPriceBuffer = [];

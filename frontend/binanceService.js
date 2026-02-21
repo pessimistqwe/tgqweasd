@@ -168,8 +168,8 @@ class BinanceService {
 
         // ПРИОРИТЕТ 1: Пробуем backend API (с CORS proxy)
         try {
-            console.log('🔄 [BinanceService] Attempt 1: Backend API (/api/chart/history)');
-            const backendUrl = `/api/chart/history/${normalizedSymbol}?interval=${binanceInterval}&limit=${limit}`;
+            console.log('🔄 [BinanceService] Attempt 1: Backend API (/chart/history)');
+            const backendUrl = `/chart/history/${normalizedSymbol}?interval=${binanceInterval}&limit=${limit}`;
             
             const controller = new AbortController();
             const timeoutId = setTimeout(() => {

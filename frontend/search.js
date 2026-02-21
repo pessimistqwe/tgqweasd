@@ -12,11 +12,11 @@
 // ==================== Configuration ====================
 
 const SEARCH_CONFIG = {
-    API_BASE: '/api/polymarket',
-    DEBOUNCE_DELAY: 300,  // ms
+    API_BASE: '',  // Используем локальный backend
+    DEBOUNCE_DELAY: 250,  // ms
     MIN_QUERY_LENGTH: 2,
-    MAX_RESULTS: 20,
-    CACHE_TTL: 5 * 60 * 1000,  // 5 минут
+    MAX_RESULTS: 50,
+    CACHE_TTL: 2 * 60 * 1000,  // 2 минуты
 };
 
 // ==================== State ====================
@@ -76,14 +76,14 @@ function clearSearchCache() {
 
 /**
  * Поиск рынков Polymarket
- * 
+ *
  * @param {string} query - Поисковый запрос
  * @param {string} category - Категория (опционально)
  * @returns {Promise<Array>} Результаты поиска
  */
 async function searchMarkets(query, category = null) {
     const cacheKey = `${query}:${category || 'all'}`;
-    
+
     // Проверяем кэш
     const cached = getCachedSearch(cacheKey);
     if (cached) {
@@ -91,6 +91,7 @@ async function searchMarkets(query, category = null) {
         return cached;
     }
 
+    // Ищем по локальной базе данных через backend API
     const params = new URLSearchParams({
         q: query,
         limit: SEARCH_CONFIG.MAX_RESULTS,
@@ -101,14 +102,17 @@ async function searchMarkets(query, category = null) {
     }
 
     try {
-        const response = await fetch(`${SEARCH_CONFIG.API_BASE}/search?${params}`);
-        
+        // Используем локальный endpoint /events с поиском
+        const response = await fetch(`${SEARCH_CONFIG.API_BASE}/events/search?${params}`);
+
         if (!response.ok) {
-            throw new Error(`Search API error: ${response.status}`);
+            // Fallback: ищем в Polymarket API
+            console.log('⚠️ Local search failed, trying Polymarket API...');
+            return await searchPolymarketFallback(query, category);
         }
 
         const data = await response.json();
-        const results = data.markets || [];
+        const results = data.events || [];
 
         // Сохраняем в кэш
         setCachedSearch(cacheKey, results);
@@ -117,8 +121,60 @@ async function searchMarkets(query, category = null) {
 
     } catch (error) {
         console.error('❌ Search error:', error);
-        throw error;
+        // Fallback на Polymarket API
+        return await searchPolymarketFallback(query, category);
     }
+}
+
+/**
+ * Fallback поиск через Polymarket API
+ */
+async function searchPolymarketFallback(query, category = null) {
+    const params = new URLSearchParams({
+        q: query,
+        limit: SEARCH_CONFIG.MAX_RESULTS,
+    });
+
+    if (category) {
+        params.append('category', category);
+    }
+
+    const response = await fetch(`https://gamma-api.polymarket.com/markets?${params}`);
+    
+    if (!response.ok) {
+        throw new Error(`Search API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const markets = data.markets || data.events || [];
+    
+    // Преобразуем в формат совместимый с локальным
+    const results = markets.map(market => ({
+        id: market.id || market.conditionId,
+        polymarket_id: market.conditionId || market.id,
+        title: market.question || market.title,
+        description: market.description || '',
+        category: market.category || detectCategory(market),
+        image_url: market.image || '',
+        volume: market.volume || 0,
+        options: market.outcomes || market.tokens?.map(t => t.outcome) || [],
+        end_time: market.endDate || market.end_date
+    }));
+    
+    return results;
+}
+
+/**
+ * Определяет категорию для рынка Polymarket
+ */
+function detectCategory(market) {
+    const text = ((market.question || '') + ' ' + (market.description || '')).toLowerCase();
+    if (text.includes('bitcoin') || text.includes('btc') || text.includes('ethereum') || text.includes('crypto')) return 'crypto';
+    if (text.includes('sport') || text.includes('nba') || text.includes('football')) return 'sports';
+    if (text.includes('politic') || text.includes('election') || text.includes('trump')) return 'politics';
+    if (text.includes('movie') || text.includes('oscar') || text.includes('music')) return 'pop_culture';
+    if (text.includes('business') || text.includes('stock') || text.includes('tesla')) return 'business';
+    return 'other';
 }
 
 /**
