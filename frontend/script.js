@@ -2036,10 +2036,10 @@ let eventComments = []; // Хранилище комментариев для т
 async function openEventModal(eventId) {
     try {
         console.log('📊 [Event] Opening modal for event ID:', eventId);
-        
+
         const event = await apiRequest(`/events/${eventId}`);
         console.log('📊 [Event] Получен ответ:', event);
-        
+
         if (!event) {
             console.error('❌ [Event] Событие не найдено (пустой ответ)');
             showNotification('Событие не найдено', 'error');
@@ -2058,9 +2058,9 @@ async function openEventModal(eventId) {
         // ⚠️ ЗАЩИТА: Проверяем что options существует и это массив
         const optionsContainer = document.getElementById('event-options');
         const options = Array.isArray(event.options) ? event.options : [];
-        
+
         console.log('📊 [Event] Опции:', options.length, 'шт');
-        
+
         if (options.length === 0) {
             console.warn('⚠️ [Event] Нет опций у события!');
             optionsContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">Нет доступных вариантов</div>';
@@ -2081,13 +2081,40 @@ async function openEventModal(eventId) {
         const cryptoEvent = event.category === 'crypto';
         console.log('📊 [Event] Тип события:', cryptoEvent ? 'КРИПТО' : 'НЕ-КРИПТО', '| Category:', event.category);
 
-        // Show/hide chart based on has_chart flag
+        // Восстанавливаем HTML структуру графика перед любыми операциями
         const chartContainer = document.getElementById('event-chart');
         if (chartContainer) {
+            // Восстанавливаем оригинальную HTML структуру
+            chartContainer.innerHTML = `
+                <div class="event-chart-live-badge" id="chart-live-badge" style="display: none;">
+                    <span class="live-dot">🟢</span>
+                    <span class="live-text">Live</span>
+                </div>
+                <div class="event-chart-info" id="event-chart-info" style="display: none;">
+                    <div class="event-chart-price" id="chart-price">$0.00</div>
+                    <div class="event-chart-change" id="chart-change">
+                        <span>0.00%</span>
+                    </div>
+                    <div class="event-chart-updated" id="chart-updated">
+                        <span>🔄 Обновлено только что</span>
+                    </div>
+                </div>
+                <canvas id="event-chart-canvas"></canvas>
+                <div class="event-chart-timeframe" id="event-chart-timeframe" style="display: none;">
+                    <button class="timeframe-btn" data-interval="1m">1м</button>
+                    <button class="timeframe-btn" data-interval="5m">5м</button>
+                    <button class="timeframe-btn active" data-interval="15m">15м</button>
+                    <button class="timeframe-btn" data-interval="1h">1ч</button>
+                    <button class="timeframe-btn" data-interval="4h">4ч</button>
+                    <button class="timeframe-btn" data-interval="1d">1д</button>
+                </div>
+            `;
+
             // ⚠️ ЗАЩИТА: has_chart может быть null/undefined
             const hasChart = event.has_chart === true;
             chartContainer.style.display = hasChart ? 'block' : 'none';
             console.log('📊 [Event] График:', hasChart ? 'показан' : 'скрыт', '| has_chart:', event.has_chart);
+            console.log('📊 [Event] HTML структуры графика восстановлена');
 
             // Восстанавливаем видимость внутренних элементов если график показан
             const chartTimeframe = document.getElementById('event-chart-timeframe');
@@ -2537,6 +2564,9 @@ async function renderBetHistory(eventId) {
     const chartContainer = document.getElementById('event-chart');
     if (!chartContainer) return;
 
+    // Сохраняем структуру контейнера для последующего восстановления графика
+    const originalInnerHTML = chartContainer.innerHTML;
+
     try {
         const response = await fetch(`${backendUrl}/events/${eventId}/bet-history`);
         let betHistory = [];
@@ -2558,14 +2588,14 @@ async function renderBetHistory(eventId) {
             return;
         }
 
-        // Render bet history list
+        // Render bet history list - оборачиваем в контейнер с классом для идентификации
         chartContainer.innerHTML = `
-            <div style="height: 100%; overflow-y: auto; padding: 8px;">
+            <div class="bet-history-container" style="height: 100%; overflow-y: auto; padding: 8px;">
                 <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 12px; margin-bottom: 8px;">
                     История ставок
                 </div>
                 ${betHistory.map(bet => `
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 8px;">
+                    <div class="bet-history-item" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 8px;">
                         <div style="display: flex; align-items: center; gap: 12px;">
                             <div style="width: 32px; height: 32px; border-radius: var(--radius-md); background: var(--accent-muted); display: flex; align-items: center; justify-content: center; font-weight: 600; color: var(--accent); font-size: 14px;">
                                 ${bet.username.charAt(0).toUpperCase()}
@@ -2585,11 +2615,8 @@ async function renderBetHistory(eventId) {
         `;
     } catch (e) {
         console.error('Error loading bet history:', e);
-        chartContainer.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">
-                Error loading bet history
-            </div>
-        `;
+        // Восстанавливаем оригинальную структуру при ошибке
+        chartContainer.innerHTML = originalInnerHTML;
     }
 }
 
