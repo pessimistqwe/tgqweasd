@@ -15,7 +15,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PORT=8000 \
     TEST_DB_PATH=/tmp/events.db \
-    PYTHONPATH=/app
+    PYTHONPATH=/app:/app/api
 
 # Create /tmp directory for SQLite database
 RUN mkdir -p /tmp && chmod 777 /tmp
@@ -36,7 +36,7 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/health || exit 1
 
 # Start the application
 CMD ["/app/start.sh"]

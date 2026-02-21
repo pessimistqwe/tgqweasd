@@ -1,5 +1,4 @@
 {
-  "$schema": "https://zeabur.com/schema.json",
   "name": "eventpredict",
   "description": "Telegram Mini App Prediction Market with Polymarket Integration",
   "build": {
@@ -12,18 +11,6 @@
     "DISABLE_SCHEDULER": "0",
     "POLYMARKET_SYNC_INTERVAL": "7200",
     "PYTHONUNBUFFERED": "1",
-    "PYTHONPATH": "/app",
-    "DATABASE_URL": "",
-    "CRYPTOBOT_API_TOKEN": "",
-    "ADMIN_TELEGRAM_IDS": "",
-    "POLYMARKET_VERBOSE_LOGS": "0"
-  },
-  "healthcheck": {
-    "path": "/health",
-    "port": 8000,
-    "interval": 30,
-    "timeout": 10,
-    "retries": 3,
-    "startPeriod": 10
+    "PYTHONPATH": "/app:/app/api"
   }
 }
