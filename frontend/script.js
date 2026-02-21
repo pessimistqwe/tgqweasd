@@ -846,11 +846,20 @@ const categoryNames = {
 };
 
 document.addEventListener('DOMContentLoaded', function() {
-    tg.expand();
-    tg.ready();
+    // Безопасная инициализация Telegram WebApp
+    try {
+        if (tg && typeof tg.expand === 'function') {
+            tg.expand();
+        }
+        if (tg && typeof tg.ready === 'function') {
+            tg.ready();
+        }
+    } catch (e) {
+        console.warn('⚠️ Telegram WebApp not available, using web version');
+    }
 
     // Telegram theme colors
-    if (tg.themeParams) {
+    if (tg && tg.themeParams) {
         document.documentElement.style.setProperty('--bg-primary', tg.themeParams.bg_color || '#0a0a0a');
         document.documentElement.style.setProperty('--bg-secondary', tg.themeParams.secondary_bg_color || '#141414');
     }
@@ -858,24 +867,25 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load profile immediately
     loadProfile();
 
-    // Ready timeout - скрываем лоадер даже если данные не загрузились
-    // Используем несколько таймеров для надежности
+    // CRITICAL: Скрываем лоадер СРАЗУ и дополнительно по таймерам
     const hideLoader = () => {
         const loader = document.getElementById('loading');
         if (loader && !loader.classList.contains('hidden')) {
-            console.log('👋 Hiding loader (timeout)');
+            console.log('👋 Hiding loader');
             loader.classList.add('hidden');
         }
     };
     
-    // Скрываем лоадер через 3, 5 и 10 секунд - первый успешный раз скроет
+    // Скрываем через 1 секунду (основной)
+    setTimeout(hideLoader, 1000);
+    // Дополнительные таймеры на случай если первый не сработал
     setTimeout(hideLoader, 3000);
     setTimeout(hideLoader, 5000);
     setTimeout(hideLoader, 10000);
 
     // Initial load - загружаем данные
     console.log('🚀 Starting initial load...');
-    
+
     // Небольшая задержка чтобы DOM точно был готов
     setTimeout(() => {
         loadEvents();
@@ -889,7 +899,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Search clear button handler
     const searchClearBtn = document.getElementById('search-clear-btn');
     const searchInput = document.getElementById('search-input');
-    
+
     if (searchClearBtn && searchInput) {
         searchClearBtn.addEventListener('click', () => {
             searchInput.value = '';

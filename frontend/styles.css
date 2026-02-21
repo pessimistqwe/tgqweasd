@@ -111,6 +111,7 @@ body::before {
 .loading-screen.hidden {
     opacity: 0;
     pointer-events: none;
+    display: none !important;  /* Гарантированно скрываем */
     transition: opacity 0.3s ease;
 }
 

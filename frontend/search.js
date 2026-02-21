@@ -20,15 +20,19 @@ function getSearchApiBase() {
             : window.location.origin);
 }
 
+// НЕ вычисляем API_BASE сразу — сделаем это лениво
 const SEARCH_CONFIG = {
-    API_BASE: getSearchApiBase(),  // Будет вычислено при первом использовании
-    DEBOUNCE_DELAY: 300,  // Увеличил debounce для стабильности
+    get API_BASE() {
+        return getSearchApiBase();
+    },
+    DEBOUNCE_DELAY: 300,
     MIN_QUERY_LENGTH: 2,
     MAX_RESULTS: 50,
-    CACHE_TTL: 5 * 60 * 1000,  // 5 минут кэш
+    CACHE_TTL: 5 * 60 * 1000,
 };
 
-console.log('🔍 Search API Base:', SEARCH_CONFIG.API_BASE);
+// Не логируем API_BASE при загрузке — он может быть еще не готов
+console.log('🔍 [Search] Module loaded');
 
 // ==================== State ====================
 

@@ -380,18 +380,22 @@ function clearCache() {
 
 // ==================== Export ====================
 
-// Делаем функции доступными глобально
-window.PolymarketPriceService = {
-    getPrice,
-    getPrices,
-    getMarketPrices,
-    startAutoRefresh,
-    stopAutoRefresh,
-    subscribeToPrices,
-    unsubscribeFromPrices,
-    updateEventPrices,
-    getCacheStats,
-    clearCache
-};
-
-console.log('✅ [PolymarketPriceService] Модуль загружен');
+// Делаем функции доступными глобально безопасно
+try {
+    window.PolymarketPriceService = {
+        getPrice,
+        getPrices,
+        getMarketPrices,
+        startAutoRefresh,
+        stopAutoRefresh,
+        subscribeToPrices,
+        unsubscribeFromPrices,
+        updateEventPrices,
+        getCacheStats,
+        clearCache
+    };
+    console.log('✅ [PolymarketPriceService] Модуль загружен');
+} catch (e) {
+    console.error('❌ [PolymarketPriceService] Failed to initialize:', e);
+    window.PolymarketPriceService = null;
+}

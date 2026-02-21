@@ -439,14 +439,15 @@ class PolymarketChartService {
 
 // ==================== Export ====================
 
-// Создаём глобальный экземпляр
-window.polymarketChartService = new PolymarketChartService();
-
-// Экспортируем класс и экземпляр
-window.PolymarketChartService = PolymarketChartService;
-
-// Экспортируем константы
-window.POLYMARKET_RESOLUTIONS = POLYMARKET_RESOLUTIONS;
-window.POLYMARKET_LIMITS = POLYMARKET_LIMITS;
-
-console.log('✅ [PolymarketChartService] Модуль загружен');
+// Создаём глобальный экземпляр безопасно
+try {
+    window.polymarketChartService = new PolymarketChartService();
+    window.PolymarketChartService = PolymarketChartService;
+    window.POLYMARKET_RESOLUTIONS = POLYMARKET_RESOLUTIONS;
+    window.POLYMARKET_LIMITS = POLYMARKET_LIMITS;
+    console.log('✅ [PolymarketChartService] Модуль загружен');
+} catch (e) {
+    console.error('❌ [PolymarketChartService] Failed to initialize:', e);
+    window.polymarketChartService = null;
+    window.PolymarketChartService = null;
+}
