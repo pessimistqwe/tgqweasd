@@ -1,11 +1,20 @@
-let tg = window.Telegram.WebApp;
+// Безопасная инициализация Telegram WebApp
+let tg = null;
+try {
+    tg = window.Telegram?.WebApp || null;
+} catch (e) {
+    console.warn('⚠️ Telegram WebApp not available');
+    tg = null;
+}
 
 // Авто-определение языка (с проверкой готовности Telegram WebApp)
 function getUserLanguage() {
     try {
-        const user = tg.initDataUnsafe?.user;
-        if (user && user.language_code) {
-            return user.language_code;
+        if (tg && tg.initDataUnsafe) {
+            const user = tg.initDataUnsafe.user;
+            if (user && user.language_code) {
+                return user.language_code;
+            }
         }
     } catch (e) {
         console.log('Telegram WebApp not ready, using browser language');

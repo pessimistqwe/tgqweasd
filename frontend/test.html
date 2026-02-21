@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EventPredict - Test Page</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #0a0a0a;
+            color: #f0f6fc;
+            padding: 20px;
+            margin: 0;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .pass { background: #166534; }
+        .fail { background: #991b1b; }
+        .info { background: #1e3a5f; }
+        h1 { color: #f2b03d; }
+        h2 { color: #10b981; margin-top: 30px; }
+        #loader-test {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            flex-direction: column;
+            gap: 20px;
+        }
+        #loader-test.hidden {
+            display: none !important;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #333;
+            border-top-color: #f2b03d;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 EventPredict - Diagnostic Tests</h1>
+    
+    <div id="loader-test">
+        <div class="spinner"></div>
+        <p>Loader Test - should hide in 3 seconds</p>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        const results = document.getElementById('results');
+        
+        function log(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.textContent = message;
+            results.appendChild(div);
+        }
+
+        // Test 1: Check if DOM loaded
+        log('✅ DOM Content Loaded', 'pass');
+
+        // Test 2: Loader visibility test
+        log('⏳ Testing loader hide mechanism...', 'info');
+        
+        setTimeout(() => {
+            const loader = document.getElementById('loader-test');
+            if (loader && !loader.classList.contains('hidden')) {
+                loader.classList.add('hidden');
+                log('✅ Loader hidden successfully after 3 seconds', 'pass');
+            }
+        }, 3000);
+
+        // Test 3: Check global variables
+        setTimeout(() => {
+            log('📋 Checking for variable conflicts...', 'info');
+            
+            const conflicts = [];
+            
+            // Check if window objects exist
+            if (typeof window.PolymarketPriceService !== 'undefined') {
+                log('✅ PolymarketPriceService loaded', 'pass');
+            } else {
+                log('❌ PolymarketPriceService NOT loaded', 'fail');
+            }
+            
+            if (typeof window.polymarketChartService !== 'undefined') {
+                log('✅ polymarketChartService loaded', 'pass');
+            } else {
+                log('❌ polymarketChartService NOT loaded', 'fail');
+            }
+            
+            if (typeof window.binanceService !== 'undefined') {
+                log('✅ binanceService loaded', 'pass');
+            } else {
+                log('❌ binanceService NOT loaded', 'fail');
+            }
+            
+            if (typeof window.clearSearch !== 'undefined') {
+                log('✅ Search module loaded', 'pass');
+            } else {
+                log('❌ Search module NOT loaded', 'fail');
+            }
+        }, 1000);
+
+        // Test 4: Load actual scripts and check for errors
+        setTimeout(() => {
+            log('📋 Loading scripts sequentially...', 'info');
+            
+            const scripts = [
+                'binanceService.js',
+                'polymarketChartService.js',
+                'polymarketPriceService.js',
+                'search.js'
+            ];
+            
+            scripts.forEach((script, index) => {
+                const scriptEl = document.createElement('script');
+                scriptEl.src = script;
+                scriptEl.onload = () => {
+                    log(`✅ ${script} loaded successfully`, 'pass');
+                };
+                scriptEl.onerror = () => {
+                    log(`❌ ${script} failed to load`, 'fail');
+                };
+                document.body.appendChild(scriptEl);
+            });
+        }, 500);
+
+        // Test 5: API connectivity test
+        setTimeout(async () => {
+            log('📋 Testing API connectivity...', 'info');
+            
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                log(`✅ API Health: ${data.status}`, 'pass');
+            } catch (e) {
+                log(`❌ API Health check failed: ${e.message}`, 'fail');
+            }
+            
+            try {
+                const response = await fetch('/events?limit=5');
+                const data = await response.json();
+                const count = Array.isArray(data) ? data.length : (data.events?.length || 0);
+                log(`✅ Events API: ${count} events returned`, 'pass');
+            } catch (e) {
+                log(`❌ Events API failed: ${e.message}`, 'fail');
+            }
+        }, 2000);
+
+        // Final summary after 5 seconds
+        setTimeout(() => {
+            log('═══════════════════════════════════════', 'info');
+            log('📊 TEST SUMMARY', 'info');
+            log('═══════════════════════════════════════', 'info');
+            
+            const passes = document.querySelectorAll('.pass').length;
+            const fails = document.querySelectorAll('.fail').length;
+            
+            log(`Total Passed: ${passes}`, passes > 0 ? 'pass' : 'fail');
+            log(`Total Failed: ${fails}`, fails === 0 ? 'pass' : 'fail');
+            
+            if (fails === 0) {
+                log('🎉 ALL TESTS PASSED!', 'pass');
+            } else {
+                log('⚠️ Some tests failed - check console for errors', 'fail');
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

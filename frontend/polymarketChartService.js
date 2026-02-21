@@ -39,8 +39,8 @@ const POLYMARKET_LIMITS = {
 // Timeout для запросов (15 секунд)
 const POLYMARKET_CHART_TIMEOUT_MS = 15000;
 
-// TTL кэша (3 минуты для реальных данных)
-const CACHE_TTL_MS = 3 * 60 * 1000;
+// TTL кэша (3 минуты для реальных данных) - УНИКАЛЬНОЕ ИМЯ
+const POLYMARKET_CACHE_TTL_MS = 3 * 60 * 1000;
 
 // Headers для запросов
 const POLYMARKET_HEADERS = {
@@ -62,7 +62,7 @@ function getFromPolymarketCache(key) {
     if (!cached) return null;
 
     const age = Date.now() - cached.timestamp;
-    if (age > CACHE_TTL_MS) {
+    if (age > POLYMARKET_CACHE_TTL_MS) {
         console.log('⚠️ [PolymarketChart] Cache expired for', key);
         polymarketCache.delete(key);
         return null;
