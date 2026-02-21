@@ -42,6 +42,7 @@ try:
     from .polymarket_routes import router as polymarket_router
     from .leaderboard_routes import router as leaderboard_router
     from .polymarket_chart_routes import router as polymarket_chart_router
+    from .polymarket_price_routes import router as polymarket_price_router
     from .cache_service import create_cache_routes, get_cache_stats
     from .websocket_service import create_websocket_routes, init_websocket_service, stop_websocket_service
 except ImportError:
@@ -55,6 +56,7 @@ except ImportError:
     from polymarket_routes import router as polymarket_router
     from leaderboard_routes import router as leaderboard_router
     from polymarket_chart_routes import router as polymarket_chart_router
+    from polymarket_price_routes import router as polymarket_price_router
     from cache_service import create_cache_routes, get_cache_stats
     from websocket_service import create_websocket_routes, init_websocket_service, stop_websocket_service
 
@@ -77,6 +79,9 @@ app.include_router(polymarket_router)
 
 # Подключаем polymarket chart routes
 app.include_router(polymarket_chart_router)
+
+# Подключаем polymarket price routes
+app.include_router(polymarket_price_router)
 
 # Подключаем leaderboard routes
 app.include_router(leaderboard_router)
@@ -818,6 +823,16 @@ def scheduled_price_history_sync():
     except Exception as e:
         logger.error(f"Scheduled price history sync error: {e}")
 
+def scheduled_polymarket_price_sync():
+    """Обёртка для планировщика - синхронизация реальных цен Polymarket"""
+    try:
+        from .polymarket_price_service import sync_prices_to_db
+        db = next(get_db())
+        sync_prices_to_db(db, limit=100)
+        logger.info("✅ Polymarket price sync completed")
+    except Exception as e:
+        logger.error(f"Scheduled Polymarket price sync error: {e}")
+
 @app.on_event("startup")
 async def startup_event():
     """Инициализация при старте приложения"""
@@ -845,6 +860,24 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to start Volatility Service: {e}")
 
+    # Миграция: добавляем поле polymarket_token_id если его нет
+    try:
+        db = next(get_db())
+        # Проверяем существует ли колонка
+        from sqlalchemy import inspect
+        inspector = inspect(db.bind)
+        columns = [col['name'] for col in inspector.get_columns('event_options')]
+        
+        if 'polymarket_token_id' not in columns:
+            logger.info("🔧 Adding polymarket_token_id column to event_options...")
+            db.execute("ALTER TABLE event_options ADD COLUMN polymarket_token_id VARCHAR(255)")
+            db.commit()
+            logger.info("✅ Migration completed: polymarket_token_id added")
+        else:
+            logger.info("✅ Column polymarket_token_id already exists")
+    except Exception as e:
+        logger.warning(f"⚠️ Migration check skipped: {e}")
+
     # Отключаем scheduler в тестовом режиме
     if not os.getenv("DISABLE_SCHEDULER"):
         # Запускаем планировщик
@@ -864,9 +897,18 @@ async def startup_event():
             id='price_history_sync',
             replace_existing=True
         )
-        
+
+        # Добавляем задачу для синхронизации реальных цен Polymarket (каждые 5 минут)
+        scheduler.add_job(
+            scheduled_polymarket_price_sync,
+            'interval',
+            seconds=300,  # 5 минут
+            id='polymarket_price_sync',
+            replace_existing=True
+        )
+
         scheduler.start()
-        logger.info(f"⏰ Scheduler started (events: {POLYMARKET_SYNC_INTERVAL_SECONDS}s, history: 21600s)")
+        logger.info(f"⏰ Scheduler started (events: {POLYMARKET_SYNC_INTERVAL_SECONDS}s, history: 21600s, prices: 300s)")
 
         # Первая синхронизация событий при старте (в фоне, не блокируем запуск)
         try:

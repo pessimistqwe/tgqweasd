@@ -104,6 +104,7 @@ class EventOption(Base):
     total_stake = Column(Float, default=0.0)
     market_stake = Column(Float, default=0.0)
     current_price = Column(Float, default=0.5)
+    polymarket_token_id = Column(String(255), nullable=True)  # Polymarket token ID для синхронизации цен
 
     event = relationship("Event", back_populates="event_options")
 
