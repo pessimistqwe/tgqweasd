@@ -11,22 +11,24 @@
 
 // ==================== Configuration ====================
 
-// Используем тот же backendUrl что и в script.js
-const configuredBackendUrl = window.__BACKEND_URL__;
-const SEARCH_API_BASE = configuredBackendUrl
-    || (window.location.hostname === 'localhost'
-        ? 'http://localhost:8000'
-        : window.location.origin);
-
-console.log('🔍 Search API Base:', SEARCH_API_BASE);
+// BackendUrl будет определен когда script.js загрузится
+// Используем функцию для получения URL в момент запроса
+function getSearchApiBase() {
+    return window.__BACKEND_URL__
+        || (window.location.hostname === 'localhost'
+            ? 'http://localhost:8000'
+            : window.location.origin);
+}
 
 const SEARCH_CONFIG = {
-    API_BASE: SEARCH_API_BASE,
+    API_BASE: getSearchApiBase(),  // Будет вычислено при первом использовании
     DEBOUNCE_DELAY: 300,  // Увеличил debounce для стабильности
     MIN_QUERY_LENGTH: 2,
     MAX_RESULTS: 50,
     CACHE_TTL: 5 * 60 * 1000,  // 5 минут кэш
 };
+
+console.log('🔍 Search API Base:', SEARCH_CONFIG.API_BASE);
 
 // ==================== State ====================
 

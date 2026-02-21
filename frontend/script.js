@@ -859,16 +859,29 @@ document.addEventListener('DOMContentLoaded', function() {
     loadProfile();
 
     // Ready timeout - скрываем лоадер даже если данные не загрузились
-    setTimeout(() => {
-        console.log('⏰ Ready timeout - hiding loader');
-        document.getElementById('loading').classList.add('hidden');
-    }, 10000); // 10 секунд максимум
+    // Используем несколько таймеров для надежности
+    const hideLoader = () => {
+        const loader = document.getElementById('loading');
+        if (loader && !loader.classList.contains('hidden')) {
+            console.log('👋 Hiding loader (timeout)');
+            loader.classList.add('hidden');
+        }
+    };
+    
+    // Скрываем лоадер через 3, 5 и 10 секунд - первый успешный раз скроет
+    setTimeout(hideLoader, 3000);
+    setTimeout(hideLoader, 5000);
+    setTimeout(hideLoader, 10000);
 
     // Initial load - загружаем данные
     console.log('🚀 Starting initial load...');
-    loadEvents();
-    loadUserBalance();
-    checkAdminStatus();
+    
+    // Небольшая задержка чтобы DOM точно был готов
+    setTimeout(() => {
+        loadEvents();
+        loadUserBalance();
+        checkAdminStatus();
+    }, 100);
 
     // Start auto-refresh
     startAutoRefresh();
