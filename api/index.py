@@ -826,7 +826,12 @@ def scheduled_price_history_sync():
 def scheduled_polymarket_price_sync():
     """Обёртка для планировщика - синхронизация реальных цен Polymarket"""
     try:
-        from .polymarket_price_service import sync_prices_to_db
+        # Используем try/except для импорта чтобы работало из разных мест
+        try:
+            from .polymarket_price_service import sync_prices_to_db
+        except ImportError:
+            from polymarket_price_service import sync_prices_to_db
+        
         db = next(get_db())
         sync_prices_to_db(db, limit=100)
         logger.info("✅ Polymarket price sync completed")
@@ -861,22 +866,32 @@ async def startup_event():
         logger.error(f"Failed to start Volatility Service: {e}")
 
     # Миграция: добавляем поле polymarket_token_id если его нет
-    try:
-        db = next(get_db())
-        # Проверяем существует ли колонка
-        from sqlalchemy import inspect
-        inspector = inspect(db.bind)
-        columns = [col['name'] for col in inspector.get_columns('event_options')]
-        
-        if 'polymarket_token_id' not in columns:
-            logger.info("🔧 Adding polymarket_token_id column to event_options...")
-            db.execute("ALTER TABLE event_options ADD COLUMN polymarket_token_id VARCHAR(255)")
-            db.commit()
-            logger.info("✅ Migration completed: polymarket_token_id added")
-        else:
-            logger.info("✅ Column polymarket_token_id already exists")
-    except Exception as e:
-        logger.warning(f"⚠️ Migration check skipped: {e}")
+    # Выполняем в фоне чтобы не блокировать старт
+    def run_migration():
+        try:
+            import time
+            time.sleep(2)  # Ждем пока БД полностью инициализируется
+            
+            from sqlalchemy import inspect, text
+            db = next(get_db())
+            # Проверяем существует ли колонка
+            inspector = inspect(db.bind)
+            columns = [col['name'] for col in inspector.get_columns('event_options')]
+            
+            if 'polymarket_token_id' not in columns:
+                logger.info("🔧 Adding polymarket_token_id column to event_options...")
+                db.execute(text("ALTER TABLE event_options ADD COLUMN polymarket_token_id VARCHAR(255)"))
+                db.commit()
+                logger.info("✅ Migration completed: polymarket_token_id added")
+            else:
+                logger.info("✅ Column polymarket_token_id already exists")
+        except Exception as e:
+            logger.warning(f"⚠️ Migration check skipped: {e}")
+    
+    # Запускаем миграцию в фоне
+    import threading
+    migration_thread = threading.Thread(target=run_migration)
+    migration_thread.start()
 
     # Отключаем scheduler в тестовом режиме
     if not os.getenv("DISABLE_SCHEDULER"):

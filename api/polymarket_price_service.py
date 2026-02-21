@@ -39,22 +39,23 @@ POLYMARKET_HEADERS = {
 
 # Rate limiting
 MAX_REQUESTS_PER_MINUTE = 100
-request_timestamps: List[float] = []
+_request_timestamps: List[float] = []
 
 # ==================== Rate Limiting ====================
 
 def check_rate_limit():
     """Проверка rate limit (100 запросов в минуту)"""
-    global request_timestamps
-    
+    global _request_timestamps
+
     now = time.time()
     # Удаляем запросы старше 1 минуты
-    request_timestamps = [ts for ts in request_timestamps if now - ts < 60]
-    
-    if len(request_timestamps) >= MAX_REQUESTS_PER_MINUTE:
-        raise Exception(f"Rate limit exceeded. Try again in {60 - (now - request_timestamps[0]):.0f} seconds")
-    
-    request_timestamps.append(now)
+    _request_timestamps = [ts for ts in _request_timestamps if now - ts < 60]
+
+    if len(_request_timestamps) >= MAX_REQUESTS_PER_MINUTE:
+        wait_time = 60 - (now - _request_timestamps[0]) if _request_timestamps else 0
+        raise Exception(f"Rate limit exceeded. Try again in {wait_time:.0f} seconds")
+
+    _request_timestamps.append(now)
 
 # ==================== Price Data Models ====================
 
@@ -379,52 +380,56 @@ def get_market_info(market_id: str) -> Optional[Dict[str, Any]]:
 def sync_prices_to_db(db_session, limit: int = 50):
     """
     Синхронизировать цены из Polymarket в локальную БД
-    
+
     Args:
         db_session: SQLAlchemy session
         limit: Количество событий для синхронизации
     """
     try:
-        from .models import Event, EventOption
-        
+        # Используем try/except для импорта чтобы работало из разных мест
+        try:
+            from .models import Event, EventOption
+        except ImportError:
+            from models import Event, EventOption
+
         # Получаем последние активные события с Polymarket ID
         events = db_session.query(Event).filter(
             Event.polymarket_id.isnot(None),
             Event.is_active == True
         ).order_by(Event.id.desc()).limit(limit).all()
-        
+
         updated_count = 0
-        
+
         for event in events:
             try:
                 # Получаем цены для всех исходов
                 prices = get_market_prices(event.polymarket_id)
-                
+
                 if not prices:
                     continue
-                
+
                 # Обновляем EventOption
                 options = db_session.query(EventOption).filter(
                     EventOption.event_id == event.id
                 ).all()
-                
+
                 for option in options:
                     outcome_name = option.option_text
-                    
+
                     if outcome_name in prices:
                         price = prices[outcome_name]
                         option.current_price = price.price
-                        
+
                         # Сохраняем token_id если есть
                         if hasattr(option, 'polymarket_token_id') and price.token_id:
                             option.polymarket_token_id = price.token_id
-                        
+
                         updated_count += 1
-                
+
             except Exception as e:
                 logger.warning(f"Error syncing prices for event {event.id}: {e}")
                 continue
-        
+
         db_session.commit()
         logger.info(f"✅ Synced prices for {updated_count} options")
         
