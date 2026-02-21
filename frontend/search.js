@@ -11,12 +11,21 @@
 
 // ==================== Configuration ====================
 
+// Используем тот же backendUrl что и в script.js
+const configuredBackendUrl = window.__BACKEND_URL__;
+const SEARCH_API_BASE = configuredBackendUrl
+    || (window.location.hostname === 'localhost'
+        ? 'http://localhost:8000'
+        : window.location.origin);
+
+console.log('🔍 Search API Base:', SEARCH_API_BASE);
+
 const SEARCH_CONFIG = {
-    API_BASE: '',  // Используем локальный backend
-    DEBOUNCE_DELAY: 250,  // ms
+    API_BASE: SEARCH_API_BASE,
+    DEBOUNCE_DELAY: 300,  // Увеличил debounce для стабильности
     MIN_QUERY_LENGTH: 2,
     MAX_RESULTS: 50,
-    CACHE_TTL: 2 * 60 * 1000,  // 2 минуты
+    CACHE_TTL: 5 * 60 * 1000,  // 5 минут кэш
 };
 
 // ==================== State ====================
@@ -91,6 +100,8 @@ async function searchMarkets(query, category = null) {
         return cached;
     }
 
+    console.log('🔍 [Search] Starting search for:', query, 'category:', category);
+
     // Ищем по локальной базе данных через backend API
     const params = new URLSearchParams({
         q: query,
@@ -101,18 +112,23 @@ async function searchMarkets(query, category = null) {
         params.append('category', category);
     }
 
+    const searchUrl = `${SEARCH_CONFIG.API_BASE}/events/search?${params}`;
+    console.log('🔍 [Search] Request URL:', searchUrl);
+
     try {
-        // Используем локальный endpoint /events с поиском
-        const response = await fetch(`${SEARCH_CONFIG.API_BASE}/events/search?${params}`);
+        const response = await fetch(searchUrl);
+        console.log('🔍 [Search] Response status:', response.status);
 
         if (!response.ok) {
+            console.warn('⚠️ Local search failed with status', response.status);
             // Fallback: ищем в Polymarket API
-            console.log('⚠️ Local search failed, trying Polymarket API...');
             return await searchPolymarketFallback(query, category);
         }
 
         const data = await response.json();
+        console.log('🔍 [Search] Response data:', data);
         const results = data.events || [];
+        console.log('✅ [Search] Found', results.length, 'results');
 
         // Сохраняем в кэш
         setCachedSearch(cacheKey, results);
@@ -120,8 +136,9 @@ async function searchMarkets(query, category = null) {
         return results;
 
     } catch (error) {
-        console.error('❌ Search error:', error);
+        console.error('❌ [Search] Error:', error);
         // Fallback на Polymarket API
+        console.log('⚠️ [Search] Falling back to Polymarket API...');
         return await searchPolymarketFallback(query, category);
     }
 }
@@ -388,7 +405,7 @@ function updateSearchUI(state) {
 
 /**
  * Отрендерить результаты поиска
- * 
+ *
  * @param {Array} results - Результаты поиска
  */
 function renderSearchResults(results) {
@@ -400,34 +417,48 @@ function renderSearchResults(results) {
         return;
     }
 
+    console.log('🎨 [Search] Rendering', results.length, 'results:', results);
+
     const html = results.map((market, index) => {
+        // Поддерживаем оба формата: от локального API (title) и Polymarket (question)
+        const title = market.title || market.question || 'Без названия';
+        const category = market.category || '';
+        const volume = market.volume || market.total_pool || 0;
+        const outcomes = market.options || market.outcomes || [];
+        const outcomePrices = market.outcomePrices || 
+                             (market.options ? market.options.map(o => o.probability / 100) : []);
+        
         const changeClass = market.change24h >= 0 ? 'positive' : 'negative';
         const changeSign = market.change24h >= 0 ? '+' : '';
-        
+
         return `
-            <div class="search-result-item" data-market-id="${market.id}" data-index="${index}">
+            <div class="search-result-item" data-market-id="${market.id || market.polymarket_id}" data-index="${index}">
                 <div class="search-result-header">
-                    <span class="search-result-title">${escapeHtml(market.question)}</span>
-                    ${market.category ? `<span class="search-result-category">${market.category}</span>` : ''}
+                    <span class="search-result-title">${escapeHtml(title)}</span>
+                    ${category ? `<span class="search-result-category">${category}</span>` : ''}
                 </div>
                 <div class="search-result-meta">
                     <span class="search-result-volume">
-                        💰 ${formatVolume(market.volume)}
+                        💰 ${formatVolume(volume)}
                     </span>
-                    ${market.change24h !== null ? `
+                    ${market.change24h !== null && market.change24h !== undefined ? `
                         <span class="search-result-change ${changeClass}">
                             ${changeSign}${market.change24h}%
                         </span>
                     ` : ''}
                 </div>
-                ${market.outcomes && market.outcomes.length > 0 ? `
+                ${outcomes && outcomes.length > 0 ? `
                     <div class="search-result-outcomes">
-                        ${market.outcomes.slice(0, 3).map((outcome, i) => {
-                            const price = market.outcomePrices?.[i] ? `${market.outcomePrices[i].toFixed(1)}%` : '?';
+                        ${outcomes.slice(0, 3).map((outcome, i) => {
+                            // Поддерживаем оба формата: объект {text, probability} и строку
+                            const outcomeName = typeof outcome === 'object' ? outcome.text : outcome;
+                            const outcomePrice = typeof outcome === 'object' ? 
+                                (outcome.probability ? outcome.probability + '%' : '?') :
+                                (outcomePrices[i] ? `${(outcomePrices[i] * 100).toFixed(1)}%` : '?');
                             return `
                                 <div class="search-result-outcome">
-                                    <span class="outcome-name">${escapeHtml(outcome)}</span>
-                                    <span class="outcome-price">${price}</span>
+                                    <span class="outcome-name">${escapeHtml(outcomeName)}</span>
+                                    <span class="outcome-price">${outcomePrice}</span>
                                 </div>
                             `;
                         }).join('')}
@@ -438,6 +469,7 @@ function renderSearchResults(results) {
     }).join('');
 
     resultsContainer.innerHTML = html;
+    console.log('✅ [Search] Results rendered');
 
     // Добавляем обработчики кликов
     resultsContainer.querySelectorAll('.search-result-item').forEach(item => {
@@ -445,6 +477,8 @@ function renderSearchResults(results) {
             const marketId = item.dataset.marketId;
             const index = parseInt(item.dataset.index);
             const market = results[index];
+
+            console.log('🖱️ [Search] Clicked on market:', marketId, market);
 
             if (window.searchResultClickHandler) {
                 window.searchResultClickHandler(market);
@@ -455,7 +489,7 @@ function renderSearchResults(results) {
 
             // Скрываем результаты
             resultsContainer.style.display = 'none';
-            
+
             // Haptic feedback
             if (tg.HapticFeedback) {
                 tg.HapticFeedback.impactOccurred('light');
@@ -642,18 +676,27 @@ window.clearSearchCache = clearSearchCache;
 
 // Авто-инициализация при загрузке DOM
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('🔍 [Search] Initializing search...');
+    
     // Ищем search input в header
     const searchInput = document.querySelector('header input[type="search"], header .search-input, #search-input');
     const resultsContainer = document.querySelector('.search-results');
+
+    console.log('🔍 [Search] Search input found:', !!searchInput);
+    console.log('🔍 [Search] Results container found:', !!resultsContainer);
 
     if (searchInput && !resultsContainer) {
         // Создаем контейнер для результатов если его нет
         const container = document.createElement('div');
         container.className = 'search-results';
         searchInput.parentNode.appendChild(container);
+        console.log('🔍 [Search] Created results container');
     }
 
     if (searchInput) {
         initSearch('input[type="search"], .search-input', '.search-results');
+        console.log('✅ [Search] Initialization complete');
+    } else {
+        console.warn('⚠️ [Search] Search input not found, initialization skipped');
     }
 });

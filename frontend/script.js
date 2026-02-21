@@ -2686,9 +2686,62 @@ async function renderPriceChart(eventId, options) {
     }
 
     if (!binanceSymbol) {
-        console.error('❌ [Chart] Символ Binance не найден для события:', event.title);
-        // Показываем ошибку вместо симуляции
-        const chartContainer = document.getElementById('event-chart');
+        console.log('⚠️ [Chart] Binance symbol not found, trying Polymarket chart...');
+        // Пробуем использовать Polymarket chart для не-крипто событий
+        renderPolymarketChart(eventId, event, options);
+        return;
+    }
+
+    currentBinanceSymbol = binanceSymbol;
+    console.log('📊 [Chart] Запуск графика для:', binanceSymbol);
+
+    renderRealtimeChart(canvas, binanceSymbol, options);
+}
+
+/**
+ * Рендерит график используя Polymarket Candles API
+ * Для событий которые не являются крипто-событиями
+ */
+async function renderPolymarketChart(eventId, event, options) {
+    console.log('📊 [PolymarketChart] === renderPolymarketChart: ЗАПУСК ===');
+    console.log('📊 [PolymarketChart] Event ID:', eventId);
+    console.log('📊 [PolymarketChart] Event:', event.title);
+
+    const canvas = document.getElementById('event-chart-canvas');
+    const chartContainer = document.getElementById('event-chart');
+    const chartTimeframe = document.getElementById('event-chart-timeframe');
+    const chartInfo = document.getElementById('event-chart-info');
+    const chartLiveBadge = document.getElementById('chart-live-badge');
+
+    if (!canvas) {
+        console.error('❌ [PolymarketChart] Canvas не найден');
+        return;
+    }
+
+    // Показываем UI графика
+    if (chartTimeframe) chartTimeframe.style.display = 'flex';
+    if (chartInfo) chartInfo.style.display = 'block';
+    if (chartLiveBadge) chartLiveBadge.style.display = 'none'; // Polymarket не real-time
+
+    // Устанавливаем размеры canvas
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width * window.devicePixelRatio;
+    canvas.height = rect.height * window.devicePixelRatio;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+    // Destroy existing chart
+    if (eventChart) {
+        eventChart.destroy();
+        eventChart = null;
+    }
+
+    // Получаем Polymarket ID из события
+    const polymarketId = event.polymarket_id;
+    
+    if (!polymarketId) {
+        console.warn('⚠️ [PolymarketChart] No Polymarket ID for this event');
+        // Показываем fallback
         if (chartContainer) {
             chartContainer.innerHTML = `
                 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); text-align: center; padding: 20px;">
@@ -2697,17 +2750,175 @@ async function renderPriceChart(eventId, options) {
                         <path d="M12 8v4M12 16h.01"/>
                     </svg>
                     <div style="font-size: 14px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">График недоступен</div>
-                    <div style="font-size: 12px; color: var(--text-muted);">Не удалось определить криптовалюту для этого события</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">Для этого события нет данных графика</div>
                 </div>
             `;
         }
         return;
     }
 
-    currentBinanceSymbol = binanceSymbol;
-    console.log('📊 [Chart] Запуск графика для:', binanceSymbol);
-    
-    renderRealtimeChart(canvas, binanceSymbol, options);
+    // Используем первый option по умолчанию
+    const selectedOption = options && options.length > 0 ? options[0] : null;
+    const outcomeName = selectedOption?.text || selectedOption?.outcome || 'Yes';
+
+    console.log('📊 [PolymarketChart] Market ID:', polymarketId);
+    console.log('📊 [PolymarketChart] Outcome:', outcomeName);
+
+    // Показываем loading
+    updateChartPriceDisplay(0.5, 0);
+
+    try {
+        // Загружаем данные из Polymarket Chart API
+        console.log('📊 [PolymarketChart] Loading candles from Polymarket API...');
+        
+        const chartData = await window.polymarketChartService.loadCandles(
+            polymarketId,
+            outcomeName,
+            currentChartInterval || '1h',
+            168
+        );
+
+        console.log('📊 [PolymarketChart] Data loaded:', chartData);
+        console.log('📊 [PolymarketChart] Source:', chartData.source);
+        console.log('📊 [PolymarketChart] Candles count:', chartData.candles?.length || 0);
+        console.log('📊 [PolymarketChart] Price range:', chartData.firstPrice?.toFixed(3), '-', chartData.lastPrice?.toFixed(3));
+
+        // Обновляем UI с данными
+        const priceChange = chartData.priceChange || 0;
+        updateChartPriceDisplay(chartData.lastPrice || 0.5, priceChange);
+
+        // Рендерим график Chart.js
+        const chartColor = priceChange >= 0 ? '#10b981' : '#ef4444'; // Зеленый/Красный
+
+        eventChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartData.labels.map(ts => {
+                    const date = new Date(ts);
+                    return date.toLocaleDateString('ru-RU', { 
+                        day: 'numeric', 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                    });
+                }),
+                datasets: [{
+                    label: outcomeName,
+                    data: chartData.prices,
+                    borderColor: chartColor,
+                    borderWidth: 2,
+                    fill: true,
+                    backgroundColor: chartColor + '20', // 20% opacity
+                    tension: 0.1,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: chartColor,
+                    pointHoverBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index',
+                    axis: 'x'
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(13, 17, 23, 0.98)',
+                        titleColor: chartColor,
+                        bodyColor: '#f0f6fc',
+                        borderColor: chartColor + '80',
+                        borderWidth: 1,
+                        padding: 12,
+                        displayColors: false,
+                        callbacks: {
+                            title: (items) => {
+                                const idx = items[0].dataIndex;
+                                const label = chartData.labels[idx];
+                                return new Date(label).toLocaleString('ru-RU');
+                            },
+                            label: (item) => {
+                                const value = item.parsed.y;
+                                const percent = (value * 100).toFixed(1) + '%';
+                                return `Цена: ${percent}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#888',
+                            maxTicksLimit: 6,
+                            maxRotation: 0,
+                            callback: (val, index) => {
+                                const label = chartData.labels[index];
+                                if (!label) return '';
+                                const date = new Date(label);
+                                return date.toLocaleDateString('ru-RU', { 
+                                    day: 'numeric', 
+                                    hour: '2-digit' 
+                                });
+                            }
+                        }
+                    },
+                    y: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#888',
+                            callback: (value) => (value * 100).toFixed(0) + '%'
+                        },
+                        min: Math.max(0, (chartData.firstPrice || 0.5) - 0.3),
+                        max: Math.min(1, (chartData.firstPrice || 0.5) + 0.3)
+                    }
+                }
+            }
+        });
+
+        console.log('✅ [PolymarketChart] Chart rendered successfully');
+
+        // Setup timeframe buttons
+        document.querySelectorAll('.timeframe-btn').forEach(btn => {
+            btn.onclick = async () => {
+                document.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentChartInterval = btn.dataset.interval;
+
+                console.log('📊 [PolymarketChart] Changing interval to:', currentChartInterval);
+                
+                // Перезагружаем данные для нового интервала
+                await renderPolymarketChart(eventId, event, options);
+            };
+        });
+
+    } catch (error) {
+        console.error('❌ [PolymarketChart] Error loading chart:', error);
+        
+        // Показываем ошибку
+        if (chartContainer) {
+            chartContainer.innerHTML = `
+                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); text-align: center; padding: 20px;">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px; opacity: 0.5;">
+                        <circle cx="12" cy="12" r="10"/>
+                        <path d="M12 8v4M12 16h.01"/>
+                    </svg>
+                    <div style="font-size: 14px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">Ошибка загрузки графика</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">${error.message || 'Неизвестная ошибка'}</div>
+                </div>
+            `;
+        }
+    }
 }
 
 function renderRealtimeChart(canvas, binanceSymbol, options) {
