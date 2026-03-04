@@ -179,58 +179,7 @@ def parse_candle_data(raw_candles: List[List]) -> List[CandleData]:
     return candles
 
 
-def generate_synthetic_candles(
-    current_price: float,
-    volatility: float = 0.05,
-    limit: int = 168
-) -> List[CandleData]:
-    """
-    Generate synthetic candle data when API is unavailable
 
-    Uses random walk with drift to simulate price movement
-
-    Args:
-        current_price: Current market price
-        volatility: Price volatility (0-1)
-        limit: Number of candles to generate
-
-    Returns:
-        List of synthetic CandleData objects
-    """
-    import random
-
-    candles = []
-    now = datetime.utcnow()
-
-    # Start from a price and walk backwards
-    price = current_price
-    base_time = now.timestamp() * 1000
-
-    for i in range(limit, 0, -1):
-        # Random walk
-        change = random.uniform(-volatility, volatility)
-        open_price = price
-        close_price = price * (1 + change)
-
-        # High/Low based on range
-        high_price = max(open_price, close_price) * (1 + random.uniform(0, volatility / 2))
-        low_price = min(open_price, close_price) * (1 - random.uniform(0, volatility / 2))
-
-        # Volume (random)
-        volume = random.uniform(100, 10000)
-
-        candles.append(CandleData(
-            timestamp=int(base_time - (i * 3600000)),  # Hourly candles
-            open=open_price,
-            high=high_price,
-            low=low_price,
-            close=close_price,
-            volume=volume
-        ))
-
-        price = close_price
-
-    return candles
 
 
 def calculate_price_stats(candles: List[CandleData]) -> Dict[str, float]:
@@ -280,7 +229,8 @@ async def get_market_chart(
     market_id: str,
     outcome: str = Query(default="Yes", description="Outcome name"),
     resolution: str = Query(default="hour", description="Resolution: minute, hour, day, week"),
-    limit: int = Query(default=168, ge=1, le=1000, description="Number of candles")
+    limit: int = Query(default=168, ge=1, le=1000, description="Number of candles"),
+    db: Session = Depends(get_db)
 ):
     """
     Get chart history for a Polymarket market
@@ -327,34 +277,60 @@ async def get_market_chart(
     # Fallback: Try to get from local PriceHistory
     try:
         from sqlalchemy import desc
-        # This would require DB session - skip for now
-        logger.warning(f"No Polymarket data, would fallback to DB history")
-    except Exception:
-        pass
+        
+        event = db.query(Event).filter(Event.polymarket_id == market_id).first()
+        if not event:
+            event = db.query(Event).filter(Event.id == market_id).first()
+            
+        if event:
+            option_idx = 0
+            for opt in event.event_options:
+                if opt.option_text.lower() == outcome.lower():
+                    option_idx = opt.option_index
+                    break
 
-    # Final fallback: Generate synthetic data
-    logger.warning(f"⚠️ Using synthetic data for {market_id}")
+            history_records = db.query(PriceHistory).filter(
+                PriceHistory.event_id == event.id,
+                PriceHistory.option_index == option_idx
+            ).order_by(desc(PriceHistory.timestamp)).limit(limit).all()
 
-    # Get current price from event_options if possible
-    current_price = 0.5  # Default
-    # In production, query the database for current price
+            if history_records:
+                history_records.reverse()
+                
+                db_candles = []
+                for rec in history_records:
+                    ts = int(rec.timestamp.timestamp() * 1000)
+                    db_candles.append(CandleData(
+                        timestamp=ts,
+                        open=rec.price,
+                        high=rec.price,
+                        low=rec.price,
+                        close=rec.price,
+                        volume=rec.volume or 0.0
+                    ))
 
-    synthetic_candles = generate_synthetic_candles(current_price, volatility=0.03, limit=limit)
-    stats = calculate_price_stats(synthetic_candles)
+                stats = calculate_price_stats(db_candles)
+                logger.info(f"✅ Fetched {len(db_candles)} DB candles for custom event {market_id}")
 
-    return ChartHistoryResponse(
-        market_id=market_id,
-        outcome=outcome,
-        resolution=resolution,
-        candles=synthetic_candles,
-        labels=[datetime.fromtimestamp(c.timestamp / 1000).isoformat() for c in synthetic_candles],
-        prices=[c.close for c in synthetic_candles],
-        first_price=stats["first_price"],
-        last_price=stats["last_price"],
-        price_change=stats["price_change"],
-        cached=False,
-        source="synthetic"
-    )
+                return ChartHistoryResponse(
+                    market_id=market_id,
+                    outcome=outcome,
+                    resolution=resolution,
+                    candles=db_candles,
+                    labels=[datetime.fromtimestamp(c.timestamp / 1000).isoformat() for c in db_candles],
+                    prices=[c.close for c in db_candles],
+                    first_price=stats["first_price"],
+                    last_price=stats["last_price"],
+                    price_change=stats["price_change"],
+                    cached=False,
+                    source="local_db"
+                )
+
+    except Exception as e:
+        logger.error(f"Error fetching DB history fallback: {e}")
+
+    # Final fallback: Raise 404 as we don't have fake data anymore
+    raise HTTPException(status_code=404, detail="No historical chart data found for this market.")
 
 
 @router.get("/{market_id}/stats", response_model=ChartStatsResponse)

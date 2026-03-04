@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <title>Predict - Predictions Market</title>
 </head>
 <body>
@@ -337,7 +337,7 @@
                                 <span>🔄 Обновлено только что</span>
                             </div>
                         </div>
-                        <canvas id="event-chart-canvas"></canvas>
+                        <div id="event-chart-canvas" style="width: 100%; height: 300px;"></div>
                         <div class="event-chart-timeframe" id="event-chart-timeframe" style="display: none;">
                             <button class="timeframe-btn" data-interval="1m">1м</button>
                             <button class="timeframe-btn" data-interval="5m">5м</button>

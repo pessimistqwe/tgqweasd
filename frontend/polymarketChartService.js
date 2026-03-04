@@ -138,9 +138,9 @@ class PolymarketChartService {
         // ПРИОРИТЕТ 1: Backend API (наш proxy)
         try {
             console.log('🔄 [PolymarketChart] Attempt 1: Backend API (/api/polymarket/chart)');
-            
+
             const backendUrl = `/api/polymarket/chart/${encodeURIComponent(marketId)}?outcome=${encodeURIComponent(normalizedOutcome)}&resolution=${resolution}&limit=${polymarketLimit}`;
-            
+
             const controller = new AbortController();
             const timeoutId = setTimeout(() => {
                 console.log('⏱️ [PolymarketChart] Backend request timeout');
@@ -254,15 +254,15 @@ class PolymarketChartService {
         // ПРИОРИТЕТ 3: Fallback на локальную базу данных (через backend)
         try {
             console.log('🔄 [PolymarketChart] Attempt 3: Local DB fallback');
-            
+
             // Пытаемся получить данные из локальной БД через backend
             // Это работает если данные были ранее синхронизированы
             const response = await fetch(`/events/polymarket/${marketId}/chart?outcome=${encodeURIComponent(normalizedOutcome)}`);
-            
+
             if (response.ok) {
                 const data = await response.json();
                 console.log('✅ [PolymarketChart] Local DB fallback success');
-                
+
                 const result = {
                     labels: data.labels || [],
                     prices: data.prices || [],
@@ -271,7 +271,7 @@ class PolymarketChartService {
                     lastPrice: data.last_price || 0,
                     source: 'local_db'
                 };
-                
+
                 saveToPolymarketCache(cacheKey, result);
                 return result;
             }
@@ -279,82 +279,21 @@ class PolymarketChartService {
             console.warn('⚠️ [PolymarketChart] Local DB fallback failed');
         }
 
-        // ПРИОРИТЕТ 4: Генерация синтетических данных (последний fallback)
-        console.warn('⚠️ [PolymarketChart] All sources failed, generating synthetic data');
-        return this.generateSyntheticData(marketId, outcome, resolution, polymarketLimit);
+        // ПРИОРИТЕТ 4: Данные недоступны (Синтетические данные удалены)
+        console.warn('⚠️ [PolymarketChart] All sources failed, no data available');
+        throw new Error("Исторические данные графика недоступны для данного рынка.");
     }
 
-    /**
-     * Генерирует синтетические данные когда API недоступен
-     */
-    generateSyntheticData(marketId, outcome, resolution, limit) {
-        console.log('🎭 [PolymarketChart] Generating synthetic data for', marketId);
 
-        // Используем hash от marketId для детерминированной "случайности"
-        const seed = this.hashString(marketId + outcome);
-        const basePrice = 0.5 + (seed % 100) / 1000;  // 0.5-0.6 диапазон
-        const volatility = 0.02 + (seed % 50) / 1000;  // 2-7% волатильность
-
-        const candles = [];
-        const now = Date.now();
-        const intervalMs = this.getIntervalMs(resolution);
-
-        let price = basePrice;
-
-        for (let i = limit - 1; i >= 0; i--) {
-            const timestamp = now - (i * intervalMs);
-            
-            // Random walk с drift
-            const change = (Math.random() - 0.5) * 2 * volatility;
-            const open = price;
-            const close = Math.max(0.01, Math.min(0.99, price * (1 + change)));
-            
-            const high = Math.max(open, close) * (1 + Math.random() * volatility / 2);
-            const low = Math.min(open, close) * (1 - Math.random() * volatility / 2);
-            const volume = 100 + Math.random() * 1000;
-
-            candles.push({
-                timestamp,
-                open,
-                high,
-                low,
-                close,
-                volume
-            });
-
-            price = close;
-        }
-
-        const labels = candles.map(c => new Date(c.timestamp).toISOString());
-        const prices = candles.map(c => c.close);
-        const firstPrice = prices[0];
-        const lastPrice = prices[prices.length - 1];
-        const priceChange = firstPrice > 0 ? ((lastPrice - firstPrice) / firstPrice * 100) : 0;
-
-        const result = {
-            labels,
-            prices,
-            candles,
-            firstPrice,
-            lastPrice,
-            priceChange,
-            source: 'synthetic'
-        };
-
-        console.log('🎭 [PolymarketChart] Generated', candles.length, 'synthetic candles');
-        saveToPolymarketCache(cacheKey, result);
-
-        return result;
-    }
 
     /**
      * Нормализует название исхода
      */
     normalizeOutcome(outcome) {
         if (!outcome) return 'Yes';
-        
+
         const normalized = outcome.trim();
-        
+
         // Polymarket использует точные названия исходов
         return normalized;
     }
@@ -391,7 +330,7 @@ class PolymarketChartService {
     async getMarketDetails(marketId) {
         try {
             console.log('📊 [PolymarketChart] Fetching market details for', marketId);
-            
+
             const response = await fetch(`${POLYMARKET_MARKETS_URL}?ids=${marketId}`, {
                 headers: POLYMARKET_HEADERS
             });
@@ -402,7 +341,7 @@ class PolymarketChartService {
 
             const data = await response.json();
             const markets = data.markets || data.events || [];
-            
+
             return markets.find(m => m.id === marketId || m.conditionId === marketId) || null;
         } catch (error) {
             console.error('❌ [PolymarketChart] Market details error:', error.message);

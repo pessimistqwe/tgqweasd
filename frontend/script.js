@@ -854,7 +854,7 @@ const categoryNames = {
     'other': 'Other'
 };
 
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     // Безопасная инициализация Telegram WebApp
     try {
         if (tg && typeof tg.expand === 'function') {
@@ -888,7 +888,7 @@ document.addEventListener('DOMContentLoaded', function() {
             loader.classList.add('hidden');
         }
     };
-    
+
     // Скрываем через 1 секунду (основной)
     setTimeout(hideLoader, 1000);
     // Дополнительные таймеры на случай если первый не сработал
@@ -996,9 +996,9 @@ function getUserId() {
 }
 
 function getUsername() {
-    return tg.initDataUnsafe?.user?.username || 
-           tg.initDataUnsafe?.user?.first_name || 
-           'User';
+    return tg.initDataUnsafe?.user?.username ||
+        tg.initDataUnsafe?.user?.first_name ||
+        'User';
 }
 
 async function checkAdminStatus() {
@@ -1006,7 +1006,7 @@ async function checkAdminStatus() {
         const userId = getUserId();
         const data = await apiRequest(`/admin/check/${userId}`);
         isAdmin = data.is_admin;
-        
+
         if (isAdmin) {
             document.getElementById('admin-menu-item').style.display = 'flex';
         }
@@ -1064,7 +1064,7 @@ async function loadEvents(silent = false) {
 
         console.log('📡 Fetching events from:', url);
         const startTime = Date.now();
-        
+
         const data = await apiRequest(url);
         const loadTime = Date.now() - startTime;
         console.log(`⏱️ Events loaded in ${loadTime}ms, count:`, data?.length || 0);
@@ -1139,7 +1139,7 @@ function createEventCard(event) {
     const totalPool = formatNumber(event.total_pool || 0);
     const categoryName = categoryNames[event.category] || 'Other';
     const categoryInitial = categoryName.charAt(0).toUpperCase();
-    
+
     // Форматируем время окончания в МСК
     const endTimeMSK = event.end_time ? formatTimeMSK(event.end_time) : '';
 
@@ -1205,7 +1205,7 @@ function createOptionButton(eventId, option, idx, totalOptions) {
     const probability = option.probability || 50;
     const isYes = option.text.toLowerCase() === 'yes' || idx === 0;
     const optionClass = totalOptions === 2 ? (isYes ? 'yes-option' : 'no-option') : '';
-    
+
     return `
         <button class="option-btn ${optionClass}" 
                 style="--probability: ${probability}%"
@@ -1259,13 +1259,13 @@ async function loadUserBalance() {
 // Load profile with Telegram data
 function loadProfile() {
     const user = tg.initDataUnsafe?.user;
-    
+
     if (!user) {
         // Telegram not available, use defaults
         const displayName = getUsername();
         document.getElementById('profile-name').textContent = displayName;
         document.getElementById('profile-telegram-id').textContent = `ID: ${getUserId()}`;
-        
+
         const avatarEl = document.getElementById('profile-avatar');
         avatarEl.textContent = displayName.charAt(0).toUpperCase();
         return;
@@ -1301,7 +1301,7 @@ function loadProfile() {
 function renderPositions(positions) {
     // Check if we have a positions container in profile, if not create one
     let container = document.getElementById('positions-container');
-    
+
     if (!container) {
         // Create positions section in profile if it doesn't exist
         const profileCard = document.querySelector('.profile-card');
@@ -1317,9 +1317,9 @@ function renderPositions(positions) {
             container = document.getElementById('positions-container');
         }
     }
-    
+
     if (!container) return;
-    
+
     if (!positions || positions.length === 0) {
         container.innerHTML = `
             <div class="empty-state-small" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 14px;">
@@ -1328,12 +1328,12 @@ function renderPositions(positions) {
         `;
         return;
     }
-    
+
     const html = positions.map(pos => {
         const profitClass = pos.profit_loss >= 0 ? 'amount-positive' : 'amount-negative';
         const profitSign = pos.profit_loss >= 0 ? '+' : '';
         const percentClass = pos.profit_loss_percent >= 0 ? 'status-approved' : 'status-rejected';
-        
+
         return `
             <div class="position-item" style="display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-md); margin-bottom: 10px;">
                 <div style="display: flex; justify-content: space-between; align-items: start;">
@@ -1364,13 +1364,13 @@ function renderPositions(positions) {
             </div>
         `;
     }).join('');
-    
+
     container.innerHTML = html;
 }
 
 function renderTransactions(transactions) {
     const container = document.getElementById('transactions-container');
-    
+
     if (!transactions || transactions.length === 0) {
         container.innerHTML = `
             <div class="empty-transactions">
@@ -1379,22 +1379,22 @@ function renderTransactions(transactions) {
         `;
         return;
     }
-    
+
     const html = transactions.map(tx => {
         const isDeposit = tx.type === 'deposit';
         const isWithdraw = tx.type === 'withdrawal';
-        const statusClass = tx.status === 'completed' ? 'status-completed' : 
-                           tx.status === 'pending' ? 'status-pending' :
-                           tx.status === 'approved' ? 'status-approved' :
-                           tx.status === 'rejected' ? 'status-rejected' : '';
-        
-        const icon = isDeposit ? 
+        const statusClass = tx.status === 'completed' ? 'status-completed' :
+            tx.status === 'pending' ? 'status-pending' :
+                tx.status === 'approved' ? 'status-approved' :
+                    tx.status === 'rejected' ? 'status-rejected' : '';
+
+        const icon = isDeposit ?
             `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7-7 7 7"/></svg>` :
             `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7 7 7-7"/></svg>`;
-        
+
         const amountClass = isDeposit ? 'amount-positive' : 'amount-negative';
         const amountPrefix = isDeposit ? '+' : '-';
-        
+
         return `
             <div class="transaction-item">
                 <div class="transaction-icon ${isDeposit ? 'deposit' : 'withdraw'}">
@@ -1410,7 +1410,7 @@ function renderTransactions(transactions) {
             </div>
         `;
     }).join('');
-    
+
     container.innerHTML = html;
 }
 
@@ -1432,17 +1432,17 @@ function setDepositAmount(amount) {
 
 async function processDeposit() {
     const amount = parseFloat(document.getElementById('deposit-amount').value);
-    
+
     if (!amount || amount < 1) {
         showNotification('Minimum deposit is 1 USDT', 'error');
         return;
     }
-    
+
     try {
         const btn = document.querySelector('#deposit-modal .modal-btn.confirm');
         btn.textContent = 'Processing...';
         btn.disabled = true;
-        
+
         const result = await apiRequest('/wallet/deposit', {
             method: 'POST',
             body: JSON.stringify({
@@ -1451,7 +1451,7 @@ async function processDeposit() {
                 asset: 'USDT'
             })
         });
-        
+
         if (result.pay_url) {
             // Open CryptoBot payment link
             if (tg.openLink) {
@@ -1461,12 +1461,12 @@ async function processDeposit() {
             }
             showNotification('Opening payment page...', 'info');
         }
-        
+
         closeDepositModal();
-        
+
         // Refresh balance after a delay
         setTimeout(loadUserBalance, 3000);
-        
+
     } catch (error) {
         showNotification(error.message || 'Deposit error', 'error');
     } finally {
@@ -1492,22 +1492,22 @@ function closeWithdrawModal() {
 
 async function processWithdraw() {
     const amount = parseFloat(document.getElementById('withdraw-amount').value);
-    
+
     if (!amount || amount < 5) {
         showNotification('Minimum withdrawal is 5 USDT', 'error');
         return;
     }
-    
+
     if (amount > userBalance) {
         showNotification('Insufficient balance', 'error');
         return;
     }
-    
+
     try {
         const btn = document.querySelector('#withdraw-modal .modal-btn.confirm');
         btn.textContent = 'Processing...';
         btn.disabled = true;
-        
+
         const result = await apiRequest('/wallet/withdraw', {
             method: 'POST',
             body: JSON.stringify({
@@ -1516,15 +1516,15 @@ async function processWithdraw() {
                 asset: 'USDT'
             })
         });
-        
+
         showNotification('Withdrawal request submitted! Waiting for approval.', 'success');
         closeWithdrawModal();
         loadUserBalance();
-        
+
         if (tg.HapticFeedback) {
             tg.HapticFeedback.notificationOccurred('success');
         }
-        
+
     } catch (error) {
         showNotification(error.message || 'Withdrawal error', 'error');
     } finally {
@@ -1543,25 +1543,25 @@ function openBetModal(eventId, optionIndex, optionText) {
     const title = eventCard.querySelector('.event-title').textContent;
 
     document.getElementById('modal-title').textContent = title;
-    
+
     // Определяем цвет кнопки по тексту варианта
     const optionLower = optionText.toLowerCase();
     const isYes = optionLower.includes('yes') || optionLower.includes('да') || optionLower.includes('up') || optionLower.includes('вверх');
     const isNo = optionLower.includes('no') || optionLower.includes('нет') || optionLower.includes('down') || optionLower.includes('вниз');
-    
+
     let buttonClass = 'confirm';
     if (isYes) buttonClass = 'yes-btn';
     if (isNo) buttonClass = 'no-btn';
-    
+
     document.getElementById('modal-option').textContent = `${tr('predict')}: ${optionText}`;
-    
+
     // Обновляем класс кнопки
     const confirmBtn = document.querySelector('#bet-modal .modal-btn.confirm');
     if (confirmBtn) {
         confirmBtn.className = `modal-btn ${buttonClass}`;
         confirmBtn.textContent = tr('place_bet');
     }
-    
+
     document.getElementById('bet-modal').classList.remove('hidden');
     document.getElementById('points-input').value = '';
     document.getElementById('points-input').focus();
@@ -1591,9 +1591,9 @@ async function calculateDynamicOdds(prices, symbol = null) {
 
     // ⚠️ ВСЕГДА используем последние 5 свечей 1m интервала для расчёта 5-минутной волатильности
     // Даже если график показывает 1h/4h, волатильность считаем по реальным 5 минутам
-    
+
     let recentPrices = prices;
-    
+
     // Если передан символ, загружаем свежие 1m данные для точного расчёта
     if (symbol && window.binanceService) {
         try {
@@ -1607,7 +1607,7 @@ async function calculateDynamicOdds(prices, symbol = null) {
             console.warn('⚠️ [Prediction] Не удалось загрузить 1m данные, используем fallback:', e.message);
         }
     }
-    
+
     // Если не удалось загрузить 1m данные, используем последние 5 цен из переданных
     if (recentPrices.length > 5) {
         recentPrices = recentPrices.slice(-5);
@@ -1654,8 +1654,8 @@ async function calculateDynamicOdds(prices, symbol = null) {
     downOdds = Math.max(1.1, Math.min(5.0, downOdds));
 
     console.log('💰 [Prediction] Коэффициенты:', { up: upOdds.toFixed(2), down: downOdds.toFixed(2) },
-                '| волатильность:', (volatility * 100).toFixed(2) + '%',
-                '| изменение:', (priceChange * 100).toFixed(2) + '%');
+        '| волатильность:', (volatility * 100).toFixed(2) + '%',
+        '| изменение:', (priceChange * 100).toFixed(2) + '%');
 
     return {
         up: parseFloat(upOdds.toFixed(2)),
@@ -1666,7 +1666,7 @@ async function calculateDynamicOdds(prices, symbol = null) {
 function updatePredictionOdds(prices, symbol = null) {
     // Если символ не передан, используем текущий Binance символ
     const binanceSymbol = symbol || currentBinanceSymbol;
-    
+
     // Вызываем async функцию и обновляем когда данные готовы
     calculateDynamicOdds(prices, binanceSymbol).then(odds => {
         currentOdds = odds;
@@ -1685,11 +1685,11 @@ function updatePredictionOdds(prices, symbol = null) {
 
 function openPredictionBet(direction) {
     currentPredictionType = direction;
-    
+
     const modal = document.getElementById('bet-modal');
     const odds = currentOdds[direction];
     const potentialWin = (odds * 100).toFixed(0);
-    
+
     document.getElementById('modal-title').textContent = direction === 'up' ? 'Прогноз: ВВЕРХ' : 'Прогноз: ВНИЗ';
     document.getElementById('modal-option').innerHTML = `
         Цена ${direction === 'up' ? 'вырастет' : 'упадет'} в ближайшие 5 минут<br>
@@ -1698,7 +1698,7 @@ function openPredictionBet(direction) {
         </span>
     `;
     document.getElementById('points-input').value = '';
-    
+
     modal.classList.remove('hidden');
 }
 
@@ -1765,19 +1765,19 @@ function openSellModal(eventId, optionIndex, optionText, shares, currentPrice) {
     currentSellOptionIndex = optionIndex;
     currentSellShares = shares;
     currentSellPrice = currentPrice;
-    
+
     const modal = document.getElementById('sell-modal');
     if (!modal) return;
-    
+
     document.getElementById('sell-option-text').textContent = optionText;
     document.getElementById('sell-shares-value').textContent = shares.toFixed(2);
     document.getElementById('sell-price-value').textContent = currentPrice.toFixed(2);
     document.getElementById('sell-current-value').textContent = (shares * currentPrice).toFixed(2);
     document.getElementById('sell-shares-input').value = shares.toFixed(2);
     document.getElementById('sell-shares-input').max = shares;
-    
+
     updateSellProceeds(shares, currentPrice);
-    
+
     modal.classList.remove('hidden');
 }
 
@@ -1796,17 +1796,17 @@ function updateSellProceeds(shares, price) {
 
 async function confirmSell() {
     const sharesToSell = parseFloat(document.getElementById('sell-shares-input').value) || 0;
-    
+
     if (sharesToSell <= 0 || sharesToSell > currentSellShares) {
         showNotification('Invalid shares amount', 'error');
         return;
     }
-    
+
     try {
         const confirmBtn = document.querySelector('#sell-modal .modal-btn.confirm');
         confirmBtn.textContent = 'Selling...';
         confirmBtn.disabled = true;
-        
+
         const result = await apiRequest('/sell', {
             method: 'POST',
             body: JSON.stringify({
@@ -1816,13 +1816,13 @@ async function confirmSell() {
                 shares: sharesToSell
             })
         });
-        
-        showNotification(`Sold ${sharesToSell.toFixed(2)} shares for ${result.payout.toFixed(2)} USDT! P/L: ${result.profit_loss.toFixed(2)} USDT`, 
+
+        showNotification(`Sold ${sharesToSell.toFixed(2)} shares for ${result.payout.toFixed(2)} USDT! P/L: ${result.profit_loss.toFixed(2)} USDT`,
             result.profit_loss >= 0 ? 'success' : 'info');
-        
+
         closeSellModal();
         loadUserBalance();
-        
+
         if (tg.HapticFeedback) {
             tg.HapticFeedback.notificationOccurred('success');
         }
@@ -1844,20 +1844,20 @@ async function confirmSell() {
 
 async function loadAdminData() {
     if (!isAdmin) return;
-    
+
     try {
         const userId = getUserId();
-        
+
         // Load stats
         const stats = await apiRequest(`/admin/stats?admin_telegram_id=${userId}`);
         document.getElementById('stat-users').textContent = stats.total_users || 0;
         document.getElementById('stat-events').textContent = stats.total_events || 0;
         document.getElementById('stat-pending').textContent = stats.pending_withdrawals || 0;
-        
+
         // Load pending withdrawals
         const withdrawals = await apiRequest(`/admin/withdrawals?admin_telegram_id=${userId}`);
         renderPendingWithdrawals(withdrawals.withdrawals || []);
-        
+
     } catch (error) {
         console.error('Admin data error:', error);
         showNotification('Error loading admin data', 'error');
@@ -1866,12 +1866,12 @@ async function loadAdminData() {
 
 function renderPendingWithdrawals(withdrawals) {
     const container = document.getElementById('pending-withdrawals-container');
-    
+
     if (!withdrawals || withdrawals.length === 0) {
         container.innerHTML = `<div class="empty-state-small">No pending withdrawals</div>`;
         return;
     }
-    
+
     const html = withdrawals.map(w => `
         <div class="withdrawal-card" onclick="openAdminActionModal(${w.id}, ${w.user_telegram_id}, '${w.username || 'Unknown'}', ${w.amount}, '${w.asset}')">
             <div class="withdrawal-user">
@@ -1887,13 +1887,13 @@ function renderPendingWithdrawals(withdrawals) {
             </div>
         </div>
     `).join('');
-    
+
     container.innerHTML = html;
 }
 
 function openAdminActionModal(id, telegramId, username, amount, asset) {
     currentWithdrawalId = id;
-    
+
     document.getElementById('withdrawal-details').innerHTML = `
         <div class="detail-row">
             <span class="detail-label">User:</span>
@@ -1904,7 +1904,7 @@ function openAdminActionModal(id, telegramId, username, amount, asset) {
             <span class="detail-value">${amount.toFixed(2)} ${asset}</span>
         </div>
     `;
-    
+
     document.getElementById('admin-action-modal').classList.remove('hidden');
 }
 
@@ -1923,10 +1923,10 @@ async function rejectWithdrawal() {
 
 async function processWithdrawalAction(action) {
     if (!currentWithdrawalId) return;
-    
+
     try {
         const comment = document.getElementById('admin-comment').value;
-        
+
         await apiRequest('/admin/withdrawal/action', {
             method: 'POST',
             body: JSON.stringify({
@@ -1936,7 +1936,7 @@ async function processWithdrawalAction(action) {
                 comment: comment || null
             })
         });
-        
+
         showNotification(`Withdrawal ${action}ed successfully`, 'success');
         closeAdminActionModal();
         loadAdminData();
@@ -1971,7 +1971,7 @@ function renderUsersList(users) {
     const html = users.map(user => {
         const avatarLetter = (user.username || 'U').charAt(0).toUpperCase();
         const balance = user.balance_usdt || 0;
-        
+
         return `
             <div class="user-card">
                 <div class="user-info">
@@ -2042,10 +2042,10 @@ async function processAddBalance() {
 
         showNotification(`Successfully added $${amount.toFixed(2)} to user balance`, 'success');
         closeAddBalanceModal();
-        
+
         // Refresh users list if modal is still open
         showUsersList();
-        
+
     } catch (error) {
         showNotification(error.message || 'Error adding balance', 'error');
     }
@@ -2056,11 +2056,11 @@ async function processAddBalance() {
 function showSection(sectionName) {
     document.querySelectorAll('.section').forEach(section => section.classList.add('hidden'));
     document.getElementById(`${sectionName}-section`).classList.remove('hidden');
-    
+
     document.querySelectorAll('.nav-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.section === sectionName);
     });
-    
+
     // Load data for specific sections
     if (sectionName === 'events') {
         loadEvents();
@@ -2313,7 +2313,7 @@ function loadActivityData() {
 
     // Generate mock activity data (replace with API call later)
     const activities = generateMockActivity();
-    
+
     container.innerHTML = activities.map(act => `
         <div class="activity-item">
             <div class="activity-left">
@@ -2414,9 +2414,9 @@ function loadHoldingsData() {
 function toggleDescription() {
     const descContent = document.getElementById('event-description');
     const toggleBtn = document.querySelector('.description-toggle');
-    
+
     if (!descContent || !toggleBtn) return;
-    
+
     const isHidden = descContent.style.display === 'none';
     descContent.style.display = isHidden ? 'block' : 'none';
     toggleBtn.classList.toggle('active', isHidden);
@@ -2433,7 +2433,7 @@ function loadCommentsForEvent(eventId) {
         // Демо комментарии для примера
         const user = tg.initDataUnsafe?.user;
         const displayName = user?.first_name || 'User';
-        
+
         eventComments = [
             {
                 id: 1,
@@ -2455,33 +2455,33 @@ function loadCommentsForEvent(eventId) {
             }
         ];
     }
-    
+
     renderComments();
 }
 
 function renderComments() {
     const commentsList = document.getElementById('comments-list');
     const commentsCount = document.getElementById('comments-count');
-    
+
     if (!commentsList || !commentsCount) return;
-    
+
     commentsCount.textContent = eventComments.length;
-    
+
     if (eventComments.length === 0) {
         commentsList.innerHTML = '<div class="empty-comments">No comments yet. Be the first!</div>';
         return;
     }
-    
+
     // Сортируем по времени (новые сверху)
     const sortedComments = [...eventComments].sort((a, b) => b.timestamp - a.timestamp);
-    
+
     const html = sortedComments.map(comment => {
         const timeAgo = formatTimeAgo(comment.timestamp);
         const avatarInitial = (comment.username || 'U').charAt(0).toUpperCase();
-        const avatarHtml = comment.avatar 
+        const avatarHtml = comment.avatar
             ? `<img src="${comment.avatar}" alt="Avatar">`
             : avatarInitial;
-        
+
         return `
             <div class="comment-item">
                 <div class="comment-avatar">
@@ -2497,13 +2497,13 @@ function renderComments() {
             </div>
         `;
     }).join('');
-    
+
     commentsList.innerHTML = html;
 }
 
 function formatTimeAgo(timestamp) {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
-    
+
     if (seconds < 60) return 'Just now';
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
@@ -2513,16 +2513,16 @@ function formatTimeAgo(timestamp) {
 function addComment() {
     const commentInput = document.getElementById('comment-input');
     const text = commentInput.value.trim();
-    
+
     if (!text) {
         showNotification('Please enter a comment', 'error');
         return;
     }
-    
+
     const user = tg.initDataUnsafe?.user;
     const displayName = user?.first_name || 'User';
     const avatarUrl = user?.photo_url || null;
-    
+
     const newComment = {
         id: Date.now(),
         user_id: user?.id || 12345,
@@ -2532,21 +2532,21 @@ function addComment() {
         timestamp: Date.now(),
         likes: 0
     };
-    
+
     eventComments.push(newComment);
-    
+
     // Сохраняем в localStorage
     if (currentEventIdForComments) {
         localStorage.setItem(`event_${currentEventIdForComments}_comments`, JSON.stringify(eventComments));
     }
-    
+
     commentInput.value = '';
     renderComments();
-    
+
     if (tg.HapticFeedback) {
         tg.HapticFeedback.impactOccurred('light');
     }
-    
+
     showNotification('Comment added!', 'success');
 }
 
@@ -2556,67 +2556,52 @@ function openBetModal(title, option, probability) {
     document.getElementById('bet-modal').classList.remove('hidden');
 }
 
-// Chart rendering using Chart.js (Polymarket style) with gradient
+// Chart rendering using Lightweight Charts
 let eventChart = null;
+let currentCandleSeries = null;
 let chartUpdateInterval = null; // Auto-update interval
 
 async function renderEventChart(eventId, options) {
     console.log('📊 [Chart] === ЗАПУСК renderEventChart ===');
-    console.log('📊 [Chart] Event ID:', eventId);
-    console.log('📊 [Chart] Options count:', options?.length);
-    
-    const canvas = document.getElementById('event-chart-canvas');
-    if (!canvas) {
+    const chartContainer = document.getElementById('event-chart-canvas');
+    if (!chartContainer) {
         console.error('❌ [Chart] Canvas элемент не найден!');
         return;
     }
-    console.log('📊 [Chart] Canvas найден:', canvas);
 
-    // Clear any existing update interval
     if (chartUpdateInterval) {
         clearInterval(chartUpdateInterval);
         chartUpdateInterval = null;
     }
 
-    // Destroy existing chart
     if (eventChart) {
-        eventChart.destroy();
+        eventChart.remove();
         eventChart = null;
+        currentCandleSeries = null;
     }
 
-    // Get event details to determine type
-    let eventType = 'crypto'; // default
+    let eventType = 'crypto';
     try {
         const event = await apiRequest(`/events/${eventId}`);
-        console.log('📊 [Chart] Данные события:', event);
         if (event && event.category) {
             eventType = event.category;
         }
     } catch (e) {
         console.error('❌ [Chart] Error loading event:', e);
-        console.log('⚠️ [Chart] Could not determine event type, using default');
     }
 
-    console.log('📊 [Chart] Тип события:', eventType);
-
-    // For sports and politics, show bet history instead of chart
     if (['sports', 'politics', 'pop_culture'].includes(eventType)) {
-        console.log('📊 [Chart] Показываем bet history для не-крипто события');
         renderBetHistory(eventId);
         return;
     }
 
-    // For crypto, business, science - show price chart
-    console.log('📊 [Chart] Показываем price chart для крипто события');
     renderPriceChart(eventId, options);
 }
 
-// Render bet history for sports/politics events
 async function renderBetHistory(eventId) {
     const chartContainer = document.getElementById('event-chart');
     if (!chartContainer) return;
 
-    // Сохраняем структуру контейнера для последующего восстановления графика
     const originalInnerHTML = chartContainer.innerHTML;
 
     try {
@@ -2627,7 +2612,6 @@ async function renderBetHistory(eventId) {
         }
 
         if (betHistory.length === 0) {
-            // No bets yet - show message
             chartContainer.innerHTML = `
                 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); text-align: center;">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px; opacity: 0.5;">
@@ -2640,7 +2624,6 @@ async function renderBetHistory(eventId) {
             return;
         }
 
-        // Render bet history list - оборачиваем в контейнер с классом для идентификации
         chartContainer.innerHTML = `
             <div class="bet-history-container" style="height: 100%; overflow-y: auto; padding: 8px;">
                 <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; padding: 8px 12px; margin-bottom: 8px;">
@@ -2667,135 +2650,79 @@ async function renderBetHistory(eventId) {
         `;
     } catch (e) {
         console.error('Error loading bet history:', e);
-        // Восстанавливаем оригинальную структуру при ошибке
         chartContainer.innerHTML = originalInnerHTML;
     }
 }
 
-// Render chart with REAL Binance WebSocket data - Polymarket/Binance Style
-// Используем модуль useBinanceWebSocket для загрузки истории и WebSocket
 let binanceWebSocket = null;
 let currentChartInterval = '15m';
 let chartPriceData = { firstPrice: 0, lastPrice: 0, symbol: null };
 let webSocketPriceBuffer = [];
 let webSocketUpdateTimeout = null;
-let currentChartLabels = [];
-let currentChartPrices = [];
-let chartYMin = null;
-let chartYMax = null;
-let currentBinanceSymbol = null; // Текущий символ Binance
-
-// Константы BINANCE_INTERVALS и CANDLE_LIMITS определены в binanceService.js
-// Используем глобальные переменные оттуда
+let currentChartData = [];
+let currentBinanceSymbol = null;
 
 async function renderPriceChart(eventId, options) {
-    console.log('📊 [Chart] === renderPriceChart: ЗАПУСК ===');
-    console.log('📊 [Chart] Event ID:', eventId);
-    
-    const canvas = document.getElementById('event-chart-canvas');
-    if (!canvas) {
-        console.error('❌ [Chart] Canvas не найден в renderPriceChart');
-        return;
-    }
+    const chartContainer = document.getElementById('event-chart-canvas');
+    if (!chartContainer) return;
 
-    console.log('📊 [Chart] Инициализация графика для события:', eventId);
-
-    // Закрываем предыдущее WebSocket соединение
     if (binanceWebSocket) {
         binanceWebSocket.close();
         binanceWebSocket = null;
     }
 
-    // Сбрасываем буферы и данные
     webSocketPriceBuffer = [];
-    currentChartLabels = [];
-    currentChartPrices = [];
-    chartYMin = null;
-    chartYMax = null;
+    currentChartData = [];
     chartPriceData = { firstPrice: 0, lastPrice: 0, symbol: null };
 
     let event = null;
     try {
         event = await apiRequest(`/events/${eventId}`);
-        console.log('📊 [Chart] Данные события:', event.title);
     } catch (e) {
-        console.error('❌ [Chart] Error loading event:', e);
         return;
     }
 
-    // Определяем символ Binance из названия события
     let binanceSymbol = null;
     const eventText = (event.title + ' ' + (event.description || '')).toLowerCase();
-
-    console.log('📊 [Chart] Анализ текста события:', eventText.substring(0, 100) + '...');
 
     for (const [key, symbol] of Object.entries(CRYPTO_SYMBOLS)) {
         if (eventText.includes(key)) {
             binanceSymbol = symbol;
-            console.log('📊 [Chart] Найден символ:', key, '→', symbol);
             break;
         }
     }
 
     if (!binanceSymbol) {
-        console.log('⚠️ [Chart] Binance symbol not found, trying Polymarket chart...');
-        // Пробуем использовать Polymarket chart для не-крипто событий
         renderPolymarketChart(eventId, event, options);
         return;
     }
 
     currentBinanceSymbol = binanceSymbol;
-    console.log('📊 [Chart] Запуск графика для:', binanceSymbol);
-
-    renderRealtimeChart(canvas, binanceSymbol, options);
+    renderRealtimeChart(chartContainer, binanceSymbol, options);
 }
 
-/**
- * Рендерит график используя Polymarket Candles API
- * Для событий которые не являются крипто-событиями
- */
 async function renderPolymarketChart(eventId, event, options) {
-    console.log('📊 [PolymarketChart] === renderPolymarketChart: ЗАПУСК ===');
-    console.log('📊 [PolymarketChart] Event ID:', eventId);
-    console.log('📊 [PolymarketChart] Event:', event.title);
-
-    const canvas = document.getElementById('event-chart-canvas');
-    const chartContainer = document.getElementById('event-chart');
+    const chartContainer = document.getElementById('event-chart-canvas');
     const chartTimeframe = document.getElementById('event-chart-timeframe');
     const chartInfo = document.getElementById('event-chart-info');
     const chartLiveBadge = document.getElementById('chart-live-badge');
+    const parent = document.getElementById('event-chart');
 
-    if (!canvas) {
-        console.error('❌ [PolymarketChart] Canvas не найден');
-        return;
-    }
+    if (!chartContainer) return;
 
-    // Показываем UI графика
     if (chartTimeframe) chartTimeframe.style.display = 'flex';
     if (chartInfo) chartInfo.style.display = 'block';
-    if (chartLiveBadge) chartLiveBadge.style.display = 'none'; // Polymarket не real-time
+    if (chartLiveBadge) chartLiveBadge.style.display = 'none';
 
-    // Устанавливаем размеры canvas
-    const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width = rect.width * window.devicePixelRatio;
-    canvas.height = rect.height * window.devicePixelRatio;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-
-    // Destroy existing chart
     if (eventChart) {
-        eventChart.destroy();
+        eventChart.remove();
         eventChart = null;
     }
 
-    // Получаем Polymarket ID из события
     const polymarketId = event.polymarket_id;
-    
     if (!polymarketId) {
-        console.warn('⚠️ [PolymarketChart] No Polymarket ID for this event');
-        // Показываем fallback
-        if (chartContainer) {
-            chartContainer.innerHTML = `
+        if (parent) {
+            parent.innerHTML = `
                 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); text-align: center; padding: 20px;">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px; opacity: 0.5;">
                         <circle cx="12" cy="12" r="10"/>
@@ -2809,20 +2736,12 @@ async function renderPolymarketChart(eventId, event, options) {
         return;
     }
 
-    // Используем первый option по умолчанию
     const selectedOption = options && options.length > 0 ? options[0] : null;
     const outcomeName = selectedOption?.text || selectedOption?.outcome || 'Yes';
 
-    console.log('📊 [PolymarketChart] Market ID:', polymarketId);
-    console.log('📊 [PolymarketChart] Outcome:', outcomeName);
-
-    // Показываем loading
     updateChartPriceDisplay(0.5, 0);
 
     try {
-        // Загружаем данные из Polymarket Chart API
-        console.log('📊 [PolymarketChart] Loading candles from Polymarket API...');
-        
         const chartData = await window.polymarketChartService.loadCandles(
             polymarketId,
             outcomeName,
@@ -2830,141 +2749,65 @@ async function renderPolymarketChart(eventId, event, options) {
             168
         );
 
-        console.log('📊 [PolymarketChart] Data loaded:', chartData);
-        console.log('📊 [PolymarketChart] Source:', chartData.source);
-        console.log('📊 [PolymarketChart] Candles count:', chartData.candles?.length || 0);
-        console.log('📊 [PolymarketChart] Price range:', chartData.firstPrice?.toFixed(3), '-', chartData.lastPrice?.toFixed(3));
-
-        // Обновляем UI с данными
         const priceChange = chartData.priceChange || 0;
         updateChartPriceDisplay(chartData.lastPrice || 0.5, priceChange);
 
-        // Рендерим график Chart.js
-        const chartColor = priceChange >= 0 ? '#10b981' : '#ef4444'; // Зеленый/Красный
+        const chartColor = priceChange >= 0 ? '#10b981' : '#ef4444';
 
-        eventChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: chartData.labels.map(ts => {
-                    const date = new Date(ts);
-                    return date.toLocaleDateString('ru-RU', { 
-                        day: 'numeric', 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
-                    });
-                }),
-                datasets: [{
-                    label: outcomeName,
-                    data: chartData.prices,
-                    borderColor: chartColor,
-                    borderWidth: 2,
-                    fill: true,
-                    backgroundColor: chartColor + '20', // 20% opacity
-                    tension: 0.1,
-                    pointRadius: 0,
-                    pointHoverRadius: 4,
-                    pointHoverBackgroundColor: '#fff',
-                    pointHoverBorderColor: chartColor,
-                    pointHoverBorderWidth: 2
-                }]
+        eventChart = LightweightCharts.createChart(chartContainer, {
+            layout: {
+                background: { type: 'solid', color: 'transparent' },
+                textColor: '#888',
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: false,
-                interaction: {
-                    intersect: false,
-                    mode: 'index',
-                    axis: 'x'
-                },
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: 'rgba(13, 17, 23, 0.98)',
-                        titleColor: chartColor,
-                        bodyColor: '#f0f6fc',
-                        borderColor: chartColor + '80',
-                        borderWidth: 1,
-                        padding: 12,
-                        displayColors: false,
-                        callbacks: {
-                            title: (items) => {
-                                const idx = items[0].dataIndex;
-                                const label = chartData.labels[idx];
-                                return new Date(label).toLocaleString('ru-RU');
-                            },
-                            label: (item) => {
-                                const value = item.parsed.y;
-                                const percent = (value * 100).toFixed(1) + '%';
-                                return `Цена: ${percent}`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.05)',
-                            drawBorder: false
-                        },
-                        ticks: {
-                            color: '#888',
-                            maxTicksLimit: 6,
-                            maxRotation: 0,
-                            callback: (val, index) => {
-                                const label = chartData.labels[index];
-                                if (!label) return '';
-                                const date = new Date(label);
-                                return date.toLocaleDateString('ru-RU', { 
-                                    day: 'numeric', 
-                                    hour: '2-digit' 
-                                });
-                            }
-                        }
-                    },
-                    y: {
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.05)',
-                            drawBorder: false
-                        },
-                        ticks: {
-                            color: '#888',
-                            callback: (value) => (value * 100).toFixed(0) + '%'
-                        },
-                        min: Math.max(0, (chartData.firstPrice || 0.5) - 0.3),
-                        max: Math.min(1, (chartData.firstPrice || 0.5) + 0.3)
-                    }
-                }
-            }
+            grid: {
+                vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+                horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+            },
+            timeScale: { timeVisible: true, secondsVisible: false },
+            rightPriceScale: { borderVisible: false }
         });
 
-        console.log('✅ [PolymarketChart] Chart rendered successfully');
+        currentCandleSeries = eventChart.addLineSeries({
+            color: chartColor,
+            lineWidth: 2,
+            crosshairMarkerRadius: 4,
+        });
 
-        // Setup timeframe buttons
+        let seriesData = chartData.labels.map((ts, i) => {
+            return {
+                time: Math.floor(new Date(ts).getTime() / 1000),
+                value: chartData.prices[i]
+            };
+        }).filter(item => !isNaN(item.time) && !isNaN(item.value));
+
+        seriesData.sort((a, b) => a.time - b.time);
+
+        // Remove duplicates
+        const uniqueSeriesData = [];
+        let lastTime = 0;
+        for (const item of seriesData) {
+            if (item.time > lastTime) {
+                uniqueSeriesData.push(item);
+                lastTime = item.time;
+            }
+        }
+
+        currentCandleSeries.setData(uniqueSeriesData);
+        eventChart.timeScale().fitContent();
+
         document.querySelectorAll('.timeframe-btn').forEach(btn => {
             btn.onclick = async () => {
                 document.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 currentChartInterval = btn.dataset.interval;
-
-                console.log('📊 [PolymarketChart] Changing interval to:', currentChartInterval);
-                
-                // Перезагружаем данные для нового интервала
                 await renderPolymarketChart(eventId, event, options);
             };
         });
 
     } catch (error) {
-        console.error('❌ [PolymarketChart] Error loading chart:', error);
-        
-        // Показываем ошибку
-        if (chartContainer) {
-            chartContainer.innerHTML = `
+        if (parent) {
+            parent.innerHTML = `
                 <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); text-align: center; padding: 20px;">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px; opacity: 0.5;">
-                        <circle cx="12" cy="12" r="10"/>
-                        <path d="M12 8v4M12 16h.01"/>
-                    </svg>
                     <div style="font-size: 14px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">Ошибка загрузки графика</div>
                     <div style="font-size: 12px; color: var(--text-muted);">${error.message || 'Неизвестная ошибка'}</div>
                 </div>
@@ -2973,47 +2816,29 @@ async function renderPolymarketChart(eventId, event, options) {
     }
 }
 
-function renderRealtimeChart(canvas, binanceSymbol, options) {
-    const ctx = canvas.getContext('2d');
+function renderRealtimeChart(chartContainer, binanceSymbol, options) {
     const chartColor = '#f2b03d';
-
-    console.log('📊 [Chart] Рендер графика для:', binanceSymbol);
-
-    // Устанавливаем размеры canvas
-    const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width = rect.width * window.devicePixelRatio;
-    canvas.height = rect.height * window.devicePixelRatio;
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-
     document.getElementById('event-chart-timeframe').style.display = 'flex';
     document.getElementById('event-chart-info').style.display = 'block';
 
     if (eventChart) {
-        eventChart.destroy();
+        eventChart.remove();
+        eventChart = null;
     }
 
-    // Setup timeframe buttons
     document.querySelectorAll('.timeframe-btn').forEach(btn => {
         btn.onclick = () => {
-            // Обновляем активную кнопку
             document.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             currentChartInterval = btn.dataset.interval;
 
-            console.log('📊 [Chart] Смена таймфрейма на:', currentChartInterval);
-
-            // Сбрасываем состояние при смене таймфрейма
             webSocketPriceBuffer = [];
-            currentChartLabels = [];
-            currentChartPrices = [];
-            chartYMin = null;
-            chartYMax = null;
+            currentChartData = [];
 
             if (webSocketUpdateTimeout) {
                 clearTimeout(webSocketUpdateTimeout);
             }
 
-            // Отключаем WebSocket через сервис
             if (window.binanceService) {
                 window.binanceService.disconnectWebSocket();
             } else if (binanceWebSocket) {
@@ -3021,285 +2846,134 @@ function renderRealtimeChart(canvas, binanceSymbol, options) {
                 binanceWebSocket = null;
             }
 
-            // Загружаем новые данные для выбранного интервала
             loadChartData(binanceSymbol, currentChartInterval);
         };
     });
 
-    eventChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: currentChartLabels,
-            datasets: [{
-                label: binanceSymbol,
-                data: currentChartPrices,
-                borderColor: chartColor,
-                borderWidth: 2,
-                fill: true,
-                tension: 0.1,
-                pointRadius: 0,
-                pointHoverRadius: 4,
-                pointHoverBackgroundColor: '#fff',
-                pointHoverBorderColor: chartColor,
-                pointHoverBorderWidth: 2
-            }]
+    eventChart = LightweightCharts.createChart(chartContainer, {
+        layout: {
+            background: { type: 'solid', color: 'transparent' },
+            textColor: '#888',
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            animation: false,
-            interaction: {
-                intersect: false,
-                mode: 'index',
-                axis: 'x'
-            },
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: 'rgba(13, 17, 23, 0.98)',
-                    titleColor: '#f2b03d',
-                    bodyColor: '#f0f6fc',
-                    borderColor: 'rgba(242, 176, 61, 0.5)',
-                    borderWidth: 1,
-                    padding: 12,
-                    displayColors: false,
-                    titleFont: { size: 13, weight: '700' },
-                    bodyFont: { size: 12 },
-                    cornerRadius: 8,
-                    callbacks: {
-                        title: (ctx) => {
-                            const date = new Date(ctx[0].label);
-                            return date.toLocaleString(isRussian ? 'ru-RU' : 'en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                            });
-                        },
-                        label: (ctx) => `$${ctx.parsed.y.toFixed(2)}`
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    display: false,
-                    grid: { display: false },
-                    ticks: { display: false }
-                },
-                y: {
-                    display: true,
-                    position: 'right',
-                    grid: {
-                        color: 'rgba(255,255,255,0.03)',
-                        drawBorder: false
-                    },
-                    ticks: {
-                        color: '#71717a',
-                        font: { size: 10 },
-                        padding: 4,
-                        maxTicksLimit: 5,
-                        callback: (value) => {
-                            if (value >= 1000) {
-                                return '$' + (value / 1000).toFixed(1) + 'K';
-                            }
-                            return '$' + value.toFixed(2);
-                        }
-                    },
-                    min: chartYMin,
-                    max: chartYMax
-                }
-            }
-        }
+        grid: {
+            vertLines: { color: 'rgba(255, 255, 255, 0.05)' },
+            horzLines: { color: 'rgba(255, 255, 255, 0.05)' },
+        },
+        timeScale: { timeVisible: true, secondsVisible: false },
+        rightPriceScale: { borderVisible: false }
     });
 
-    const gradient = ctx.createLinearGradient(0, 0, 0, rect.height);
-    gradient.addColorStop(0, 'rgba(242, 176, 61, 0.3)');
-    gradient.addColorStop(0.5, 'rgba(242, 176, 61, 0.08)');
-    gradient.addColorStop(1, 'rgba(242, 176, 61, 0.02)');
-    eventChart.data.datasets[0].backgroundColor = gradient;
+    currentCandleSeries = eventChart.addCandlestickSeries({
+        upColor: '#10b981',
+        downColor: '#ef4444',
+        borderVisible: false,
+        wickUpColor: '#10b981',
+        wickDownColor: '#ef4444',
+    });
 
-    // Загружаем данные через binanceService если доступен
     if (window.binanceService) {
-        console.log('📊 [Chart] Используем binanceService для:', binanceSymbol);
         loadChartData(binanceSymbol, currentChartInterval);
     } else {
-        console.log('📊 [Chart] binanceService не найден, используем fallback');
-        loadChartData(binanceSymbol, currentChartInterval);
+        loadChartDataDirect(binanceSymbol, currentChartInterval);
     }
 }
 
-/**
- * Загружает данные графика через binanceService
- */
 async function loadChartData(symbol, interval) {
-    console.log('📊 [Chart] ========== ЗАГРУЗКА ГРАФИКА ==========');
-    console.log('📊 [Chart] Символ:', symbol, '| Таймфрейм:', interval);
-    console.log('📊 [Chart] Вызов binanceService.loadHistoricalCandles...');
-
     try {
-        // Используем binanceService если доступен
         if (window.binanceService) {
             const { labels, prices, firstPrice, lastPrice, candles } =
                 await window.binanceService.loadHistoricalCandles(symbol, interval);
 
-            console.log('📊 [Chart] ✅ Получено данных:', labels.length, 'свечей');
-            console.log('📊 [Chart] 📊 Первая свеча:', {
-                time: labels[0],
-                price: firstPrice.toFixed(2)
-            });
-            console.log('📊 [Chart] 📊 Последняя свеча:', {
-                time: labels[labels.length - 1],
-                price: lastPrice.toFixed(2)
-            });
+            if (labels.length === 0) return;
 
-            // Проверка на "ровную линию" - все цены одинаковые
-            const uniquePrices = new Set(prices);
-            console.log('📊 [Chart] 🔍 Уникальных цен:', uniquePrices.size, 'из', prices.length);
+            currentChartData = candles.map(c => ({
+                time: Math.floor(c.timestamp / 1000),
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close
+            }));
 
-            if (uniquePrices.size < 5) {
-                console.error('❌ [Chart] ⚠️ ПОДОЗРИТЕЛЬНО: мало уникальных цен! Возможно данные шаблонные');
+            currentChartData.sort((a, b) => a.time - b.time);
+
+            const uniqueSeriesData = [];
+            let lastTime = 0;
+            for (const item of currentChartData) {
+                if (item.time > lastTime) {
+                    uniqueSeriesData.push(item);
+                    lastTime = item.time;
+                }
             }
+            currentChartData = uniqueSeriesData;
 
-            if (labels.length === 0) {
-                console.warn('⚠️ [Chart] Нет данных от Binance API');
-                return;
-            }
-
-            // Проверка диапазона цен для разных монет
-            const priceRange = lastPrice - firstPrice;
-            const priceChangePercent = (priceRange / firstPrice) * 100;
-            console.log('📊 [Chart] 💹 Изменение цены:', priceChangePercent.toFixed(2), '%');
-
-            // Обновляем глобальные переменные
-            currentChartLabels = labels;
-            currentChartPrices = prices;
             chartPriceData = { firstPrice, lastPrice, symbol, candles };
-
-            console.log('📊 [Chart] Диапазон цен:', firstPrice.toFixed(2), '-', lastPrice.toFixed(2));
-
-            // Обновляем время последнего обновления
             window.chartLastUpdateTime = Date.now();
-
-            // Обновляем отображение цены
             updateChartPriceDisplay(lastPrice);
-            updatePredictionOdds(currentChartPrices, chartPriceData.symbol);
+            updatePredictionOdds(prices, symbol);
 
-            // Рассчитываем масштаб Y
-            const minPrice = Math.min(...currentChartPrices);
-            const maxPrice = Math.max(...currentChartPrices);
-            const range = maxPrice - minPrice;
-            const padding = range > 0 ? range * 0.15 : minPrice * 0.15;
-
-            chartYMin = minPrice - padding;
-            chartYMax = maxPrice + padding;
-
-            if (eventChart) {
-                eventChart.options.scales.y.min = chartYMin;
-                eventChart.options.scales.y.max = chartYMax;
-
-                // Обновляем данные графика
-                eventChart.data.labels = currentChartLabels;
-                eventChart.data.datasets[0].data = currentChartPrices;
-                eventChart.data.datasets[0].label = symbol;
-                eventChart.update('none');
-
-                console.log('📊 [Chart] ✅ График обновлён успешно');
-                console.log('📊 [Chart] ========== ЗАГРУЗКА ЗАВЕРШЕНА ==========');
+            if (currentCandleSeries) {
+                currentCandleSeries.setData(currentChartData);
+                eventChart.timeScale().fitContent();
             }
 
-            // Подключаем WebSocket для реального времени
             connectBinanceWebSocket(symbol, interval);
-
         } else {
-            // Fallback на прямую загрузку
-            console.log('📊 [Chart] binanceService не найден, загрузка напрямую...');
             await loadChartDataDirect(symbol, interval);
         }
-
     } catch (err) {
-        console.error('❌ [Chart] Error loading chart data:', err);
-        console.error('❌ [Chart] Stack:', err.stack);
-
-        // Показываем сообщение об ошибке пользователю
-        const chartContainer = document.getElementById('event-chart');
-        if (chartContainer) {
-            chartContainer.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); text-align: center; padding: 20px;">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px; opacity: 0.5;">
-                        <circle cx="12" cy="12" r="10"/>
-                        <path d="M12 8v4M12 16h.01"/>
-                    </svg>
-                    <div style="font-size: 14px; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">График временно недоступен</div>
-                    <div style="font-size: 12px; color: var(--text-muted);">Попробуйте обновить страницу или выберите другое событие</div>
-                    <div style="font-size: 10px; color: #666; margin-top: 12px; max-width: 80%;">${err.message || 'Ошибка загрузки данных'}</div>
-                </div>
-            `;
-        }
+        console.error('Error loading chart:', err);
     }
 }
 
-/**
- * Fallback загрузка данных напрямую (если binanceService недоступен)
- */
 async function loadChartDataDirect(symbol, interval) {
-    // Используем глобальные константы из binanceService.js
     const binanceIntervals = window.BINANCE_INTERVALS || {
         '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h', '1d': '1d'
     };
     const candleLimits = window.CANDLE_LIMITS || {
         '1m': 100, '5m': 100, '15m': 96, '1h': 168, '4h': 168, '1d': 90
     };
-    
+
     const binanceInterval = binanceIntervals[interval] || '15m';
     const limit = candleLimits[interval] || 96;
-
-    // Нормализация символа: ВЕРХНИЙ регистр для REST API
     const normalizedSymbol = symbol.toUpperCase();
 
     const url = `https://api.binance.com/api/v3/klines?symbol=${normalizedSymbol}&interval=${binanceInterval}&limit=${limit}`;
-    console.log('📊 [Chart] REST запрос URL:', url);
-
     const response = await fetch(url);
-    console.log('📊 [Chart] Статус ответа:', response.status, response.ok ? '✅' : '❌');
-
-    if (!response.ok) {
-        throw new Error(`Binance API error: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`Binance API error: ${response.status}`);
 
     const data = await response.json();
-    console.log('📊 [Chart] Получено свечей:', data.length);
+    currentChartData = data.map(candle => ({
+        time: Math.floor(candle[0] / 1000),
+        open: parseFloat(candle[1]),
+        high: parseFloat(candle[2]),
+        low: parseFloat(candle[3]),
+        close: parseFloat(candle[4])
+    }));
 
-    currentChartLabels = [];
-    currentChartPrices = [];
+    currentChartData.sort((a, b) => a.time - b.time);
 
-    data.forEach(candle => {
-        const timestamp = candle[0];
-        const close = parseFloat(candle[4]);
-        currentChartLabels.push(new Date(timestamp).toISOString());
-        currentChartPrices.push(close);
-    });
+    const uniqueSeriesData = [];
+    let lastTime = 0;
+    for (const item of currentChartData) {
+        if (item.time > lastTime) {
+            uniqueSeriesData.push(item);
+            lastTime = item.time;
+        }
+    }
+    currentChartData = uniqueSeriesData;
 
-    if (currentChartPrices.length > 0) {
-        chartPriceData.firstPrice = currentChartPrices[0];
-        chartPriceData.lastPrice = currentChartPrices[currentChartPrices.length - 1];
+    if (currentChartData.length > 0) {
+        const firstPrice = currentChartData[0].close;
+        const lastPrice = currentChartData[currentChartData.length - 1].close;
+        chartPriceData.firstPrice = firstPrice;
+        chartPriceData.lastPrice = lastPrice;
 
-        updateChartPriceDisplay(currentChartPrices[currentChartPrices.length - 1]);
-        updatePredictionOdds(currentChartPrices, chartPriceData.symbol);
+        updateChartPriceDisplay(lastPrice);
+        updatePredictionOdds(currentChartData.map(c => c.close), symbol);
 
-        const minPrice = Math.min(...currentChartPrices);
-        const maxPrice = Math.max(...currentChartPrices);
-        const range = maxPrice - minPrice;
-        const padding = range > 0 ? range * 0.15 : minPrice * 0.15;
-
-        chartYMin = minPrice - padding;
-        chartYMax = maxPrice + padding;
-
-        if (eventChart) {
-            eventChart.options.scales.y.min = chartYMin;
-            eventChart.options.scales.y.max = chartYMax;
-            eventChart.data.labels = currentChartLabels;
-            eventChart.data.datasets[0].data = currentChartPrices;
-            eventChart.update('none');
+        if (currentCandleSeries) {
+            currentCandleSeries.setData(currentChartData);
+            eventChart.timeScale().fitContent();
         }
     }
 
@@ -3332,7 +3006,7 @@ function updateChartPriceDisplay(currentPrice) {
     if (updatedEl) {
         updatedEl.style.display = 'block';
         updateChartUpdatedTime(updatedEl);
-        
+
         // Запускаем таймер обновления
         if (window.chartUpdatedTimer) {
             clearInterval(window.chartUpdatedTimer);
@@ -3348,11 +3022,11 @@ function updateChartPriceDisplay(currentPrice) {
  */
 function updateChartUpdatedTime(element) {
     if (!element) return;
-    
+
     const now = Date.now();
     const lastUpdate = window.chartLastUpdateTime || now;
     const seconds = Math.floor((now - lastUpdate) / 1000);
-    
+
     if (seconds < 1) {
         element.textContent = '🔄 Обновлено только что';
     } else if (seconds < 60) {
@@ -3367,145 +3041,48 @@ function updateChartUpdatedTime(element) {
  * Connect to Binance WebSocket for real-time price updates
  */
 function connectBinanceWebSocket(symbol) {
-    console.log('🔌 [Chart] Подключение WebSocket для:', symbol);
-
-    // Закрываем предыдущее соединение если есть
     if (binanceWebSocket) {
         binanceWebSocket.close();
         binanceWebSocket = null;
     }
 
-    // Нормализация символа: НИЖНИЙ регистр для WebSocket
     const wsSymbol = symbol.toLowerCase();
-
-    const streamName = `${wsSymbol}@trade`;
-    const wsUrl = `wss://stream.binance.com:9443/ws/${streamName}`;
-
-    console.log('🔌 [Chart] WebSocket URL:', wsUrl, '(символ:', symbol, '→', wsSymbol + ')');
+    const streamName = wsSymbol + '@kline_' + (window.BINANCE_INTERVALS ? window.BINANCE_INTERVALS[currentChartInterval] : '15m');
+    const wsUrl = "wss://stream.binance.com:9443/ws/" + streamName;
 
     binanceWebSocket = new WebSocket(wsUrl);
-    webSocketPriceBuffer = [];
-    if (webSocketUpdateTimeout) {
-        clearTimeout(webSocketUpdateTimeout);
-    }
 
-    // Обработчик открытия соединения
-    binanceWebSocket.onopen = function() {
-        console.log('✅ [Chart] WebSocket соединени�� открыто для:', symbol);
-    };
-
-    // Функция обновления графика
-    function updateChartFromBuffer() {
-        if (webSocketPriceBuffer.length === 0 || !eventChart) {
-            console.log('🔌 [Chart] Пропуск обновления: буфер пуст или нет eventChart');
-            return;
-        }
-
-        // Получаем последнюю цену
-        const lastTrade = webSocketPriceBuffer[webSocketPriceBuffer.length - 1];
-        const lastPrice = lastTrade.price;
-
-        console.log('🔌 [Chart] Обновление графика: цена =', lastPrice.toFixed(4));
-
-        // Добавляем новую точку
-        currentChartLabels.push(lastTrade.timestamp.toISOString());
-        currentChartPrices.push(lastPrice);
-
-        // Keep last N points - оптимизация для производительности
-        const maxPoints = currentChartInterval === '1m' ? 100 :
-                         currentChartInterval === '5m' ? 100 :
-                         currentChartInterval === '15m' ? 96 :
-                         currentChartInterval === '1h' ? 168 : 168;
-
-        while (currentChartLabels.length > maxPoints) {
-            currentChartLabels.shift();
-            currentChartPrices.shift();
-        }
-
-        // Проверяем масштаб Y - обновляем только если цена вышла за границы
-        if (chartYMin !== null && chartYMax !== null) {
-            const threshold = 0.1; // 10%
-            if (lastPrice > chartYMax * (1 - threshold) || lastPrice < chartYMin * (1 + threshold)) {
-                const newMin = Math.min(...currentChartPrices);
-                const newMax = Math.max(...currentChartPrices);
-                const range = newMax - newMin;
-                const padding = range > 0 ? range * 0.15 : newMax * 0.15;
-
-                chartYMin = newMin - padding;
-                chartYMax = newMax + padding;
-
-                eventChart.options.scales.y.min = chartYMin;
-                eventChart.options.scales.y.max = chartYMax;
-            }
-        }
-
-        // Обновляем график БЕЗ полной перерисовки (используем 'none' для производительности)
-        eventChart.data.labels = currentChartLabels;
-        eventChart.data.datasets[0].data = currentChartPrices;
-        eventChart.update('none');
-
-        // Обновляем отображение цены и коэффициенты
-        updateChartPriceDisplay(lastPrice);
-        updatePredictionOdds(currentChartPrices, chartPriceData.symbol);
-
-        // Очищаем буфер
-        webSocketPriceBuffer = [];
-    }
-
-    // Обработчик входящих сообщений
-    binanceWebSocket.onmessage = function(event) {
+    binanceWebSocket.onmessage = function (event) {
         const data = JSON.parse(event.data);
-        const price = parseFloat(data.p);
-        const timestamp = new Date(data.T);
+        if (data.k) {
+            const kline = data.k;
+            const price = parseFloat(kline.c);
 
-        // Добавляем в буфер
-        webSocketPriceBuffer.push({ price, timestamp });
+            const currentCandle = {
+                time: Math.floor(kline.t / 1000),
+                open: parseFloat(kline.o),
+                high: parseFloat(kline.h),
+                low: parseFloat(kline.l),
+                close: price
+            };
 
-        // Обновляем цену в UI сразу (для мгновенной реакции)
-        updateChartPriceDisplay(price);
-
-        // ⚠️ Debounce обновления графика ЗАВИСИТ от таймфрейма!
-        // Это исправляет проблему "одинаковой скорости" графиков
-        // 1m: обновляем часто (каждые 500мс) — видно движение
-        // 5m: обновляем реже (каждые 2 сек) — сглаженное движение
-        // 15m+: обновляем ещё реже (каждые 5 сек) — для долгосрочных графиков
-        const debounceTime = currentChartInterval === '1m' ? 500 :
-                            currentChartInterval === '5m' ? 2000 :
-                            currentChartInterval === '15m' ? 5000 :
-                            currentChartInterval === '1h' ? 10000 :
-                            currentChartInterval === '4h' ? 15000 : 20000;
-
-        if (webSocketUpdateTimeout) {
-            clearTimeout(webSocketUpdateTimeout);
+            if (currentCandleSeries) {
+                currentCandleSeries.update(currentCandle);
+            }
+            updateChartPriceDisplay(price);
+        } else if (data.p) {
+            const price = parseFloat(data.p);
+            updateChartPriceDisplay(price);
         }
-
-        webSocketUpdateTimeout = setTimeout(() => {
-            updateChartFromBuffer();
-        }, debounceTime);
-        
-        console.log('🔌 [WebSocket] Новая цена:', price.toFixed(2), '| таймфрейм:', currentChartInterval, '| debounce:', debounceTime + 'мс');
     };
 
-    // Обработчик ошибок
-    binanceWebSocket.onerror = function(err) {
-        console.error('❌ [Chart] Binance WebSocket error:', err);
-    };
-
-    // Обработчик закрытия - авто-реконнект через 5 секунд
-    binanceWebSocket.onclose = function() {
-        console.log('🔌 [Chart] Binance WebSocket закрыт для:', symbol);
-        if (webSocketUpdateTimeout) {
-            clearTimeout(webSocketUpdateTimeout);
-        }
+    binanceWebSocket.onclose = function () {
         setTimeout(() => {
             if (binanceWebSocket && binanceWebSocket.readyState === WebSocket.CLOSED) {
-                console.log('🔌 [Chart] Переподключение WebSocket для:', symbol);
                 connectBinanceWebSocket(symbol);
             }
         }, 5000);
     };
-
-    console.log('✅ [Chart] Binance WebSocket подключён:', streamName);
 }
 
 // ==================== UTILITY FUNCTIONS ====================
@@ -3517,22 +3094,22 @@ function connectBinanceWebSocket(symbol) {
  */
 function formatTimeMSK(isoString) {
     if (!isoString) return '';
-    
+
     try {
         const date = new Date(isoString);
-        
+
         // Конвертируем в МСК (UTC+3)
         const mskOffset = 3 * 60; // минут
         const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
         const mskDate = new Date(utc + (mskOffset * 60000));
-        
+
         // Формати��уем в 24-часовом формате
         const day = mskDate.getDate().toString().padStart(2, '0');
         const month = (mskDate.getMonth() + 1).toString().padStart(2, '0');
         const year = mskDate.getFullYear();
         const hours = mskDate.getHours().toString().padStart(2, '0');
         const minutes = mskDate.getMinutes().toString().padStart(2, '0');
-        
+
         if (isRussian) {
             return `${day}.${month}.${year} ${hours}:${minutes} МСК`;
         }
@@ -3576,12 +3153,12 @@ function escapeHtml(text) {
 
 function showNotification(message, type = 'info') {
     document.querySelectorAll('.notification').forEach(n => n.remove());
-    
+
     const notification = document.createElement('div');
     notification.className = `notification notification-${type}`;
     notification.textContent = message;
     document.body.appendChild(notification);
-    
+
     setTimeout(() => {
         notification.classList.add('notification-hide');
         setTimeout(() => notification.remove(), 300);
@@ -3589,7 +3166,7 @@ function showNotification(message, type = 'info') {
 }
 
 // Close modals on backdrop click
-document.addEventListener('click', function(e) {
+document.addEventListener('click', function (e) {
     if (e.target.classList.contains('modal')) {
         e.target.classList.add('hidden');
     }
@@ -3599,7 +3176,7 @@ document.addEventListener('click', function(e) {
 
 function openCreateEventModal() {
     document.getElementById('create-event-modal').classList.remove('hidden');
-    
+
     // Set default end time (7 days from now)
     const now = new Date();
     now.setDate(now.getDate() + 7);
@@ -3632,7 +3209,7 @@ async function submitCreateEvent() {
 
     try {
         const user = await apiRequest(`/user/${tg.initDataUnsafe.user.id}`);
-        
+
         const response = await fetch(`${backendUrl}/events/create`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -3648,7 +3225,7 @@ async function submitCreateEvent() {
         });
 
         const result = await response.json();
-        
+
         if (result.success) {
             showNotification('Event created! Waiting for moderation.', 'success');
             closeCreateEventModal();
@@ -3673,7 +3250,7 @@ function applyTranslations() {
             el.textContent = t[key];
         }
     });
-    
+
     // ��еревод категорий
     document.querySelectorAll('.category-btn').forEach(btn => {
         const cat = btn.dataset.category;
