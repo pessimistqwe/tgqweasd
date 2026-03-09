@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Query, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, Query, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -12,9 +12,15 @@ import asyncio
 import logging
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlsplit
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+# Rate limiting
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
 
 # Импорт моделей
 try:
@@ -45,6 +51,8 @@ try:
     from .polymarket_price_routes import router as polymarket_price_router
     from .cache_service import create_cache_routes, get_cache_stats
     from .websocket_service import create_websocket_routes, init_websocket_service, stop_websocket_service
+    from .analytics_routes import router as analytics_router
+    HISTORICAL_AVAILABLE = True
 except ImportError:
     from betting_routes import router as betting_router
     from telegram_auth import init_telegram_validator
@@ -59,8 +67,31 @@ except ImportError:
     from polymarket_price_routes import router as polymarket_price_router
     from cache_service import create_cache_routes, get_cache_stats
     from websocket_service import create_websocket_routes, init_websocket_service, stop_websocket_service
+    from analytics_routes import router as analytics_router
+    HISTORICAL_AVAILABLE = True
+
+# Импорт historical routes (опционально)
+historical_router = None
+try:
+    from .historical_routes import router as historical_router
+except ImportError:
+    try:
+        from historical_routes import router as historical_router
+    except ImportError:
+        historical_router = None
 
 app = FastAPI(title="EventPredict API")
+
+# ==================== Rate Limiting ====================
+# Лимитер для защиты от злоупотреблений
+limiter = Limiter(
+    key_func=get_remote_address,  # Используем IP для идентификации
+    default_limits=["100/minute"]  # По умолчанию 100 запросов в минуту
+)
+
+# Добавляем middleware
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
 
 # Подключаем betting routes
 app.include_router(betting_router)
@@ -85,6 +116,13 @@ app.include_router(polymarket_price_router)
 
 # Подключаем leaderboard routes
 app.include_router(leaderboard_router)
+
+# Подключаем analytics routes
+app.include_router(analytics_router)
+
+# Подключаем historical routes (если доступны)
+if historical_router:
+    app.include_router(historical_router)
 
 # Подключаем cache routes (если доступны)
 cache_router = create_cache_routes()
@@ -160,6 +198,40 @@ POLYMARKET_VERBOSE_LOGS = os.getenv("POLYMARKET_VERBOSE_LOGS", "0") == "1"
 
 # Исторические данные: используем candles API для реальных данных
 POLYMARKET_CANDLES_URL = "https://gamma-api.polymarket.com/candles"
+
+# Поддерживаемые разрешения для candles API
+POLYMARKET_CANDLES_RESOLUTIONS = {
+    '1m': 1,       # 1 минута
+    '5m': 5,       # 5 минут
+    '15m': 15,     # 15 минут
+    '30m': 30,     # 30 минут
+    '1h': 60,      # 1 час
+    '2h': 120,     # 2 часа
+    '4h': 240,     # 4 часа
+    '6h': 360,     # 6 часов
+    '12h': 720,    # 12 часов
+    '1d': 1440,    # 1 день
+    '3d': 4320,    # 3 дня
+    '1w': 10080,   # 1 неделя
+    '1M': 43200    # 1 месяц (30 дней)
+}
+
+# Лимиты для разных разрешений
+POLYMARKET_CANDLES_LIMITS = {
+    '1m': 100,     # 100 минут
+    '5m': 500,     # ~41 час
+    '15m': 500,    # ~5 дней
+    '30m': 500,    # ~10 дней
+    '1h': 168,     # 7 дней
+    '2h': 336,     # 28 дней
+    '4h': 168,     # 28 дней
+    '6h': 112,     # 28 дней
+    '12h': 56,     # 28 дней
+    '1d': 90,      # 90 дней
+    '3d': 30,      # 90 дней
+    '1w': 52,      # 1 год
+    '1M': 24       # 2 года
+}
 
 # Лимит API запросов при синхронизации истории цен (для защиты от rate limit)
 PRICE_HISTORY_SYNC_LIMIT = 10  # Максимум 10 событий за раз
@@ -262,20 +334,39 @@ def detect_category(title: str, description: str = '') -> str:
         return max(category_scores, key=category_scores.get)
     return 'other'
 
-def fetch_polymarket_price_history(condition_id: str, outcome: str, resolution: str = 'hour', limit: int = 168):
+def fetch_polymarket_price_history(
+    condition_id: str,
+    outcome: str,
+    resolution: str = '1h',
+    limit: int = None
+):
     """
     Получает исторические данные о ценах из Polymarket candles API
 
     Args:
         condition_id: ID условия (рынка) из Polymarket
         outcome: Название исхода (например, "Yes", "No")
-        resolution: Разрешение ('minute', 'hour', 'day', 'week')
-        limit: Количество точек данных (максимум 168 для часов)
+        resolution: Разрешение ('1m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '3d', '1w', '1M')
+        limit: Количество точек данных (если None, используется лимит по умолчанию для resolution)
 
     Returns:
-        Список кортежей (timestamp, price, volume)
+        Список кортежей (timestamp, price, volume, open, high, low)
     """
     try:
+        # Проверяем валидность resolution
+        if resolution not in POLYMARKET_CANDLES_RESOLUTIONS:
+            valid_resolutions = list(POLYMARKET_CANDLES_RESOLUTIONS.keys())
+            print(f"Invalid resolution: {resolution}. Valid options: {valid_resolutions}")
+            return []
+        
+        # Используем лимит по умолчанию для resolution если не указан
+        if limit is None:
+            limit = POLYMARKET_CANDLES_LIMITS.get(resolution, 168)
+        else:
+            # Ограничиваем максимальный лимит для resolution
+            max_limit = POLYMARKET_CANDLES_LIMITS.get(resolution, 200)
+            limit = min(limit, max_limit)
+
         # Polymarket candles API endpoint
         url = f"{POLYMARKET_CANDLES_URL}"
 
@@ -292,7 +383,10 @@ def fetch_polymarket_price_history(condition_id: str, outcome: str, resolution: 
             "Accept-Language": "en-US,en;q=0.9",
         }
 
-        response = requests.get(url, params=params, headers=headers, timeout=10)
+        if POLYMARKET_VERBOSE_LOGS:
+            print(f"   Fetching price history: {condition_id} / {outcome} / {resolution} / limit={limit}")
+
+        response = requests.get(url, params=params, headers=headers, timeout=15)
 
         if response.status_code != 200:
             if POLYMARKET_VERBOSE_LOGS:
@@ -311,12 +405,16 @@ def fetch_polymarket_price_history(condition_id: str, outcome: str, resolution: 
         for candle in data:
             if len(candle) >= 6:
                 timestamp = datetime.utcfromtimestamp(candle[0] / 1000)  # ms → seconds
-                close_price = candle[4] / 100  # Polymarket использует 0-100, нам нужно 0-1
+                open_price = candle[1] / 100  # Polymarket использует 0-100, нам нужно 0-1
+                high_price = candle[2] / 100
+                low_price = candle[3] / 100
+                close_price = candle[4] / 100
                 volume = candle[5]
-                history.append((timestamp, close_price, volume))
+                # Возвращаем полные данные свечи
+                history.append((timestamp, close_price, volume, open_price, high_price, low_price))
 
         if POLYMARKET_VERBOSE_LOGS:
-            print(f"   Fetched {len(history)} price history points for {condition_id} / {outcome}")
+            print(f"   Fetched {len(history)} price history points for {condition_id} / {outcome} / {resolution}")
 
         return history
 
@@ -582,7 +680,7 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
     Returns:
         True если создано новое событие, False если обновлено существующее
     """
-    print(f"Upserting event: {pm_event.get('title', 'No title')}")
+    # print(f"Upserting event: {pm_event.get('title', 'No title')}")
 
     end_time = parse_polymarket_end_time(pm_event.get('end_time'))
     is_active = end_time > datetime.utcnow()
@@ -596,12 +694,9 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
         total_volume = sum(volumes)
         probabilities = [round((v / total_volume) * 100, 1) if total_volume > 0 else 50.0 for v in volumes]
 
-    print(f"   - Parsed end time: {end_time}")
-    print(f"   - Is active: {is_active}")
-    print(f"   - Options count: {len(options)}")
-    print(f"   - Volumes: {volumes}")
-    print(f"   - Probabilities: {probabilities}")
-    print(f"   - Tokens count: {len(tokens) if tokens else 0}")
+    # print(f"   - Parsed end time: {end_time}")
+    # print(f"   - Is active: {is_active}")
+    # print(f"   - Options count: {len(options)}")
 
     polymarket_id = pm_event.get('polymarket_id', '')
     if not polymarket_id:
@@ -613,13 +708,13 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
     ).first()
 
     if existing:
-        print(f"   Updating existing event (ID: {existing.id})")
+        # print(f"   Updating existing event (ID: {existing.id})")
         existing.title = pm_event['title'][:500]
         existing.description = pm_event['description'][:1000] if pm_event['description'] else None
         existing.category = pm_event.get('category', existing.category)
         existing.image_url = pm_event.get('image_url', '')
         existing.end_time = end_time
-        existing.is_active = is_active
+        existing.is_active = end_time > datetime.now()
         existing.options = json.dumps(options)
         existing.has_chart = True  # Polymarket events have charts
 
@@ -679,7 +774,7 @@ def upsert_polymarket_event(db: Session, pm_event: dict) -> bool:
         image_url=pm_event.get('image_url', ''),
         options=json.dumps(options),
         end_time=end_time,
-        is_active=is_active,
+        is_active=end_time > datetime.now(),
         is_moderated=True,
         has_chart=True,  # Polymarket events have charts
         total_pool=sum(volumes)
@@ -717,12 +812,12 @@ def sync_polymarket_price_history(db: Session = None, limit: int = PRICE_HISTORY
         if db is None:
             db = next(get_db())
         
-        logger.info(f"📈 Starting Polymarket price history sync (limit: {limit} events)...")
+        logger.info(f"[UP] Starting Polymarket price history sync (limit: {limit} events)...")
         
         # Получаем последние активные события
         events = db.query(Event).filter(
             Event.is_active == True,
-            Event.end_time > datetime.utcnow()
+            Event.end_time > datetime.now()
         ).order_by(Event.id.desc()).limit(limit).all()
         
         total_history_points = 0
@@ -777,10 +872,10 @@ def sync_polymarket_price_history(db: Session = None, limit: int = PRICE_HISTORY
                 continue
         
         db.commit()
-        logger.info(f"✅ Price history sync completed: {total_history_points} new points")
+        logger.info(f"[OK] Price history sync completed: {total_history_points} new points")
         
     except Exception as e:
-        logger.error(f"❌ Price history sync error: {e}")
+        logger.error(f"[ERROR] Price history sync error: {e}")
         if db:
             db.rollback()
 
@@ -788,7 +883,7 @@ def sync_polymarket_price_history(db: Session = None, limit: int = PRICE_HISTORY
 def sync_polymarket_events(db: Session = None):
     """Синхронизирует события из Polymarket в БД"""
     try:
-        logger.info("🔄 Starting Polymarket sync...")
+        logger.info("[SYNC] Starting Polymarket sync...")
         
         # Получаем сессию БД если не передана
         if db is None:
@@ -806,19 +901,24 @@ def sync_polymarket_events(db: Session = None):
             else:
                 updated_count += 1
             synced_count += 1
-            logger.info(f"  {'✅ Added' if created else '🔄 Updated'}: {pm_event['title'][:50]}...")
+            # logger.info(f"  {'[ADDED]' if created else '[UPDATED]'}")
 
         db.commit()
         
         # Обновляем статистику
         sync_stats["total_synced"] = synced_count
-        sync_stats["last_sync"] = datetime.utcnow()
+        sync_stats["last_sync"] = datetime.now()
         sync_stats["last_error"] = None
         
-        logger.info(f"✅ Sync completed: {synced_count} events ({added_count} new, {updated_count} updated)")
+        logger.info(f"[SYNC] Sync completed: {synced_count} events ({added_count} new, {updated_count} updated)")
         return synced_count
     except Exception as e:
-        logger.error(f"❌ Error syncing events: {e}")
+        logger.error(f"[ERROR] Error syncing events: {e}")
+        if db:
+            try:
+                db.rollback()
+            except Exception:
+                pass
         sync_stats["last_error"] = str(e)
         return 0
 
@@ -849,34 +949,34 @@ def scheduled_polymarket_price_sync():
         
         db = next(get_db())
         sync_prices_to_db(db, limit=100)
-        logger.info("✅ Polymarket price sync completed")
+        logger.info("[OK] Polymarket price sync completed")
     except Exception as e:
         logger.error(f"Scheduled Polymarket price sync error: {e}")
 
 @app.on_event("startup")
 async def startup_event():
     """Инициализация при старте приложения"""
-    logger.info("🚀 Starting EventPredict API...")
+    logger.info("[START] Starting EventPredict API...")
 
     # Инициализация Telegram валидатора
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     if bot_token:
         init_telegram_validator(bot_token)
-        logger.info("✅ Telegram auth validator initialized")
+        logger.info("[OK] Telegram auth validator initialized")
     else:
-        logger.warning("⚠️ TELEGRAM_BOT_TOKEN not set, Telegram auth disabled")
+        logger.warning("[WARN] TELEGRAM_BOT_TOKEN not set, Telegram auth disabled")
 
     # Запуск Resolver Worker
     try:
         await start_resolver_worker()
-        logger.info("✅ Resolver Worker started")
+        logger.info("[OK] Resolver Worker started")
     except Exception as e:
         logger.error(f"Failed to start Resolver Worker: {e}")
 
     # Запуск сервиса волатильности для расчета коэффициентов
     try:
         await start_volatility_service()
-        logger.info("✅ Volatility Service started (coefficients based on real market volatility)")
+        logger.info("[OK] Volatility Service started (coefficients based on real market volatility)")
     except Exception as e:
         logger.error(f"Failed to start Volatility Service: {e}")
 
@@ -894,14 +994,14 @@ async def startup_event():
             columns = [col['name'] for col in inspector.get_columns('event_options')]
             
             if 'polymarket_token_id' not in columns:
-                logger.info("🔧 Adding polymarket_token_id column to event_options...")
+                logger.info("[FIX] Adding polymarket_token_id column to event_options...")
                 db.execute(text("ALTER TABLE event_options ADD COLUMN polymarket_token_id VARCHAR(255)"))
                 db.commit()
-                logger.info("✅ Migration completed: polymarket_token_id added")
+                logger.info("[OK] Migration completed: polymarket_token_id added")
             else:
-                logger.info("✅ Column polymarket_token_id already exists")
+                logger.info("[OK] Column polymarket_token_id already exists")
         except Exception as e:
-            logger.warning(f"⚠️ Migration check skipped: {e}")
+            logger.warning(f"[WARN] Migration check skipped: {e}")
     
     # Запускаем миграцию в фоне
     import threading
@@ -947,7 +1047,7 @@ async def startup_event():
             import threading
             sync_thread = threading.Thread(target=sync_polymarket_events, args=(db,))
             sync_thread.start()
-            logger.info("📊 Initial event sync started in background...")
+            logger.info("[STATS] Initial event sync started in background...")
         except Exception as e:
             logger.error(f"Initial sync error: {e}")
     else:
@@ -962,14 +1062,14 @@ async def shutdown_event():
     # Остановка Resolver Worker
     try:
         await stop_resolver_worker()
-        logger.info("✅ Resolver Worker stopped")
+        logger.info("[OK] Resolver Worker stopped")
     except Exception as e:
         logger.error(f"Error stopping Resolver Worker: {e}")
 
     # Остановка сервиса волатильности
     try:
         await stop_volatility_service()
-        logger.info("✅ Volatility Service stopped")
+        logger.info("[OK] Volatility Service stopped")
     except Exception as e:
         logger.error(f"Error stopping Volatility Service: {e}")
 
@@ -1034,14 +1134,14 @@ async def get_categories():
     """Получить список категорий"""
     return {
         "categories": [
-            {"id": "all", "name": "All", "icon": "🔥", "name_ru": "Все"},
+            {"id": "all", "name": "All", "icon": "[HOT]", "name_ru": "Все"},
             {"id": "politics", "name": "Politics", "icon": "🏛️", "name_ru": "Политика"},
             {"id": "sports", "name": "Sports", "icon": "⚽", "name_ru": "Спорт"},
             {"id": "crypto", "name": "Crypto", "icon": "₿", "name_ru": "Крипто"},
             {"id": "pop_culture", "name": "Pop Culture", "icon": "🎬", "name_ru": "Поп-культура"},
-            {"id": "business", "name": "Business", "icon": "📈", "name_ru": "Бизнес"},
+            {"id": "business", "name": "Business", "icon": "[UP]", "name_ru": "Бизнес"},
             {"id": "science", "name": "Science", "icon": "🔬", "name_ru": "Наука"},
-            {"id": "other", "name": "Other", "icon": "📌", "name_ru": "Другое"}
+            {"id": "other", "name": "Other", "icon": "[PIN]", "name_ru": "Другое"}
         ]
     }
 
@@ -1076,14 +1176,10 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
 
         result = []
         for event in events:
-            print(f"   Processing event: {event.title} (ID: {event.id})")
-
             # Получаем опции
             options = db.query(EventOption).filter(
                 EventOption.event_id == event.id
             ).all()
-
-            print(f"      - Found {len(options)} options in database")
 
             # Парсим опции из JSON если нет в EventOption
             if not options and event.options:
@@ -1144,10 +1240,7 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
             }
 
             result.append(event_data)
-            print(f"      Added event to result: {len(event_data['options'])} options")
-            for opt in event_data['options']:
-                print(f"        - Option: {opt['text'][:30]}... probability: {opt['probability']}%")
-
+        
         # Сортировка: сначала по relevance_score (убывание), затем по total_pool (убывание)
         result.sort(key=lambda x: (x['relevance_score'], x['total_pool']), reverse=True)
 
@@ -1158,68 +1251,6 @@ async def get_events(category: str = None, db: Session = Depends(get_db)):
         return {"events": result}
     except Exception as e:
         print(f"Error loading events: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/events/{event_id}")
-async def get_event(event_id: int, db: Session = Depends(get_db)):
-    """Get single event by ID"""
-    try:
-        print(f"📊 [API] Loading event {event_id}...")
-        
-        event = db.query(Event).filter(Event.id == event_id).first()
-        if not event:
-            print(f"❌ [API] Event {event_id} not found")
-            raise HTTPException(status_code=404, detail="Event not found")
-
-        options = db.query(EventOption).filter(EventOption.event_id == event_id).all()
-        print(f"📊 [API] Found {len(options)} options for event {event_id}")
-        
-        time_left = int((event.end_time - datetime.utcnow()).total_seconds())
-        total_stakes = sum(
-            (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
-            for opt in options
-        ) or 1
-
-        # Формируем options с probability
-        options_data = []
-        for opt in options:
-            # Используем current_price из БД если доступно, иначе рассчитываем из stakes
-            if opt.current_price and opt.current_price > 0:
-                probability = round(opt.current_price * 100, 1)
-            else:
-                opt_total = (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
-                probability = round(opt_total / total_stakes * 100, 1)
-            
-            options_data.append({
-                "index": opt.option_index,
-                "text": opt.option_text,
-                "total_points": (opt.total_stake or 0.0) + (opt.market_stake or 0.0),
-                "probability": probability
-            })
-            print(f"   - Option {opt.option_index}: {opt.option_text[:30]}... probability: {probability}%")
-
-        response_data = {
-            "id": event.id,
-            "title": event.title,
-            "description": event.description,
-            "category": event.category or "other",
-            "image_url": event.image_url,
-            "end_time": event.end_time.isoformat(),
-            "time_left": max(0, time_left),
-            "total_pool": event.total_pool,
-            "has_chart": event.has_chart or False,
-            "options": options_data
-        }
-        
-        print(f"✅ [API] Event {event_id} loaded successfully")
-        return response_data
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"❌ [API] Error loading event {event_id}: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -1237,7 +1268,7 @@ async def search_events(
     Ищет по локальной базе данных с поддержкой категории
     """
     try:
-        print(f"🔍 [Search] Поиск: '{q}', категория: {category}, лимит: {limit}")
+        print(f"[SEARCH] Поиск: '{q}', категория: {category}, лимит: {limit}")
         
         # Базовый запрос
         query = db.query(Event).filter(
@@ -1258,7 +1289,7 @@ async def search_events(
         
         # Получаем результаты
         events = query.limit(limit).all()
-        print(f"✅ [Search] Найдено событий: {len(events)}")
+        print(f"[SEARCH] Найдено событий: {len(events)}")
         
         result = []
         for event in events:
@@ -1298,13 +1329,75 @@ async def search_events(
             }
             result.append(event_data)
         
-        # Сортировка по релевантности
-        result.sort(key=lambda x: x['relevance_score'], reverse=True)
+        # Сортировка: сначала по релевантности (убывание), затем по пулу (убывание)
+        result.sort(key=lambda x: (x['relevance_score'], x['total_pool']), reverse=True)
         
         return {"events": result, "total": len(result)}
         
     except Exception as e:
-        print(f"❌ [Search] Error: {e}")
+        print(f"[SEARCH] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/events/{event_id}")
+async def get_event(event_id: int, db: Session = Depends(get_db)):
+    """Get single event by ID"""
+    try:
+        print(f"[API] Loading event {event_id}...")
+        
+        event = db.query(Event).filter(Event.id == event_id).first()
+        if not event:
+            print(f"[API] Event {event_id} not found")
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        options = db.query(EventOption).filter(EventOption.event_id == event_id).all()
+        print(f"[API] Found {len(options)} options for event {event_id}")
+        
+        time_left = int((event.end_time - datetime.utcnow()).total_seconds())
+        total_stakes = sum(
+            (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
+            for opt in options
+        ) or 1
+
+        # Формируем options с probability
+        options_data = []
+        for opt in options:
+            # Используем current_price из БД если доступно, иначе рассчитываем из stakes
+            if opt.current_price and opt.current_price > 0:
+                probability = round(opt.current_price * 100, 1)
+            else:
+                opt_total = (opt.total_stake or 0.0) + (opt.market_stake or 0.0)
+                probability = round(opt_total / total_stakes * 100, 1)
+            
+            options_data.append({
+                "index": opt.option_index,
+                "text": opt.option_text,
+                "total_points": (opt.total_stake or 0.0) + (opt.market_stake or 0.0),
+                "probability": probability
+            })
+            # print(f"   - Option {opt.option_index}: probability: {probability}%")
+
+        response_data = {
+            "id": event.id,
+            "title": event.title,
+            "description": event.description,
+            "category": event.category or "other",
+            "image_url": event.image_url,
+            "end_time": event.end_time.isoformat(),
+            "time_left": max(0, time_left),
+            "total_pool": event.total_pool,
+            "has_chart": event.has_chart or False,
+            "options": options_data
+        }
+        
+        print(f"[API] Event {event_id} loaded successfully")
+        return response_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[API] Error loading event {event_id}: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
@@ -2502,7 +2595,7 @@ async def debug_chart(symbol: str):
             "min_price": min(prices) if prices else 0,
             "max_price": max(prices) if prices else 0,
             "data": candles,
-            "check": f"Если видите это для {symbol} — данные РЕАЛЬНЫЕ из Binance ✅"
+            "check": f"Если видите это для {symbol} — данные РЕАЛЬНЫЕ из Binance [OK]"
         }
         
     except Exception as e:

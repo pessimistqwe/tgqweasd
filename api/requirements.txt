@@ -7,3 +7,4 @@ requests==2.31.0
 httpx==0.25.2
 pydantic==2.9.2
 apscheduler==3.10.4
+slowapi==0.1.9

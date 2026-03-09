@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Enum, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Enum, text, DECIMAL, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime, timedelta
@@ -133,6 +133,14 @@ class BetHistory(Base):
     shares = Column(Float, default=0.0)
     price = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    
+    # Расширенные поля для аналитики (Kalshi-style)
+    entry_price = Column(Float, nullable=True)        # Цена входа
+    exit_price = Column(Float, nullable=True)         # Цена выхода (если закрыта)
+    fees_paid = Column(Float, default=0.0)            # Комиссии
+    pnl = Column(Float, nullable=True)                # Прибыль/убыток (profit and loss)
+    status = Column(String(50), default="open")       # open/closed/won/lost/cancelled
+    side = Column(String(10), default="yes")          # yes/no (сторона ставки)
 
     event = relationship("Event", backref="bet_history")
     user = relationship("User", backref="bet_history")
@@ -199,6 +207,82 @@ class EventComment(Base):
     user = relationship("User", backref="comments")
     event = relationship("Event", backref="comments")
 
+# Consolidated betting models moved here to avoid circular imports and registry errors
+class BetType(str, enum.Enum):
+    """Тип рынка"""
+    EVENT = "event"  # Polymarket-style (события)
+    PRICE = "price"  # Binance-style (прогноз цены)
+
+class BetDirection(str, enum.Enum):
+    """Направление ставки"""
+    YES = "yes"
+    NO = "no"
+    LONG = "long"  # Ставка на рост
+    SHORT = "short"  # Ставка на падение
+
+class BetStatus(str, enum.Enum):
+    """Статус ставки"""
+    OPEN = "open"  # Активная ставка
+    CLOSED = "closed"  # Закрыта (результат определён)
+    WON = "won"  # Выигрышная
+    LOST = "lost"  # Проигрышная
+    CANCELLED = "cancelled"  # Отменена (возврат средств)
+    PENDING = "pending"  # Ожидает подтверждения (холдирование средств)
+
+class Bet(Base):
+    """Основная таблица ставок"""
+    __tablename__ = "bets"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    market_id = Column(Integer, ForeignKey("events.id"), nullable=False, index=True)
+    bet_type = Column(Enum(BetType), nullable=False, default=BetType.EVENT)
+    direction = Column(Enum(BetDirection), nullable=False)
+    amount = Column(DECIMAL(20, 8), nullable=False)
+    shares = Column(DECIMAL(20, 8), default=0.0)
+    entry_price = Column(DECIMAL(20, 8), nullable=False)
+    leverage = Column(DECIMAL(10, 2), default=1.0)
+    liquidation_price = Column(DECIMAL(10, 2), nullable=True)
+    exit_price = Column(DECIMAL(20, 8), nullable=True)
+    potential_payout = Column(DECIMAL(20, 8), default=0.0)
+    actual_payout = Column(DECIMAL(20, 8), default=0.0)
+    status = Column(Enum(BetStatus), nullable=False, default=BetStatus.PENDING)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    resolved_at = Column(DateTime, nullable=True)
+    symbol = Column(String(50), nullable=True)
+    take_profit_price = Column(DECIMAL(20, 8), nullable=True)
+    stop_loss_price = Column(DECIMAL(20, 8), nullable=True)
+    comment = Column(Text, nullable=True)
+    
+    # Расширенные поля для аналитики (Kalshi-style)
+    fees_paid = Column(DECIMAL(20, 8), default=0.0)     # Комиссии
+    pnl = Column(DECIMAL(20, 8), default=0.0)           # Прибыль/убыток
+    roi = Column(DECIMAL(10, 4), default=0.0)           # ROI (return on investment)
+
+    user = relationship("User", back_populates="bets", foreign_keys=[user_id])
+    market = relationship("Event", back_populates="bets", foreign_keys=[market_id])
+
+class PricePrediction(Base):
+    """Таблица для краткосрочных прогнозов цены"""
+    __tablename__ = "price_predictions"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    market_id = Column(Integer, ForeignKey("events.id"), nullable=False, index=True)
+    direction = Column(Enum(BetDirection), nullable=False)
+    symbol = Column(String(50), nullable=False)
+    amount = Column(DECIMAL(20, 8), nullable=False)
+    odds = Column(DECIMAL(10, 4), nullable=False)
+    entry_price = Column(DECIMAL(20, 8), nullable=False)
+    exit_price = Column(DECIMAL(20, 8), nullable=True)
+    potential_payout = Column(DECIMAL(20, 8), nullable=False)
+    actual_payout = Column(DECIMAL(20, 8), default=0.0)
+    status = Column(Enum(BetStatus), nullable=False, default=BetStatus.PENDING)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    resolved_at = Column(DateTime, nullable=True)
+    duration_seconds = Column(Integer, default=300)
+
+    user = relationship("User", back_populates="price_predictions", foreign_keys=[user_id])
+    market = relationship("Event", back_populates="price_predictions", foreign_keys=[market_id])
+
 # ===========================================
 # Database setup
 # ===========================================
@@ -228,23 +312,43 @@ if not TEST_MODE:
             # Проверяем соединение
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-            logger.info(f"✅ Using PostgreSQL database")
+            logger.info(f"[OK] Using PostgreSQL database")
         except Exception as e:
-            logger.warning(f"⚠️ PostgreSQL connection failed: {e}. Falling back to SQLite")
+            logger.warning(f"[WARN] PostgreSQL connection failed: {e}. Falling back to SQLite")
             engine = None
     
     if engine is None:
         # SQLite для разработки / serverless / fallback
-        db_path = os.getenv("TEST_DB_PATH", "/tmp/events.db")
-        engine = create_engine(f"sqlite:///{db_path}", echo=False, connect_args={"check_same_thread": False})
-        logger.info(f"✅ Using SQLite database: {db_path}")
+        db_path = os.getenv("TEST_DB_PATH", "events.db")
+        # Для Windows исправляем путь если нужно
+        if os.name == 'nt' and db_path.startswith('/tmp/'):
+            db_path = db_path.replace('/tmp/', 'tmp/')
+            if not os.path.exists('tmp'):
+                os.makedirs('tmp', exist_ok=True)
+                
+        engine = create_engine(
+            f"sqlite:///{db_path}", 
+            echo=False, 
+            connect_args={"check_same_thread": False, "timeout": 30}
+        )
+        
+        # Включаем WAL режим для SQLite для лучшей конкурентности
+        from sqlalchemy import event
+        @event.listens_for(engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.close()
+            
+        logger.info(f"[OK] Using SQLite database: {db_path} (WAL mode enabled)")
     
     # Создаём таблицы
     try:
         Base.metadata.create_all(engine)
-        logger.info("✅ Database tables created/verified")
+        logger.info("[OK] Database tables created/verified")
     except Exception as e:
-        logger.error(f"❌ Failed to create database tables: {e}")
+        logger.error(f"[ERROR] Failed to create database tables: {e}")
         raise
     
     with engine.connect() as connection:
@@ -268,7 +372,7 @@ if not TEST_MODE:
                     connection.execute(text("ALTER TABLE event_options ADD COLUMN market_stake FLOAT DEFAULT 0.0"))
                     connection.commit()
         except Exception as e:
-            logger.warning(f"⚠️ Migration market_stake skipped: {e}")
+            logger.warning(f"[WARN] Migration market_stake skipped: {e}")
 
         # Миграция: добавление current_price
         try:
@@ -286,7 +390,7 @@ if not TEST_MODE:
                     connection.execute(text("ALTER TABLE event_options ADD COLUMN current_price FLOAT DEFAULT 0.5"))
                     connection.commit()
         except Exception as e:
-            logger.warning(f"⚠️ Migration current_price skipped: {e}")
+            logger.warning(f"[WARN] Migration current_price skipped: {e}")
 
         # Миграция: создание таблицы price_history (только SQLite)
         if is_sqlite:
@@ -308,7 +412,7 @@ if not TEST_MODE:
                     connection.execute(text("CREATE INDEX idx_price_history_timestamp ON price_history(timestamp)"))
                     connection.commit()
             except Exception as e:
-                logger.warning(f"⚠️ price_history table creation skipped: {e}")
+                logger.warning(f"[WARN] price_history table creation skipped: {e}")
 
         # Миграция: создание таблицы event_comments (только SQLite)
         if is_sqlite:
@@ -335,7 +439,7 @@ if not TEST_MODE:
                     connection.execute(text("CREATE INDEX idx_event_comments_created ON event_comments(created_at)"))
                     connection.commit()
             except Exception as e:
-                logger.warning(f"⚠️ event_comments table creation skipped: {e}")
+                logger.warning(f"[WARN] event_comments table creation skipped: {e}")
 
         # Миграция: добавление custom_username и avatar_url
         try:
@@ -363,7 +467,7 @@ if not TEST_MODE:
                     connection.execute(text("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)"))
                     connection.commit()
         except Exception as e:
-            logger.warning(f"⚠️ Migration users columns skipped: {e}")
+            logger.warning(f"[WARN] Migration users columns skipped: {e}")
 
         # Миграция: добавление has_chart в events
         try:
@@ -381,7 +485,7 @@ if not TEST_MODE:
                     connection.execute(text("ALTER TABLE events ADD COLUMN has_chart BOOLEAN DEFAULT true"))
                     connection.commit()
         except Exception as e:
-            logger.warning(f"⚠️ Migration has_chart skipped: {e}")
+            logger.warning(f"[WARN] Migration has_chart skipped: {e}")
 
         # Миграция: добавление shares и average_price в user_predictions
         try:
@@ -406,7 +510,7 @@ if not TEST_MODE:
                     connection.execute(text("ALTER TABLE user_predictions ADD COLUMN average_price FLOAT DEFAULT 0.0"))
                     connection.commit()
         except Exception as e:
-            logger.warning(f"⚠️ Migration user_predictions columns skipped: {e}")
+            logger.warning(f"[WARN] Migration user_predictions columns skipped: {e}")
 
         # Миграция: создание таблицы bet_history (только SQLite)
         if is_sqlite:
@@ -434,7 +538,60 @@ if not TEST_MODE:
                     connection.execute(text("CREATE INDEX idx_bet_history_timestamp ON bet_history(timestamp)"))
                     connection.commit()
             except Exception as e:
-                logger.warning(f"⚠️ bet_history table creation skipped: {e}")
+                logger.warning(f"[WARN] bet_history table creation skipped: {e}")
+
+        # Миграция: добавление новых полей в bet_history
+        try:
+            if is_sqlite:
+                columns = [row[1] for row in connection.execute(text("PRAGMA table_info(bet_history)")).fetchall()]
+                migrations = []
+                if "entry_price" not in columns:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN entry_price FLOAT")
+                if "exit_price" not in columns:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN exit_price FLOAT")
+                if "fees_paid" not in columns:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN fees_paid FLOAT DEFAULT 0.0")
+                if "pnl" not in columns:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN pnl FLOAT")
+                if "status" not in columns:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN status VARCHAR(50) DEFAULT 'open'")
+                if "side" not in columns:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN side VARCHAR(10) DEFAULT 'yes'")
+                
+                for migration in migrations:
+                    connection.execute(text(migration))
+                if migrations:
+                    connection.commit()
+                    logger.info(f"[OK] bet_history migration: {len(migrations)} columns added")
+            else:
+                # PostgreSQL - проверяем через information_schema
+                result = connection.execute(text("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'bet_history' AND column_name IN ('entry_price', 'exit_price', 'fees_paid', 'pnl', 'status', 'side')
+                """)).fetchall()
+                existing_cols = [r[0] for r in result]
+                
+                migrations = []
+                if "entry_price" not in existing_cols:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN entry_price FLOAT")
+                if "exit_price" not in existing_cols:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN exit_price FLOAT")
+                if "fees_paid" not in existing_cols:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN fees_paid FLOAT DEFAULT 0.0")
+                if "pnl" not in existing_cols:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN pnl FLOAT")
+                if "status" not in existing_cols:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN status VARCHAR(50) DEFAULT 'open'")
+                if "side" not in existing_cols:
+                    migrations.append("ALTER TABLE bet_history ADD COLUMN side VARCHAR(10) DEFAULT 'yes'")
+                
+                for migration in migrations:
+                    connection.execute(text(migration))
+                if migrations:
+                    connection.commit()
+                    logger.info(f"[OK] bet_history migration: {len(migrations)} columns added")
+        except Exception as e:
+            logger.warning(f"[WARN] bet_history migration skipped: {e}")
 
         # Миграция: создание таблицы bets
         try:
@@ -513,7 +670,48 @@ if not TEST_MODE:
                     connection.execute(text("CREATE INDEX idx_bets_user_status ON bets(user_id, status)"))
                     connection.commit()
         except Exception as e:
-            logger.warning(f"⚠️ bets table creation skipped: {e}")
+            logger.warning(f"[WARN] bets table creation skipped: {e}")
+
+        # Миграция: добавление новых полей в bets (fees_paid, pnl, roi)
+        try:
+            if is_sqlite:
+                columns = [row[1] for row in connection.execute(text("PRAGMA table_info(bets)")).fetchall()]
+                migrations = []
+                if "fees_paid" not in columns:
+                    migrations.append("ALTER TABLE bets ADD COLUMN fees_paid DECIMAL(20, 8) DEFAULT 0.0")
+                if "pnl" not in columns:
+                    migrations.append("ALTER TABLE bets ADD COLUMN pnl DECIMAL(20, 8) DEFAULT 0.0")
+                if "roi" not in columns:
+                    migrations.append("ALTER TABLE bets ADD COLUMN roi DECIMAL(10, 4) DEFAULT 0.0")
+                
+                for migration in migrations:
+                    connection.execute(text(migration))
+                if migrations:
+                    connection.commit()
+                    logger.info(f"[OK] bets migration: {len(migrations)} columns added")
+            else:
+                # PostgreSQL
+                result = connection.execute(text("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_name = 'bets' AND column_name IN ('fees_paid', 'pnl', 'roi')
+                """)).fetchall()
+                existing_cols = [r[0] for r in result]
+                
+                migrations = []
+                if "fees_paid" not in existing_cols:
+                    migrations.append("ALTER TABLE bets ADD COLUMN fees_paid DECIMAL(20, 8) DEFAULT 0.0")
+                if "pnl" not in existing_cols:
+                    migrations.append("ALTER TABLE bets ADD COLUMN pnl DECIMAL(20, 8) DEFAULT 0.0")
+                if "roi" not in existing_cols:
+                    migrations.append("ALTER TABLE bets ADD COLUMN roi DECIMAL(10, 4) DEFAULT 0.0")
+                
+                for migration in migrations:
+                    connection.execute(text(migration))
+                if migrations:
+                    connection.commit()
+                    logger.info(f"[OK] bets migration: {len(migrations)} columns added")
+        except Exception as e:
+            logger.warning(f"[WARN] bets migration skipped: {e}")
 
         # Миграция: создание таблицы price_predictions
         try:
@@ -580,7 +778,7 @@ if not TEST_MODE:
                     connection.execute(text("CREATE INDEX idx_price_predictions_created_at ON price_predictions(created_at)"))
                     connection.commit()
         except Exception as e:
-            logger.warning(f"⚠️ price_predictions table creation skipped: {e}")
+            logger.warning(f"[WARN] price_predictions table creation skipped: {e}")
 
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 else:
