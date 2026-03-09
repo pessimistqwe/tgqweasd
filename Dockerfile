@@ -21,8 +21,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN mkdir -p /tmp && chmod 777 /tmp
 
 # Copy and install requirements
-COPY api/requirements-minimal.txt .
-RUN pip install --no-cache-dir -r requirements-minimal.txt
+COPY api/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY api ./api
